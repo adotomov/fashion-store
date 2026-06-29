@@ -1,0 +1,32 @@
+cwd: /Users/atomov/src/fashion-store/apps/api
+name: api
+type: standalone
+namespace: api
+createdAt: 2026-06-25T11:04:53.818Z
+packageManager: pnpm
+workspace:
+  appsDir: apps
+  packagesDir: packages
+endpoints:
+  domainSuffix: localhost
+  protocol: http
+postgres:
+  enabled: true
+  database: api
+entities:
+  - name: api
+    kind: app
+    path: .
+    port: 8080
+    runtime: go
+    expose: true
+    state: local
+    createdAt: 2026-06-25T11:05:44.301Z
+  - name: webstore-fe
+    kind: app
+    path: ../web
+    port: 3000
+    runtime: node
+    expose: true
+    state: local
+    createdAt: 2026-06-25T12:13:06.225Z

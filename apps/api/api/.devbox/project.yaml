@@ -1,0 +1,16 @@
+cwd: /Users/atomov/src/fashion-store/apps/api/api
+name: api
+type: standalone
+namespace: api
+createdAt: 2026-06-25T14:10:55.117Z
+packageManager: pnpm
+workspace:
+  appsDir: apps
+  packagesDir: packages
+endpoints:
+  domainSuffix: localhost
+  protocol: http
+postgres:
+  enabled: true
+  database: api
+entities: []
