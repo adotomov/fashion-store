@@ -365,7 +365,7 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 	catalogService := catalogapplication.NewCatalogService(catalogRepo)
 	catalogHandler := cataloghttp.NewCatalogHandler(catalogService)
 
-	storageClient := storage.NewClient(a.Config.Storage.Endpoint, a.Config.Storage.InsecureSkipTLS)
+	storageClient := storage.NewClient(a.Config.Storage.Endpoint, a.Config.Storage.InsecureSkipTLS, a.Config.Storage.ProjectID)
 
 	categoryRepo := cataloginfra.NewPostgresCategoryRepository(a.DB)
 	categoryService := catalogapplication.NewCategoryService(categoryRepo, storageClient, a.Config.Storage.Bucket)

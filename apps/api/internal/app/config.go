@@ -47,6 +47,7 @@ type StorageConfig struct {
 	Endpoint        string
 	Bucket          string
 	InsecureSkipTLS bool
+	ProjectID       string
 }
 
 // LoadConfig loads configuration from environment variables.
@@ -91,6 +92,7 @@ func LoadConfig() (*Config, error) {
 			Endpoint:        getEnv("STORAGE_ENDPOINT", "https://fakegcs.shared.svc.cluster.local:4443"),
 			Bucket:          getEnv("STORAGE_BUCKET", "product-media"),
 			InsecureSkipTLS: getEnv("STORAGE_INSECURE_SKIP_TLS", "true") == "true",
+			ProjectID:       os.Getenv("STORAGE_PROJECT_ID"),
 		},
 	}
 

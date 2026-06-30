@@ -64,6 +64,10 @@ resource "google_cloud_run_v2_service" "api" {
         value = "https://storage.googleapis.com"
       }
       env {
+        name  = "STORAGE_PROJECT_ID"
+        value = var.project_id
+      }
+      env {
         name  = "STORAGE_BUCKET"
         value = google_storage_bucket.media.name
       }

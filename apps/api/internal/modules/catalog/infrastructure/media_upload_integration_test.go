@@ -24,7 +24,7 @@ func TestProductService_UploadServeDeleteMedia_RealStorage(t *testing.T) {
 	if endpoint == "" {
 		endpoint = "https://localhost:4443"
 	}
-	client := storage.NewClient(endpoint, true)
+	client := storage.NewClient(endpoint, true, "")
 
 	if err := client.EnsureBucket(ctx, "it-test-media"); err != nil {
 		t.Skipf("FakeGCS not reachable, skipping: %v", err)

@@ -30,13 +30,14 @@ type Client struct {
 	httpClient *http.Client
 	baseURL    string
 	useAuth    bool
+	projectID  string
 
 	tokenOnce   sync.Once
 	tokenSource oauth2.TokenSource
 	tokenErr    error
 }
 
-func NewClient(endpoint string, insecureSkipTLS bool) *Client {
+func NewClient(endpoint string, insecureSkipTLS bool, projectID string) *Client {
 	transport := &http.Transport{}
 	if insecureSkipTLS {
 		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // local devbox FakeGCS only
@@ -48,7 +49,8 @@ func NewClient(endpoint string, insecureSkipTLS bool) *Client {
 		// requires a bearer token on every call. insecureSkipTLS is also
 		// how the local-vs-real endpoint is already distinguished, so
 		// reuse it rather than adding a third config flag.
-		useAuth: !insecureSkipTLS,
+		useAuth:   !insecureSkipTLS,
+		projectID: projectID,
 	}
 }
 
@@ -74,9 +76,35 @@ func (c *Client) authorize(ctx context.Context, req *http.Request) error {
 }
 
 // EnsureBucket creates the bucket if it doesn't already exist. Idempotent.
+//
+// Checks existence with a GET first rather than going straight to create:
+// real GCS's bucket-insert call requires a "project" query parameter, which
+// FakeGCS doesn't enforce, and in normal operation the bucket already
+// exists (provisioned by Terraform) - a GET avoids that requirement on the
+// common path entirely.
 func (c *Client) EnsureBucket(ctx context.Context, bucket string) error {
+	getReq, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/storage/v1/b/"+url.PathEscape(bucket), nil)
+	if err != nil {
+		return err
+	}
+	if err := c.authorize(ctx, getReq); err != nil {
+		return err
+	}
+	getResp, err := c.httpClient.Do(getReq)
+	if err != nil {
+		return fmt.Errorf("ensure bucket: %w", err)
+	}
+	getResp.Body.Close()
+	if getResp.StatusCode == http.StatusOK {
+		return nil
+	}
+
+	createURL := c.baseURL + "/storage/v1/b"
+	if c.projectID != "" {
+		createURL += "?project=" + url.QueryEscape(c.projectID)
+	}
 	body := strings.NewReader(fmt.Sprintf(`{"name":%q}`, bucket))
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/storage/v1/b", body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, createURL, body)
 	if err != nil {
 		return err
 	}
