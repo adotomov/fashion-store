@@ -77,7 +77,7 @@ export default function StyleGuide() {
 
   return (
     <div className="flex min-h-screen flex-col">
-      <Header wishlistCount={3} />
+      <Header />
 
       <main className="mx-auto flex max-w-7xl flex-col gap-16 px-4 py-12 sm:px-6 lg:px-8">
         <section>

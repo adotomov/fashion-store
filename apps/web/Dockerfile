@@ -13,10 +13,13 @@ COPY . /app/
 COPY --from=development-dependencies-env /app/node_modules /app/node_modules
 WORKDIR /app
 # Vite inlines VITE_* env vars at build time, so they must be baked in here
-# rather than passed at container runtime. devbox-cli's build step doesn't
-# support custom --build-arg, so these are fixed for the devbox deployment.
-ENV VITE_API_BASE_URL=http://api.api.localhost
-ENV VITE_GOOGLE_CLIENT_ID=673528779465-pajifaekv8l1odrbd8mpbglo351d7r15.apps.googleusercontent.com
+# rather than passed at container runtime. Defaults match the local devbox
+# deployment (devbox-cli's build step doesn't support custom --build-arg);
+# other environments override them via --build-arg at build time.
+ARG VITE_API_BASE_URL=http://api.api.localhost
+ARG VITE_GOOGLE_CLIENT_ID=673528779465-pajifaekv8l1odrbd8mpbglo351d7r15.apps.googleusercontent.com
+ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
 RUN npm run build
 
 FROM node:24-alpine

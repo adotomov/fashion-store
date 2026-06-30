@@ -1,0 +1,83 @@
+name: Deploy dev
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      - "apps/web/**"
+      - ".github/workflows/deploy-dev.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  id-token: write # required for Workload Identity Federation
+
+env:
+  PROJECT_ID: project-538051b7-1abf-4eab-94c
+  REGION: europe-west1
+  REGISTRY: europe-west1-docker.pkg.dev/project-538051b7-1abf-4eab-94c/fashion-store-dev
+  WORKLOAD_IDENTITY_PROVIDER: projects/673528779465/locations/global/workloadIdentityPools/github-actions/providers/github
+  DEPLOYER_SA: fs-deployer-dev@project-538051b7-1abf-4eab-94c.iam.gserviceaccount.com
+  # Interim value until the Cloud DNS cutover + Cloud Run domain mapping for
+  # api.dev.verani.bg are live - switch to that once it resolves, by editing
+  # this workflow (or moving it to a repo variable).
+  VITE_API_BASE_URL: https://api-lknowv3pca-ew.a.run.app
+  VITE_GOOGLE_CLIENT_ID: 673528779465-pajifaekv8l1odrbd8mpbglo351d7r15.apps.googleusercontent.com
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DEPLOYER_SA }}
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push api image
+        run: |
+          docker build -t "${{ env.REGISTRY }}/api:${{ github.sha }}" apps/api
+          docker push "${{ env.REGISTRY }}/api:${{ github.sha }}"
+
+      - name: Build and push webstore-fe image
+        run: |
+          docker build \
+            --build-arg VITE_API_BASE_URL="${{ env.VITE_API_BASE_URL }}" \
+            --build-arg VITE_GOOGLE_CLIENT_ID="${{ env.VITE_GOOGLE_CLIENT_ID }}" \
+            -t "${{ env.REGISTRY }}/webstore-fe:${{ github.sha }}" apps/web
+          docker push "${{ env.REGISTRY }}/webstore-fe:${{ github.sha }}"
+
+      - name: Run database migrations
+        run: |
+          gcloud run jobs update api-migrate \
+            --image "${{ env.REGISTRY }}/api:${{ github.sha }}" \
+            --region "${{ env.REGION }}" \
+            --project "${{ env.PROJECT_ID }}"
+          gcloud run jobs execute api-migrate \
+            --region "${{ env.REGION }}" \
+            --project "${{ env.PROJECT_ID }}" \
+            --wait
+
+      - name: Deploy api
+        run: |
+          gcloud run services update api \
+            --image "${{ env.REGISTRY }}/api:${{ github.sha }}" \
+            --region "${{ env.REGION }}" \
+            --project "${{ env.PROJECT_ID }}"
+
+      - name: Deploy webstore-fe
+        run: |
+          gcloud run services update webstore-fe \
+            --image "${{ env.REGISTRY }}/webstore-fe:${{ github.sha }}" \
+            --region "${{ env.REGION }}" \
+            --project "${{ env.PROJECT_ID }}"

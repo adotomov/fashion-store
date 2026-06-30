@@ -1,0 +1,83 @@
+variable "project_id" {
+  description = "GCP project ID for the dev environment."
+  type        = string
+  default     = "project-538051b7-1abf-4eab-94c" # verani-webstore-dev
+}
+
+variable "region" {
+  description = "GCP region for all regional resources."
+  type        = string
+  default     = "europe-west1"
+}
+
+variable "env" {
+  description = "Environment name, used in resource naming."
+  type        = string
+  default     = "dev"
+}
+
+variable "domain_root" {
+  description = "Root domain managed in Cloud DNS."
+  type        = string
+  default     = "verani.bg"
+}
+
+variable "web_subdomain" {
+  description = "Subdomain the storefront frontend is served on."
+  type        = string
+  default     = "dev"
+}
+
+variable "api_subdomain" {
+  description = "Subdomain the API is served on."
+  type        = string
+  default     = "api.dev"
+}
+
+variable "google_client_id" {
+  description = "Existing Google OAuth client ID used for sign-in (already provisioned in this project)."
+  type        = string
+  default     = "673528779465-pajifaekv8l1odrbd8mpbglo351d7r15.apps.googleusercontent.com"
+}
+
+variable "github_repo" {
+  description = "GitHub repo allowed to assume the deploy service account via Workload Identity Federation, in owner/name form."
+  type        = string
+  default     = "adotomov/fashion-store"
+}
+
+variable "github_deploy_branch" {
+  description = "Branch allowed to deploy via the GitHub Actions workflow."
+  type        = string
+  default     = "main"
+}
+
+variable "create_domain_mappings" {
+  description = "Whether to create Cloud Run domain mappings. Requires verani.bg to already be a verified domain on this Google account (Search Console) - leave false until that's done, then re-apply."
+  type        = bool
+  default     = false
+}
+
+variable "db_tier" {
+  description = "Cloud SQL machine tier."
+  type        = string
+  default     = "db-custom-1-3840"
+}
+
+variable "db_name" {
+  description = "Application database name."
+  type        = string
+  default     = "fashion_store"
+}
+
+variable "db_user" {
+  description = "Application database user."
+  type        = string
+  default     = "fashion_store"
+}
+
+variable "placeholder_image" {
+  description = "Image used to create Cloud Run services before the first real deploy. CI overwrites the running image afterwards; Terraform ignores drift on it."
+  type        = string
+  default     = "us-docker.pkg.dev/cloudrun/container/hello"
+}

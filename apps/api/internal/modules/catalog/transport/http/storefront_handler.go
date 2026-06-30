@@ -303,6 +303,8 @@ func (h *StorefrontHandler) listProducts(w http.ResponseWriter, r *http.Request)
 		allowedIDs = intersectOrSet(allowedIDs, toIDSet(ids))
 	}
 
+	query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+
 	limit := -1
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
@@ -331,6 +333,11 @@ func (h *StorefrontHandler) listProducts(w http.ResponseWriter, r *http.Request)
 		}
 		if v, ok := productTranslations[p.ID]["description"]; ok {
 			item.Description = v
+		}
+		if query != "" &&
+			!strings.Contains(strings.ToLower(item.Name), query) &&
+			!strings.Contains(strings.ToLower(item.Description), query) {
+			continue
 		}
 		resp = append(resp, item)
 		if limit > 0 && len(resp) >= limit {

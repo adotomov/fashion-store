@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 
+import { useAuth } from "../../features/auth/AuthContext";
 import { useLanguage } from "../../features/i18n/LanguageContext";
+import { useWishlist } from "../../features/wishlist/WishlistContext";
 import { type StorefrontProduct, listStorefrontProducts, resolveImageUrl } from "../../lib/api/storefront";
 import { Eyebrow, Heading } from "../ui/Text";
 import { ProductCard } from "./ProductCard";
@@ -9,6 +11,8 @@ import { ProductCard } from "./ProductCard";
 // higher than base_price) — no fabricated sale data.
 export function SaleHighlights() {
   const { locale } = useLanguage();
+  const { isAuthenticated } = useAuth();
+  const { isWishlisted, toggle } = useWishlist();
   const [onSale, setOnSale] = useState<StorefrontProduct[] | null>(null);
 
   useEffect(() => {
@@ -41,6 +45,8 @@ export function SaleHighlights() {
             compareAtPrice={product.compare_at_price}
             badge="Sale"
             outOfStock={!product.in_stock}
+            isWishlisted={isAuthenticated && isWishlisted(product.id)}
+            onToggleWishlist={isAuthenticated ? () => toggle(product.id) : undefined}
           />
         ))}
       </div>

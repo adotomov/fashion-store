@@ -1,12 +1,16 @@
 import { useEffect, useState } from "react";
 
+import { useAuth } from "../../features/auth/AuthContext";
 import { useLanguage } from "../../features/i18n/LanguageContext";
+import { useWishlist } from "../../features/wishlist/WishlistContext";
 import { type StorefrontProduct, listStorefrontProducts, resolveImageUrl } from "../../lib/api/storefront";
 import { Eyebrow, Heading } from "../ui/Text";
 import { ProductCard } from "./ProductCard";
 
 export function NewArrivals() {
   const { locale } = useLanguage();
+  const { isAuthenticated } = useAuth();
+  const { isWishlisted, toggle } = useWishlist();
   const [products, setProducts] = useState<StorefrontProduct[] | null>(null);
 
   useEffect(() => {
@@ -38,6 +42,8 @@ export function NewArrivals() {
                 price={product.base_price}
                 compareAtPrice={product.compare_at_price}
                 outOfStock={!product.in_stock}
+                isWishlisted={isAuthenticated && isWishlisted(product.id)}
+                onToggleWishlist={isAuthenticated ? () => toggle(product.id) : undefined}
               />
             ))}
       </div>

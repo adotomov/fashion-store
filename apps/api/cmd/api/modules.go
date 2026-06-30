@@ -45,6 +45,9 @@ import (
 	usersapplication "github.com/adotomov/fashion-store/apps/api/internal/modules/users/application"
 	usersinfra "github.com/adotomov/fashion-store/apps/api/internal/modules/users/infrastructure"
 	usershttp "github.com/adotomov/fashion-store/apps/api/internal/modules/users/transport/http"
+	wishlistapplication "github.com/adotomov/fashion-store/apps/api/internal/modules/wishlist/application"
+	wishlistinfra "github.com/adotomov/fashion-store/apps/api/internal/modules/wishlist/infrastructure"
+	wishlisthttp "github.com/adotomov/fashion-store/apps/api/internal/modules/wishlist/transport/http"
 	"github.com/adotomov/fashion-store/apps/api/internal/platform/googleauth"
 	"github.com/adotomov/fashion-store/apps/api/internal/platform/storage"
 )
@@ -439,6 +442,11 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 	checkoutHandler := checkouthttp.NewHandler(checkoutService)
 	checkoutModule := checkouthttp.NewModule(checkoutHandler, authhttp.OptionalAuth(authService))
 
+	wishlistRepo := wishlistinfra.NewPostgresRepository(a.DB)
+	wishlistService := wishlistapplication.NewService(wishlistRepo)
+	wishlistHandler := wishlisthttp.NewHandler(wishlistService)
+	wishlistModule := wishlisthttp.NewModule(wishlistHandler, authhttp.RequireAuth(authService))
+
 	return []app.RouteRegistrar{
 		authHandler,
 		usersModule,
@@ -454,6 +462,7 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 		fulfillmentModule,
 		i18nModule,
 		i18nStorefrontModule,
+		wishlistModule,
 	}, fulfillmentService
 }
 

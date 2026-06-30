@@ -10,7 +10,15 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
+
+	"golang.org/x/oauth2"
+	"golang.org/x/oauth2/google"
 )
+
+// storageScope is the OAuth2 scope needed for real GCS object/bucket
+// read-write calls.
+const storageScope = "https://www.googleapis.com/auth/devstorage.read_write"
 
 // Client talks to a GCS-compatible JSON API (real GCS or, for local
 // devbox, fsouza/fake-gcs-server) over plain HTTP requests rather than the
@@ -21,6 +29,11 @@ import (
 type Client struct {
 	httpClient *http.Client
 	baseURL    string
+	useAuth    bool
+
+	tokenOnce   sync.Once
+	tokenSource oauth2.TokenSource
+	tokenErr    error
 }
 
 func NewClient(endpoint string, insecureSkipTLS bool) *Client {
@@ -31,7 +44,33 @@ func NewClient(endpoint string, insecureSkipTLS bool) *Client {
 	return &Client{
 		httpClient: &http.Client{Transport: transport},
 		baseURL:    strings.TrimSuffix(endpoint, "/"),
+		// FakeGCS (devbox) accepts unauthenticated requests; real GCS
+		// requires a bearer token on every call. insecureSkipTLS is also
+		// how the local-vs-real endpoint is already distinguished, so
+		// reuse it rather than adding a third config flag.
+		useAuth: !insecureSkipTLS,
 	}
+}
+
+// authorize attaches an Application Default Credentials bearer token to req
+// when talking to real GCS. ADC picks up Cloud Run's attached service
+// account with no key file needed. No-op against the local FakeGCS server.
+func (c *Client) authorize(ctx context.Context, req *http.Request) error {
+	if !c.useAuth {
+		return nil
+	}
+	c.tokenOnce.Do(func() {
+		c.tokenSource, c.tokenErr = google.DefaultTokenSource(ctx, storageScope)
+	})
+	if c.tokenErr != nil {
+		return fmt.Errorf("resolve storage credentials: %w", c.tokenErr)
+	}
+	token, err := c.tokenSource.Token()
+	if err != nil {
+		return fmt.Errorf("get storage access token: %w", err)
+	}
+	token.SetAuthHeader(req)
+	return nil
 }
 
 // EnsureBucket creates the bucket if it doesn't already exist. Idempotent.
@@ -42,6 +81,9 @@ func (c *Client) EnsureBucket(ctx context.Context, bucket string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	if err := c.authorize(ctx, req); err != nil {
+		return err
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -77,6 +119,9 @@ func (c *Client) Upload(ctx context.Context, bucket, objectKey, contentType stri
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
+	if err := c.authorize(ctx, req); err != nil {
+		return 0, err
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -111,6 +156,9 @@ func (c *Client) Open(ctx context.Context, bucket, objectKey string) (io.ReadClo
 	if err != nil {
 		return nil, "", err
 	}
+	if err := c.authorize(ctx, req); err != nil {
+		return nil, "", err
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
@@ -132,6 +180,9 @@ func (c *Client) Delete(ctx context.Context, bucket, objectKey string) error {
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, deleteURL, nil)
 	if err != nil {
+		return err
+	}
+	if err := c.authorize(ctx, req); err != nil {
 		return err
 	}
 

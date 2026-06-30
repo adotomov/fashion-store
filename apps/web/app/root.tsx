@@ -13,6 +13,7 @@ import { AuthProvider } from "./features/auth/AuthContext";
 import { CartProvider } from "./features/cart/CartContext";
 import { LanguageProvider } from "./features/i18n/LanguageContext";
 import { StoreSettingsProvider } from "./features/store-settings/StoreSettingsContext";
+import { WishlistProvider } from "./features/wishlist/WishlistContext";
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -51,7 +52,9 @@ export default function App() {
       <StoreSettingsProvider>
         <AuthProvider>
           <CartProvider>
-            <Outlet />
+            <WishlistProvider>
+              <Outlet />
+            </WishlistProvider>
           </CartProvider>
         </AuthProvider>
       </StoreSettingsProvider>

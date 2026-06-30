@@ -10,8 +10,10 @@ import { Button } from "../components/ui/Button";
 import { Icon } from "../components/ui/Icon";
 import { Price } from "../components/ui/Price";
 import { Heading, Text } from "../components/ui/Text";
+import { useAuth } from "../features/auth/AuthContext";
 import { useCart } from "../features/cart/CartContext";
 import { useLanguage } from "../features/i18n/LanguageContext";
+import { useWishlist } from "../features/wishlist/WishlistContext";
 import { cn } from "../lib/utils/cn";
 import {
   type StorefrontProductDetail,
@@ -36,7 +38,8 @@ export default function ProductDetail() {
   const [error, setError] = useState<string | null>(null);
   // attribute_id -> selected attribute_value_id
   const [selectedValues, setSelectedValues] = useState<Record<string, string>>({});
-  const [isWishlisted, setIsWishlisted] = useState(false);
+  const { isAuthenticated } = useAuth();
+  const { isWishlisted, toggle } = useWishlist();
   const { addItem } = useCart();
   const [isAddingToCart, setIsAddingToCart] = useState(false);
   const [addToCartError, setAddToCartError] = useState<string | null>(null);
@@ -215,11 +218,16 @@ export default function ProductDetail() {
             <Button
               variant="outline"
               size="lg"
-              aria-pressed={isWishlisted}
+              aria-pressed={isAuthenticated && isWishlisted(product.id)}
               aria-label="Add to wishlist"
-              onClick={() => setIsWishlisted((v) => !v)}
+              onClick={() => toggle(product.id)}
+              disabled={!isAuthenticated}
             >
-              <Icon name="wishlist" size={18} className={isWishlisted ? "fill-clay-500 text-clay-500" : undefined} />
+              <Icon
+                name="wishlist"
+                size={18}
+                className={isAuthenticated && isWishlisted(product.id) ? "fill-clay-500 text-clay-500" : undefined}
+              />
             </Button>
           </div>
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLocation, useSearchParams } from "react-router";
+import { useLocation, useSearchParams, useNavigate } from "react-router";
 
 import { Breadcrumbs } from "../components/ecommerce/Breadcrumbs";
 import { type FilterGroup, FilterPanel } from "../components/ecommerce/FilterPanel";
@@ -11,6 +11,8 @@ import { Button } from "../components/ui/Button";
 import { Icon } from "../components/ui/Icon";
 import { Modal } from "../components/ui/Modal";
 import { Heading, Text } from "../components/ui/Text";
+import { useAuth } from "../features/auth/AuthContext";
+import { useWishlist } from "../features/wishlist/WishlistContext";
 import {
   type AttributeFacet,
   type NavType,
@@ -27,7 +29,10 @@ export const handle = { title: "Shop" };
 export default function Shop() {
   const [searchParams] = useSearchParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const { locale } = useLanguage();
+  const { isAuthenticated } = useAuth();
+  const { isWishlisted, toggle } = useWishlist();
 
   // Links that should start a fresh filter context (header nav, home page
   // category/collection tiles) pass resetFilters via location state. Without
@@ -55,6 +60,10 @@ export default function Shop() {
   const [selectedAttributeValueIds, setSelectedAttributeValueIds] = useState<string[]>(
     () => restored?.attributeValueIds ?? searchParams.getAll("attribute_value_id"),
   );
+  // A search query lives entirely in the URL (never persisted to
+  // sessionStorage like the other filters) — it always reflects exactly
+  // what the header search form was last submitted with.
+  const searchQuery = searchParams.get("q") ?? "";
 
   // Only re-sync from the URL when the navigation that brought us here was
   // explicitly marked as a reset (header nav, home page tiles) — otherwise
@@ -106,12 +115,13 @@ export default function Shop() {
       categoryIds: selectedCategoryIds,
       catalogId: selectedCatalogId,
       attributeValueIds: selectedAttributeValueIds,
+      q: searchQuery || undefined,
       locale,
     })
       .then(setProducts)
       .catch(() => setError("Could not load products."));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryKey, selectedCatalogId, attributeKey, locale]);
+  }, [categoryKey, selectedCatalogId, attributeKey, searchQuery, locale]);
 
   // Only types that own at least one selected category stay "active" — lets
   // us drive both the Type and Category groups from the same source of truth.
@@ -195,12 +205,19 @@ export default function Shop() {
     );
   }
 
-  const heading =
-    selectedCategoryIds.length === 1
+  const heading = searchQuery
+    ? `Search results for "${searchQuery}"`
+    : selectedCategoryIds.length === 1
       ? visibleCategories.find((c) => c.id === selectedCategoryIds[0])?.name ?? "Shop"
       : selectedTypeSlugs.length === 1
         ? navTypes.find((t) => t.slug === selectedTypeSlugs[0])?.name ?? "Shop"
         : "All Products";
+
+  function clearSearch() {
+    const next = new URLSearchParams(searchParams);
+    next.delete("q");
+    navigate(`/shop${next.toString() ? `?${next.toString()}` : ""}`);
+  }
 
   const breadcrumbItems = [
     { label: "Home", href: "/" },
@@ -219,6 +236,17 @@ export default function Shop() {
           <Heading as="h1" size="lg" className="mt-3">
             {heading}
           </Heading>
+
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={clearSearch}
+              className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-stone-100 px-3 py-1 text-xs font-medium text-stone-700 hover:bg-stone-200"
+            >
+              Search: "{searchQuery}"
+              <Icon name="close" size={12} />
+            </button>
+          )}
 
           {error && (
             <Text size="sm" tone="danger" className="mt-4">
@@ -263,6 +291,8 @@ export default function Shop() {
                       price={product.base_price}
                       compareAtPrice={product.compare_at_price}
                       outOfStock={!product.in_stock}
+                      isWishlisted={isAuthenticated && isWishlisted(product.id)}
+                      onToggleWishlist={isAuthenticated ? () => toggle(product.id) : undefined}
                     />
                   ))}
                 </div>

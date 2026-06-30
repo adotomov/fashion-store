@@ -1,11 +1,12 @@
-import { useEffect, useState } from "react";
-import { Link, useLocation } from "react-router";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { Link, useLocation, useNavigate } from "react-router";
 
 import { useAuth } from "../../features/auth/AuthContext";
 import { UserMenu } from "../../features/auth/UserMenu";
 import { useCart } from "../../features/cart/CartContext";
 import { useLanguage } from "../../features/i18n/LanguageContext";
 import { useStoreBranding } from "../../features/store-settings/StoreSettingsContext";
+import { useWishlist } from "../../features/wishlist/WishlistContext";
 import { type NavType, getNav, resolveImageUrl } from "../../lib/api/storefront";
 import { cn } from "../../lib/utils/cn";
 import { Icon } from "../ui/Icon";
@@ -13,26 +14,42 @@ import { Text } from "../ui/Text";
 import { LanguageSelector } from "./LanguageSelector";
 
 type HeaderProps = {
-  wishlistCount?: number;
   className?: string;
 };
 
-export function Header({ wishlistCount = 0, className }: HeaderProps) {
+export function Header({ className }: HeaderProps) {
   const { isAuthenticated } = useAuth();
   const { itemCount: cartCount } = useCart();
+  const { count: wishlistCount } = useWishlist();
   const { storeName, logoUrl } = useStoreBranding();
   const { locale } = useLanguage();
   const location = useLocation();
+  const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [navTypes, setNavTypes] = useState<NavType[]>([]);
   const [openTypeId, setOpenTypeId] = useState<string | null>(null);
   const [expandedMobileTypeId, setExpandedMobileTypeId] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     getNav(locale)
       .then(setNavTypes)
       .catch(() => {});
   }, [locale]);
+
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus();
+  }, [searchOpen]);
+
+  function handleSearchSubmit(e: FormEvent) {
+    e.preventDefault();
+    const q = searchQuery.trim();
+    setSearchOpen(false);
+    setSearchQuery("");
+    navigate(q ? `/shop?q=${encodeURIComponent(q)}` : "/shop", { state: { resetFilters: true } });
+  }
 
   return (
     <header
@@ -81,9 +98,33 @@ export function Header({ wishlistCount = 0, className }: HeaderProps) {
 
         <div className="flex items-center gap-1">
           <LanguageSelector />
-          <button type="button" aria-label="Search" className="rounded-sm p-2.5 hover:bg-stone-50">
-            <Icon name="search" size={20} />
-          </button>
+          <div className="relative">
+            {searchOpen ? (
+              <form onSubmit={handleSearchSubmit} className="flex items-center">
+                <input
+                  ref={searchInputRef}
+                  type="search"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onBlur={() => {
+                    if (!searchQuery) setSearchOpen(false);
+                  }}
+                  placeholder="Search products…"
+                  aria-label="Search products"
+                  className="h-9 w-44 rounded-sm border border-stone-300 px-3 text-sm focus:border-stone-900 focus:outline-none sm:w-56"
+                />
+              </form>
+            ) : (
+              <button
+                type="button"
+                aria-label="Search"
+                className="rounded-sm p-2.5 hover:bg-stone-50"
+                onClick={() => setSearchOpen(true)}
+              >
+                <Icon name="search" size={20} />
+              </button>
+            )}
+          </div>
           {isAuthenticated ? (
             <UserMenu />
           ) : (
@@ -96,10 +137,12 @@ export function Header({ wishlistCount = 0, className }: HeaderProps) {
               <Icon name="profile" size={20} />
             </Link>
           )}
-          <Link to="/wishlist" aria-label="Wishlist" className="relative rounded-sm p-2.5 hover:bg-stone-50">
-            <Icon name="wishlist" size={20} />
-            {wishlistCount > 0 && <CountBadge count={wishlistCount} />}
-          </Link>
+          {isAuthenticated && (
+            <Link to="/wishlist" aria-label="Wishlist" className="relative rounded-sm p-2.5 hover:bg-stone-50">
+              <Icon name="wishlist" size={20} />
+              {wishlistCount > 0 && <CountBadge count={wishlistCount} />}
+            </Link>
+          )}
           <Link to="/cart" aria-label="Cart" className="relative rounded-sm p-2.5 hover:bg-stone-50">
             <Icon name="cart" size={20} />
             {cartCount > 0 && <CountBadge count={cartCount} />}

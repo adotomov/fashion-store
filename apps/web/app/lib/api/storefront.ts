@@ -64,6 +64,7 @@ export type StorefrontProductFilters = {
   categoryIds?: string[];
   catalogId?: string;
   attributeValueIds?: string[];
+  q?: string;
   limit?: number;
   locale?: string;
 };
@@ -73,6 +74,7 @@ function buildProductFilterParams(filters: StorefrontProductFilters): URLSearchP
   for (const id of filters.categoryIds ?? []) params.append("category_id", id);
   if (filters.catalogId) params.set("catalog_id", filters.catalogId);
   for (const id of filters.attributeValueIds ?? []) params.append("attribute_value_id", id);
+  if (filters.q) params.set("q", filters.q);
   if (filters.limit) params.set("limit", String(filters.limit));
   return withLocale(params, filters.locale);
 }
