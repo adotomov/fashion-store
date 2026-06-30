@@ -26,3 +26,13 @@ resource "google_storage_bucket_iam_member" "media_api_writer" {
   role   = "roles/storage.objectAdmin"
   member = "serviceAccount:${google_service_account.api_runtime.email}"
 }
+
+# objectAdmin only grants object-level permissions (storage.objects.*), not
+# bucket-level ones. The app's EnsureBucket check does a GET on the bucket
+# (the bucket itself is created by Terraform, never by the app), which needs
+# storage.buckets.get specifically.
+resource "google_storage_bucket_iam_member" "media_api_bucket_reader" {
+  bucket = google_storage_bucket.media.name
+  role   = "roles/storage.legacyBucketReader"
+  member = "serviceAccount:${google_service_account.api_runtime.email}"
+}
