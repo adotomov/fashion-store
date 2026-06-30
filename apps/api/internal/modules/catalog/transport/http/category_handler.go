@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -294,6 +295,7 @@ func writeCatalogModuleError(w http.ResponseWriter, err error) {
 	case errors.As(err, new(domain.ValidationError)):
 		httpx.WriteError(w, http.StatusBadRequest, "validation_failed", err.Error())
 	default:
+		slog.Error("catalog module error", slog.Any("error", err))
 		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "an unexpected error occurred")
 	}
 }
