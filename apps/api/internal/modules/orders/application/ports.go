@@ -9,6 +9,12 @@ import (
 	"github.com/adotomov/fashion-store/apps/api/internal/modules/orders/domain"
 )
 
+// InvoiceGateway triggers invoice generation for COD/EasyBox orders that
+// reach "delivered" status — same hexagonal pattern as FulfillmentGateway.
+type InvoiceGateway interface {
+	GenerateForOrder(ctx context.Context, orderID uuid.UUID) error
+}
+
 // Repository persists orders and their line items. ListByUser/Create serve
 // the customer-facing order history and the checkout flow; the AdminX
 // methods serve the admin orders dashboard.

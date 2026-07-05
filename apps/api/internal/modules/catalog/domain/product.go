@@ -57,6 +57,9 @@ type Product struct {
 	// product has no media yet.
 	PrimaryMedia *ProductMedia
 	Media        []ProductMedia
+	// NKSCode is the Bulgarian NRA commodity code (Номенклатурен код на стоката),
+	// required on invoices. Optional — empty string means not configured.
+	NKSCode string
 	// InStock is true when the product has no variants yet (inventory isn't
 	// tracked until a variant exists) or at least one variant has available
 	// stock. Computed from the inventory module's data, not persisted here.

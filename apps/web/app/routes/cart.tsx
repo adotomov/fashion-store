@@ -7,6 +7,7 @@ import { buttonStyles } from "../components/ui/Button";
 import { Icon } from "../components/ui/Icon";
 import { Price } from "../components/ui/Price";
 import { Heading, Text } from "../components/ui/Text";
+import { useLanguage } from "../features/i18n/LanguageContext";
 import { useCart } from "../features/cart/CartContext";
 import type { CartItem } from "../lib/api/cart";
 import { resolveImageUrl } from "../lib/api/storefront";
@@ -15,6 +16,7 @@ import { formatMoney } from "../lib/money/money";
 export const handle = { title: "Cart" };
 
 export default function CartPage() {
+  const { t } = useLanguage();
   const { cart, isLoading } = useCart();
   const items = cart?.items ?? [];
 
@@ -24,18 +26,18 @@ export default function CartPage() {
       <main className="flex-1 bg-stone-50">
         <div className="mx-auto max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
           <Heading as="h1" size="lg">
-            Your Cart
+            {t("cart.title", "Your Cart")}
           </Heading>
 
           {isLoading ? (
             <Text size="sm" tone="muted" className="py-16 text-center">
-              Loading…
+              {t("common.loading", "Loading…")}
             </Text>
           ) : items.length === 0 ? (
             <div className="flex flex-col items-center gap-4 py-16 text-center">
-              <Text tone="muted">Your cart is empty.</Text>
+              <Text tone="muted">{t("cart.empty", "Your cart is empty")}</Text>
               <Link to="/shop" className={buttonStyles({ variant: "primary" })}>
-                Continue Shopping
+                {t("common.continue_shopping", "Continue Shopping")}
               </Link>
             </div>
           ) : (
@@ -48,18 +50,18 @@ export default function CartPage() {
 
               <div className="h-fit rounded-sm border border-stone-200 bg-white p-6">
                 <Heading as="h2" size="sm">
-                  Summary
+                  {t("cart.summary", "Summary")}
                 </Heading>
                 <div className="mt-4 flex items-center justify-between border-t border-stone-200 pt-4">
                   <Text size="sm" className="font-medium">
-                    Subtotal
+                    {t("cart.subtotal", "Subtotal")}
                   </Text>
                   <Text size="sm" className="font-medium">
                     {formatMoney(cart!.subtotal)}
                   </Text>
                 </div>
                 <Link to="/checkout" className={buttonStyles({ variant: "primary", size: "lg", className: "mt-6 w-full" })}>
-                  Checkout
+                  {t("cart.checkout", "Checkout")}
                 </Link>
               </div>
             </div>
@@ -72,6 +74,7 @@ export default function CartPage() {
 }
 
 function CartLineItem({ item }: { item: CartItem }) {
+  const { t } = useLanguage();
   const { updateQuantity, removeItem } = useCart();
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +86,7 @@ function CartLineItem({ item }: { item: CartItem }) {
     try {
       await updateQuantity(item.id, quantity);
     } catch {
-      setError("Could not update quantity.");
+      setError(t("cart.update_error", "Could not update quantity."));
     } finally {
       setIsUpdating(false);
     }
@@ -95,7 +98,7 @@ function CartLineItem({ item }: { item: CartItem }) {
     try {
       await removeItem(item.id);
     } catch {
-      setError("Could not remove this item.");
+      setError(t("cart.remove_error", "Could not remove this item."));
       setIsUpdating(false);
     }
   }
@@ -128,7 +131,7 @@ function CartLineItem({ item }: { item: CartItem }) {
 
         {item.quantity > item.available_quantity && (
           <Text size="sm" tone="danger">
-            Only {item.available_quantity} left in stock
+            {t("cart.only", "Only")} {item.available_quantity} {t("cart.left_in_stock", "left in stock")}
           </Text>
         )}
         {error && (
@@ -141,7 +144,7 @@ function CartLineItem({ item }: { item: CartItem }) {
           <div className="flex items-center gap-2 rounded-sm border border-stone-300">
             <button
               type="button"
-              aria-label="Decrease quantity"
+              aria-label={t("cart.decrease_qty", "Decrease quantity")}
               disabled={isUpdating}
               onClick={() => changeQuantity(item.quantity - 1)}
               className="flex h-8 w-8 items-center justify-center text-stone-600 hover:bg-stone-50 disabled:opacity-50"
@@ -153,7 +156,7 @@ function CartLineItem({ item }: { item: CartItem }) {
             </Text>
             <button
               type="button"
-              aria-label="Increase quantity"
+              aria-label={t("cart.increase_qty", "Increase quantity")}
               disabled={isUpdating}
               onClick={() => changeQuantity(item.quantity + 1)}
               className="flex h-8 w-8 items-center justify-center text-stone-600 hover:bg-stone-50 disabled:opacity-50"
@@ -164,7 +167,7 @@ function CartLineItem({ item }: { item: CartItem }) {
 
           <button
             type="button"
-            aria-label="Remove item"
+            aria-label={t("cart.remove_item", "Remove item")}
             disabled={isUpdating}
             onClick={handleRemove}
             className="rounded-sm p-2 text-stone-500 hover:bg-stone-50 hover:text-danger-500 disabled:opacity-50"

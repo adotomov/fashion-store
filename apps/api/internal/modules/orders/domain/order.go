@@ -107,6 +107,9 @@ type Order struct {
 	ViewedByAdminAt  *time.Time
 	ReservationID    *uuid.UUID
 
+	DiscountCode   *string
+	DiscountAmount *money.Money
+
 	Items []OrderItem
 
 	CreatedAt time.Time

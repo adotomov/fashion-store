@@ -11,13 +11,26 @@ import (
 )
 
 type StoreSettingsService struct {
-	repo    StoreSettingsRepository
-	storage MediaStorage
-	bucket  string
+	repo             StoreSettingsRepository
+	heroRepo         HeroSettingsRepository
+	homeSectionsRepo HomeSectionsRepository
+	storage          MediaStorage
+	bucket           string
 }
 
 func NewStoreSettingsService(repo StoreSettingsRepository, storage MediaStorage, bucket string) *StoreSettingsService {
+	// heroRepo is set separately via WithHeroRepo when the same Postgres
+	// repository also satisfies HeroSettingsRepository (which is the case for
+	// PostgresStoreSettingsRepository). Split to keep the constructor signature
+	// backward-compatible.
 	return &StoreSettingsService{repo: repo, storage: storage, bucket: bucket}
+}
+
+// WithHeroRepo wires the hero-settings repository into the service. Call this
+// immediately after NewStoreSettingsService in modules.go.
+func (s *StoreSettingsService) WithHeroRepo(heroRepo HeroSettingsRepository) *StoreSettingsService {
+	s.heroRepo = heroRepo
+	return s
 }
 
 func (s *StoreSettingsService) GetSettings(ctx context.Context) (*domain.StoreSettings, error) {
@@ -102,4 +115,84 @@ func (s *StoreSettingsService) DeleteLogo(ctx context.Context) (*domain.StoreSet
 	settings.LogoContentType = nil
 	settings.LogoSizeBytes = nil
 	return s.repo.Update(ctx, *settings)
+}
+
+func (s *StoreSettingsService) GetHeroSettings(ctx context.Context) (domain.HeroSettings, error) {
+	return s.heroRepo.GetHeroSettings(ctx)
+}
+
+func (s *StoreSettingsService) SaveHeroSettings(ctx context.Context, settings domain.HeroSettings) (domain.HeroSettings, error) {
+	return s.heroRepo.SaveHeroSettings(ctx, settings)
+}
+
+func (s *StoreSettingsService) UploadHeroBackground(ctx context.Context, filename, contentType string, content io.Reader) (domain.HeroSettings, error) {
+	if err := s.storage.EnsureBucket(ctx, s.bucket); err != nil {
+		return domain.HeroSettings{}, err
+	}
+	objectKey := fmt.Sprintf("hero-settings/background/%s-%s", uuid.NewString(), filename)
+	sizeBytes, err := s.storage.Upload(ctx, s.bucket, objectKey, contentType, content)
+	if err != nil {
+		return domain.HeroSettings{}, err
+	}
+	current, err := s.heroRepo.GetHeroSettings(ctx)
+	if err != nil {
+		return domain.HeroSettings{}, err
+	}
+	if current.HasBackground() {
+		_ = s.storage.Delete(ctx, *current.BackgroundBucket, *current.BackgroundObjectKey)
+	}
+	bucket := s.bucket
+	current.BackgroundBucket = &bucket
+	current.BackgroundObjectKey = &objectKey
+	current.BackgroundContentType = &contentType
+	current.BackgroundSizeBytes = &sizeBytes
+	return s.heroRepo.SaveHeroSettings(ctx, current)
+}
+
+func (s *StoreSettingsService) OpenHeroBackground(ctx context.Context) (io.ReadCloser, string, error) {
+	settings, err := s.heroRepo.GetHeroSettings(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if !settings.HasBackground() {
+		return nil, "", domain.ErrHeroBackgroundNotFound
+	}
+	return s.storage.Open(ctx, *settings.BackgroundBucket, *settings.BackgroundObjectKey)
+}
+
+func (s *StoreSettingsService) DeleteHeroBackground(ctx context.Context) (domain.HeroSettings, error) {
+	settings, err := s.heroRepo.GetHeroSettings(ctx)
+	if err != nil {
+		return domain.HeroSettings{}, err
+	}
+	if settings.HasBackground() {
+		_ = s.storage.Delete(ctx, *settings.BackgroundBucket, *settings.BackgroundObjectKey)
+	}
+	settings.BackgroundBucket = nil
+	settings.BackgroundObjectKey = nil
+	settings.BackgroundContentType = nil
+	settings.BackgroundSizeBytes = nil
+	return s.heroRepo.SaveHeroSettings(ctx, settings)
+}
+
+// WithHomeSectionsRepo wires the home-sections repository into the service.
+func (s *StoreSettingsService) WithHomeSectionsRepo(repo HomeSectionsRepository) *StoreSettingsService {
+	s.homeSectionsRepo = repo
+	return s
+}
+
+func (s *StoreSettingsService) ListHomeSections(ctx context.Context) ([]domain.HomeSection, error) {
+	return s.homeSectionsRepo.ListHomeSections(ctx)
+}
+
+func (s *StoreSettingsService) SaveHomeSection(ctx context.Context, section domain.HomeSection) (domain.HomeSection, error) {
+	return s.homeSectionsRepo.SaveHomeSection(ctx, section)
+}
+
+func (s *StoreSettingsService) GetSectionProductIDs(ctx context.Context, sectionID string) ([]uuid.UUID, error) {
+	return s.homeSectionsRepo.GetSectionProductIDs(ctx, sectionID)
+}
+
+func (s *StoreSettingsService) SetSectionProducts(ctx context.Context, sectionID string, productIDs []uuid.UUID) error {
+	return s.homeSectionsRepo.SetSectionProducts(ctx, sectionID, productIDs)
 }

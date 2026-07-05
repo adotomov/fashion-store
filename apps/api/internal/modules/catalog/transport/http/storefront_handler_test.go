@@ -44,7 +44,7 @@ func TestStorefrontHTTP_ProductsAndFacetsFilters(t *testing.T) {
 	catalogService := catalogapplication.NewCatalogService(catalogRepo)
 	translationService := i18napplication.NewTranslationService(i18ninfra.NewPostgresTranslationRepository(pool))
 
-	storefrontHandler := cataloghttp.NewStorefrontHandler(productTypeService, categoryService, productService, catalogService, translationService)
+	storefrontHandler := cataloghttp.NewStorefrontHandler(productTypeService, categoryService, productService, catalogService, translationService, nil, nil)
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
 		storefrontHandler.RegisterRoutes(r)
@@ -194,7 +194,7 @@ func TestStorefrontHTTP_GetProductBySlugIncludesVariantsAndMedia(t *testing.T) {
 	productTypeService := catalogapplication.NewProductTypeService(productTypeRepo)
 	translationService := i18napplication.NewTranslationService(i18ninfra.NewPostgresTranslationRepository(pool))
 
-	storefrontHandler := cataloghttp.NewStorefrontHandler(productTypeService, categoryService, productService, catalogService, translationService)
+	storefrontHandler := cataloghttp.NewStorefrontHandler(productTypeService, categoryService, productService, catalogService, translationService, nil, nil)
 	r := chi.NewRouter()
 	r.Route("/api/v1", func(r chi.Router) {
 		storefrontHandler.RegisterRoutes(r)

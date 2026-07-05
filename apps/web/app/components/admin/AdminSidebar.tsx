@@ -15,6 +15,7 @@ type AdminNavItem = {
 
 const navItems: AdminNavItem[] = [
   { label: "Dashboard", href: "/admin", icon: "dashboard" },
+  { label: "Home Page", href: "/admin/home", icon: "catalog" },
   { label: "Store Settings", href: "/admin/settings", icon: "settings" },
   { label: "Translations", href: "/admin/translations", icon: "globe" },
   { label: "User Management", href: "/admin/users", icon: "users" },
@@ -23,6 +24,7 @@ const navItems: AdminNavItem[] = [
   { label: "Inventory", href: "/admin/inventory", icon: "inventory" },
   { label: "Logistics", href: "/admin/logistics", icon: "shipping" },
   { label: "Invoices & Tax", href: "/admin/invoices", icon: "invoices" },
+  { label: "Promotions", href: "/admin/promotions", icon: "tag" },
 ];
 
 // Polled rather than pushed — no websocket/SSE infrastructure exists yet,

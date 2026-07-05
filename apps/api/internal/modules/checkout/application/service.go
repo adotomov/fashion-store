@@ -20,11 +20,13 @@ type Service struct {
 	orders      OrderGateway
 	payments    PaymentGateway
 	fulfillment FulfillmentGateway
+	discounts   DiscountGateway
+	invoices    InvoiceGateway
 	logger      *slog.Logger
 }
 
-func NewService(cart CartGateway, inventory InventoryGateway, users UserGateway, orders OrderGateway, payments PaymentGateway, fulfillment FulfillmentGateway, logger *slog.Logger) *Service {
-	return &Service{cart: cart, inventory: inventory, users: users, orders: orders, payments: payments, fulfillment: fulfillment, logger: logger}
+func NewService(cart CartGateway, inventory InventoryGateway, users UserGateway, orders OrderGateway, payments PaymentGateway, fulfillment FulfillmentGateway, discounts DiscountGateway, invoices InvoiceGateway, logger *slog.Logger) *Service {
+	return &Service{cart: cart, inventory: inventory, users: users, orders: orders, payments: payments, fulfillment: fulfillment, discounts: discounts, invoices: invoices, logger: logger}
 }
 
 // ListDeliveryMethods filters out any method whose logistics provider isn't
@@ -126,7 +128,32 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 			UnitPrice:    line.UnitPrice,
 		})
 	}
-	total := money.Money{AmountMinor: subtotal + deliveryMethod.Fee.AmountMinor, Currency: currency}
+
+	// Apply discount code if provided.
+	var discountCodeStr *string
+	var discountAmount *money.Money
+	var discountCodeID uuid.UUID
+	if input.DiscountCode != "" {
+		info, err := s.discounts.ValidateCode(ctx, input.DiscountCode)
+		if err != nil {
+			return OrderResult{}, domain.ErrInvalidDiscountCode
+		}
+		discountMinor := subtotal * int64(info.ValuePercent) / 100
+		da := money.Money{AmountMinor: discountMinor, Currency: currency}
+		discountAmount = &da
+		code := strings.ToUpper(strings.TrimSpace(input.DiscountCode))
+		discountCodeStr = &code
+		discountCodeID = info.CodeID
+	}
+
+	subtotalAfterDiscount := subtotal
+	if discountAmount != nil {
+		subtotalAfterDiscount -= discountAmount.AmountMinor
+		if subtotalAfterDiscount < 0 {
+			subtotalAfterDiscount = 0
+		}
+	}
+	total := money.Money{AmountMinor: subtotalAfterDiscount + deliveryMethod.Fee.AmountMinor, Currency: currency}
 	orderNumber := generateOrderNumber()
 
 	reservationID, err := s.inventory.Reserve(ctx, reserveLines, &userID)
@@ -176,10 +203,27 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 		ReservationID:    reservationID,
 		Status:           status,
 		Total:            total,
+		DiscountCode:     discountCodeStr,
+		DiscountAmount:   discountAmount,
 		Items:            orderItems,
 	})
 	if err != nil {
 		return OrderResult{}, err
+	}
+
+	// Increment discount code use count after successful order creation.
+	if discountCodeID != uuid.Nil {
+		if err := s.discounts.UseCode(ctx, discountCodeID); err != nil {
+			s.logger.Error("failed to increment discount code use", "error", err, "code_id", discountCodeID)
+		}
+	}
+
+	// Generate invoice for card_online orders that are immediately paid.
+	// COD/EasyBox invoices are generated when the order reaches "delivered" status.
+	if status == "paid" && s.invoices != nil {
+		if err := s.invoices.GenerateForOrder(ctx, result.ID); err != nil {
+			s.logger.Error("failed to generate invoice for order", "error", err, "order_id", result.ID)
+		}
 	}
 
 	_ = s.cart.ClearCart(ctx, owner)

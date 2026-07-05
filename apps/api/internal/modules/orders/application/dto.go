@@ -45,6 +45,9 @@ type CreateOrderInput struct {
 	DeliveryOfficeID *string
 
 	ReservationID *uuid.UUID
+
+	DiscountCode   *string
+	DiscountAmount *money.Money
 }
 
 // UpdateFulfillmentInput is the admin-facing mutation for an order's

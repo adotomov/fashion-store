@@ -13,10 +13,12 @@ import {
   type Contact,
   type DeliveryMethod,
   type DeliveryMethodCode,
+  type DiscountCodeValidation,
   type PaymentMethodCode,
   type PlacedOrder,
   listDeliveryMethods,
   placeOrder,
+  validateDiscountCode,
 } from "../../lib/api/checkout";
 import { type Office, listOffices } from "../../lib/api/admin-logistics";
 import { type Address, listAddresses } from "../../lib/api/users";
@@ -24,6 +26,7 @@ import { COUNTRIES } from "../../lib/data/countries";
 import { formatMoney } from "../../lib/money/money";
 import { useAuth } from "../auth/AuthContext";
 import { useCart } from "../cart/CartContext";
+import { useLanguage } from "../i18n/LanguageContext";
 
 type Step = "details" | "delivery" | "payment" | "confirmation";
 
@@ -51,22 +54,23 @@ function addressFromSaved(a: Address): CheckoutAddress {
   };
 }
 
-const paymentMethodLabels: Record<PaymentMethodCode, string> = {
-  cash_on_delivery: "Cash on Delivery",
-  card_on_easybox: "Card on EasyBox Pickup",
-  card_online: "Pay by Card Online",
-};
-
-const paymentMethodDescriptions: Record<PaymentMethodCode, string> = {
-  cash_on_delivery: "Pay in cash when your courier delivers the order.",
-  card_on_easybox: "Pay by card at the locker when you collect your order.",
-  card_online: "Pay securely now with your card.",
-};
-
 export function CheckoutFlow() {
+  const { t } = useLanguage();
   const { isAuthenticated, profile } = useAuth();
   const { cart, refresh: refreshCart } = useCart();
   const location = useLocation();
+
+  const paymentMethodLabels: Record<PaymentMethodCode, string> = {
+    cash_on_delivery: t("checkout.cash_on_delivery", "Cash on Delivery"),
+    card_on_easybox: t("checkout.card_on_easybox", "Card on EasyBox Pickup"),
+    card_online: t("checkout.card_online", "Pay by Card Online"),
+  };
+
+  const paymentMethodDescriptions: Record<PaymentMethodCode, string> = {
+    cash_on_delivery: t("checkout.cash_on_delivery_desc", "Pay in cash when your courier delivers the order."),
+    card_on_easybox: t("checkout.card_on_easybox_desc", "Pay by card at the locker when you collect your order."),
+    card_online: t("checkout.card_online_desc", "Pay securely now with your card."),
+  };
 
   const [step, setStep] = useState<Step>("details");
 
@@ -86,6 +90,11 @@ export function CheckoutFlow() {
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodCode | null>(null);
   const [card, setCard] = useState<CardInput>({ number: "", exp_month: 1, exp_year: new Date().getFullYear(), cvv: "" });
+
+  const [discountCodeInput, setDiscountCodeInput] = useState("");
+  const [appliedDiscount, setAppliedDiscount] = useState<DiscountCodeValidation | null>(null);
+  const [discountError, setDiscountError] = useState<string | null>(null);
+  const [isValidatingCode, setIsValidatingCode] = useState(false);
 
   const [isPlacing, setIsPlacing] = useState(false);
   const [placeError, setPlaceError] = useState<string | null>(null);
@@ -126,16 +135,39 @@ export function CheckoutFlow() {
         setOffices(result);
         setOfficeId((current) => (result.some((o) => o.id === current) ? current : ""));
       })
-      .catch(() => setOfficesError("Could not load lockers for this city."));
+      .catch(() => setOfficesError(t("checkout.load_lockers_error", "Could not load lockers for this city.")));
   }, [deliveryMethod, shippingAddress.city]);
 
   const items = cart?.items ?? [];
   const subtotal = cart?.subtotal ?? { amount: 0, currency: "EUR" };
   const selectedDeliveryMethod = deliveryMethods?.find((m) => m.code === deliveryMethod) ?? null;
+  const discountAmount = appliedDiscount
+    ? Math.round(subtotal.amount * (appliedDiscount.value_percent / 100))
+    : 0;
   const grandTotal = {
-    amount: subtotal.amount + (selectedDeliveryMethod?.fee.amount ?? 0),
+    amount: subtotal.amount - discountAmount + (selectedDeliveryMethod?.fee.amount ?? 0),
     currency: subtotal.currency,
   };
+
+  async function applyDiscountCode() {
+    const code = discountCodeInput.trim();
+    if (!code) return;
+    setIsValidatingCode(true);
+    setDiscountError(null);
+    setAppliedDiscount(null);
+    try {
+      const result = await validateDiscountCode(code);
+      if (!result.valid) {
+        setDiscountError(t("checkout.invalid_discount", "This discount code is invalid or has expired."));
+      } else {
+        setAppliedDiscount(result);
+      }
+    } catch {
+      setDiscountError(t("checkout.discount_error", "Could not validate the discount code."));
+    } finally {
+      setIsValidatingCode(false);
+    }
+  }
 
   function selectSavedAddress(id: string) {
     setSelectedSavedAddressId(id);
@@ -145,18 +177,18 @@ export function CheckoutFlow() {
 
   function validateDetails(): boolean {
     if (!contact.full_name.trim() || !contact.email.trim()) {
-      setDetailsError("Full name and email are required.");
+      setDetailsError(t("checkout.contact_required_error", "Full name and email are required."));
       return false;
     }
     if (!shippingAddress.line1.trim() || !shippingAddress.city.trim() ||
       !shippingAddress.postal_code.trim() || shippingAddress.country_code.trim().length !== 2) {
-      setDetailsError("A complete shipping address with a country is required.");
+      setDetailsError(t("checkout.shipping_required_error", "A complete shipping address with a country is required."));
       return false;
     }
     if (!billingSameAsShipping) {
       if (!billingAddress.line1.trim() || !billingAddress.city.trim() ||
         !billingAddress.postal_code.trim() || billingAddress.country_code.trim().length !== 2) {
-        setDetailsError("A complete billing address with a country is required.");
+        setDetailsError(t("checkout.billing_required_error", "A complete billing address with a country is required."));
         return false;
       }
     }
@@ -164,8 +196,6 @@ export function CheckoutFlow() {
     return true;
   }
 
-  // The address itself no longer collects a separate recipient name/phone —
-  // the contact's full name and phone double as the delivery recipient.
   function withRecipient(address: CheckoutAddress): CheckoutAddress {
     return { ...address, recipient_name: contact.full_name, phone: contact.phone };
   }
@@ -183,6 +213,7 @@ export function CheckoutFlow() {
         delivery_office_id: deliveryMethod === "easybox" ? officeId : undefined,
         payment_method: paymentMethod,
         card: paymentMethod === "card_online" ? card : undefined,
+        discount_code: appliedDiscount?.code,
       });
       setPlacedOrder(order);
       setStep("confirmation");
@@ -190,8 +221,8 @@ export function CheckoutFlow() {
     } catch {
       setPlaceError(
         paymentMethod === "card_online"
-          ? "Payment could not be processed. Please check your card details and try again."
-          : "Could not place your order. Please try again.",
+          ? t("checkout.payment_failed_error", "Payment could not be processed. Please check your card details and try again.")
+          : t("checkout.place_order_error", "Could not place your order. Please try again."),
       );
     } finally {
       setIsPlacing(false);
@@ -201,9 +232,9 @@ export function CheckoutFlow() {
   if (items.length === 0 && !placedOrder) {
     return (
       <div className="flex flex-col items-center gap-4 py-16 text-center">
-        <Text tone="muted">Your cart is empty.</Text>
+        <Text tone="muted">{t("cart.empty", "Your cart is empty")}</Text>
         <Link to="/shop" className={buttonStyles({ variant: "primary" })}>
-          Continue Shopping
+          {t("common.continue_shopping", "Continue Shopping")}
         </Link>
       </div>
     );
@@ -217,33 +248,33 @@ export function CheckoutFlow() {
         {step === "details" && (
           <Card className="p-6">
             <Heading as="h2" size="sm">
-              Contact &amp; Shipping
+              {t("checkout.contact_shipping", "Contact & Shipping")}
             </Heading>
 
             {!isAuthenticated && (
               <div className="mt-3 flex items-center justify-between gap-3 rounded-sm bg-stone-50 px-4 py-3">
                 <Text size="sm" tone="muted">
-                  Have an account? Sign in for a faster checkout and to track this order.
+                  {t("checkout.signin_prompt", "Have an account? Sign in for a faster checkout and to track this order.")}
                 </Text>
                 <Link
                   to="/login"
                   state={{ from: { pathname: location.pathname, search: location.search } }}
                   className={buttonStyles({ variant: "outline", size: "sm" })}
                 >
-                  Log In / Register
+                  {t("checkout.login_register", "Log In / Register")}
                 </Link>
               </div>
             )}
 
             <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
-              <FormField label="Full name" htmlFor="contact-name">
+              <FormField label={t("common.full_name", "Full name")} htmlFor="contact-name">
                 <Input
                   id="contact-name"
                   value={contact.full_name}
                   onChange={(e) => setContact((c) => ({ ...c, full_name: e.target.value }))}
                 />
               </FormField>
-              <FormField label="Email" htmlFor="contact-email">
+              <FormField label={t("common.email", "Email")} htmlFor="contact-email">
                 <Input
                   id="contact-email"
                   type="email"
@@ -251,7 +282,7 @@ export function CheckoutFlow() {
                   onChange={(e) => setContact((c) => ({ ...c, email: e.target.value }))}
                 />
               </FormField>
-              <FormField label="Phone" htmlFor="contact-phone" hint="Optional">
+              <FormField label={t("common.phone", "Phone")} htmlFor="contact-phone" hint={t("common.optional", "Optional")}>
                 <Input
                   id="contact-phone"
                   type="tel"
@@ -262,14 +293,14 @@ export function CheckoutFlow() {
             </div>
 
             {isAuthenticated && savedAddresses.length > 0 && (
-              <FormField label="Shipping address" htmlFor="saved-address" className="mt-6">
+              <FormField label={t("checkout.shipping_address", "Shipping address")} htmlFor="saved-address" className="mt-6">
                 <Select id="saved-address" value={selectedSavedAddressId} onChange={(e) => selectSavedAddress(e.target.value)}>
                   {savedAddresses.map((a) => (
                     <option key={a.id} value={a.id}>
                       {a.label || a.recipient_name} — {a.line1}, {a.city}
                     </option>
                   ))}
-                  <option value="">Enter a new address</option>
+                  <option value="">{t("checkout.enter_new_address", "Enter a new address")}</option>
                 </Select>
               </FormField>
             )}
@@ -285,12 +316,12 @@ export function CheckoutFlow() {
                 onChange={(e) => setBillingSameAsShipping(e.target.checked)}
                 className="h-4 w-4 rounded-sm border-stone-300"
               />
-              Billing address same as shipping
+              {t("checkout.billing_same_as_shipping", "Billing address same as shipping")}
             </label>
 
             {!billingSameAsShipping && (
               <>
-                <Text className="mt-4 font-medium">Billing address</Text>
+                <Text className="mt-4 font-medium">{t("checkout.billing_address", "Billing address")}</Text>
                 <AddressFields className="mt-2" address={billingAddress} onChange={setBillingAddress} />
               </>
             )}
@@ -308,7 +339,7 @@ export function CheckoutFlow() {
                   if (validateDetails()) setStep("delivery");
                 }}
               >
-                Continue to Delivery
+                {t("checkout.continue_to_delivery", "Continue to Delivery")}
               </Button>
             </div>
           </Card>
@@ -317,7 +348,7 @@ export function CheckoutFlow() {
         {step === "delivery" && (
           <Card className="p-6">
             <Heading as="h2" size="sm">
-              Delivery Method
+              {t("checkout.delivery_method", "Delivery Method")}
             </Heading>
             <div className="mt-4 flex flex-col gap-3">
               {(deliveryMethods ?? []).map((method) => (
@@ -326,32 +357,32 @@ export function CheckoutFlow() {
                   selected={deliveryMethod === method.code}
                   onClick={() => setDeliveryMethod(method.code)}
                   title={method.name}
-                  description={method.fee.amount === 0 ? "Free" : formatMoney(method.fee)}
+                  description={method.fee.amount === 0 ? t("checkout.free", "Free") : formatMoney(method.fee)}
                 />
               ))}
             </div>
 
             {deliveryMethod === "easybox" && (
-              <FormField label="Choose a locker" htmlFor="easybox-office" className="mt-4">
+              <FormField label={t("checkout.choose_locker", "Choose a locker")} htmlFor="easybox-office" className="mt-4">
                 {officesError ? (
                   <Text size="sm" tone="danger">
                     {officesError}
                   </Text>
                 ) : !shippingAddress.city.trim() ? (
                   <Text size="sm" tone="muted">
-                    Enter a shipping city to see nearby lockers.
+                    {t("checkout.enter_city_for_lockers", "Enter a shipping city to see nearby lockers.")}
                   </Text>
                 ) : offices === null ? (
                   <Text size="sm" tone="muted">
-                    Loading lockers…
+                    {t("checkout.loading_lockers", "Loading lockers…")}
                   </Text>
                 ) : offices.length === 0 ? (
                   <Text size="sm" tone="muted">
-                    No lockers found for this city.
+                    {t("checkout.no_lockers_found", "No lockers found for this city.")}
                   </Text>
                 ) : (
                   <Select id="easybox-office" value={officeId} onChange={(e) => setOfficeId(e.target.value)}>
-                    <option value="">Select a locker</option>
+                    <option value="">{t("checkout.select_locker", "Select a locker")}</option>
                     {offices.map((o) => (
                       <option key={o.id} value={o.id}>
                         {o.name}
@@ -364,14 +395,14 @@ export function CheckoutFlow() {
 
             <div className="mt-6 flex justify-between">
               <Button variant="outline" onClick={() => setStep("details")}>
-                Back
+                {t("common.back", "Back")}
               </Button>
               <Button
                 variant="primary"
                 disabled={!deliveryMethod || (deliveryMethod === "easybox" && !officeId)}
                 onClick={() => setStep("payment")}
               >
-                Continue to Payment
+                {t("checkout.continue_to_payment", "Continue to Payment")}
               </Button>
             </div>
           </Card>
@@ -380,7 +411,7 @@ export function CheckoutFlow() {
         {step === "payment" && (
           <Card className="p-6">
             <Heading as="h2" size="sm">
-              Payment Method
+              {t("checkout.payment_method", "Payment Method")}
             </Heading>
             <div className="mt-4 flex flex-col gap-3">
               {(Object.keys(paymentMethodLabels) as PaymentMethodCode[]).map((method) => (
@@ -396,7 +427,7 @@ export function CheckoutFlow() {
 
             {paymentMethod === "card_online" && (
               <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <FormField label="Card number" htmlFor="card-number" className="sm:col-span-2" hint="Mock payment — any number works, except one ending in 0000.">
+                <FormField label={t("checkout.card_number", "Card number")} htmlFor="card-number" className="sm:col-span-2" hint={t("checkout.card_mock_hint", "Mock payment — any number works, except one ending in 0000.")}>
                   <Input
                     id="card-number"
                     value={card.number}
@@ -404,7 +435,7 @@ export function CheckoutFlow() {
                     placeholder="4242 4242 4242 4242"
                   />
                 </FormField>
-                <FormField label="Expiry month" htmlFor="card-exp-month">
+                <FormField label={t("common.expiry_month", "Expiry month")} htmlFor="card-exp-month">
                   <Input
                     id="card-exp-month"
                     type="number"
@@ -414,7 +445,7 @@ export function CheckoutFlow() {
                     onChange={(e) => setCard((c) => ({ ...c, exp_month: Number(e.target.value) }))}
                   />
                 </FormField>
-                <FormField label="Expiry year" htmlFor="card-exp-year">
+                <FormField label={t("common.expiry_year", "Expiry year")} htmlFor="card-exp-year">
                   <Input
                     id="card-exp-year"
                     type="number"
@@ -422,7 +453,7 @@ export function CheckoutFlow() {
                     onChange={(e) => setCard((c) => ({ ...c, exp_year: Number(e.target.value) }))}
                   />
                 </FormField>
-                <FormField label="CVV" htmlFor="card-cvv">
+                <FormField label={t("checkout.cvv", "CVV")} htmlFor="card-cvv">
                   <Input id="card-cvv" value={card.cvv} onChange={(e) => setCard((c) => ({ ...c, cvv: e.target.value }))} />
                 </FormField>
               </div>
@@ -436,15 +467,15 @@ export function CheckoutFlow() {
 
             <div className="mt-6 flex justify-between">
               <Button variant="outline" onClick={() => setStep("delivery")} disabled={isPlacing}>
-                Back
+                {t("common.back", "Back")}
               </Button>
               {paymentMethod === "card_online" ? (
                 <Button variant="primary" onClick={submitOrder} disabled={isPlacing || !card.number.trim()}>
-                  {isPlacing ? "Processing payment…" : `Pay ${formatMoney(grandTotal)}`}
+                  {isPlacing ? t("checkout.processing_payment", "Processing payment…") : `${t("checkout.pay", "Pay")} ${formatMoney(grandTotal)}`}
                 </Button>
               ) : (
                 <Button variant="primary" disabled={!paymentMethod} onClick={() => setStep("confirmation")}>
-                  Review Order
+                  {t("checkout.review_order", "Review Order")}
                 </Button>
               )}
             </div>
@@ -456,28 +487,38 @@ export function CheckoutFlow() {
             {placedOrder ? (
               <>
                 <Heading as="h2" size="sm">
-                  Order Placed
+                  {t("checkout.order_placed", "Order Placed")}
                 </Heading>
                 <Text className="mt-2" tone="muted">
-                  Thank you! Your order <span className="font-medium text-stone-900">{placedOrder.order_number}</span> has
-                  been {placedOrder.status === "paid" ? "paid and placed" : "placed"}.
+                  {t("checkout.order_confirmed_prefix", "Thank you! Your order")}{" "}
+                  <span className="font-medium text-stone-900">{placedOrder.order_number}</span>{" "}
+                  {t("checkout.order_confirmed_suffix", "has been")}{" "}
+                  {placedOrder.status === "paid"
+                    ? t("checkout.order_paid_placed", "paid and placed")
+                    : t("checkout.order_placed_fallback", "placed")}.
                 </Text>
-                <OrderSummary order={placedOrder} />
+                <OrderSummary order={placedOrder} totalLabel={t("checkout.total", "Total")} />
               </>
             ) : (
               <>
                 <Heading as="h2" size="sm">
-                  Review &amp; Complete
+                  {t("checkout.review_complete", "Review & Complete")}
                 </Heading>
                 <div className="mt-4 flex flex-col gap-2 text-sm text-stone-700">
-                  <SummaryRow label="Delivery" value={selectedDeliveryMethod?.name ?? ""} />
-                  <SummaryRow label="Payment" value={paymentMethod ? paymentMethodLabels[paymentMethod] : ""} />
-                  <SummaryRow label="Subtotal" value={formatMoney(subtotal)} />
+                  <SummaryRow label={t("checkout.delivery_label", "Delivery")} value={selectedDeliveryMethod?.name ?? ""} />
+                  <SummaryRow label={t("checkout.payment_label", "Payment")} value={paymentMethod ? paymentMethodLabels[paymentMethod] : ""} />
+                  <SummaryRow label={t("checkout.subtotal", "Subtotal")} value={formatMoney(subtotal)} />
+                  {appliedDiscount && (
+                    <SummaryRow
+                      label={`${t("checkout.discount_label", "Discount")} (${appliedDiscount.code})`}
+                      value={`−${formatMoney({ amount: discountAmount, currency: subtotal.currency })}`}
+                    />
+                  )}
                   <SummaryRow
-                    label="Delivery fee"
-                    value={selectedDeliveryMethod?.fee.amount ? formatMoney(selectedDeliveryMethod.fee) : "Free"}
+                    label={t("checkout.delivery_fee", "Delivery fee")}
+                    value={selectedDeliveryMethod?.fee.amount ? formatMoney(selectedDeliveryMethod.fee) : t("checkout.free", "Free")}
                   />
-                  <SummaryRow label="Total" value={formatMoney(grandTotal)} emphasize />
+                  <SummaryRow label={t("checkout.total", "Total")} value={formatMoney(grandTotal)} emphasize />
                 </div>
                 {placeError && (
                   <Text size="sm" tone="danger" className="mt-4">
@@ -486,10 +527,10 @@ export function CheckoutFlow() {
                 )}
                 <div className="mt-6 flex justify-between">
                   <Button variant="outline" onClick={() => setStep("payment")} disabled={isPlacing}>
-                    Back
+                    {t("common.back", "Back")}
                   </Button>
                   <Button variant="primary" onClick={submitOrder} disabled={isPlacing}>
-                    {isPlacing ? "Placing order…" : "Complete Order"}
+                    {isPlacing ? t("checkout.placing_order", "Placing order…") : t("checkout.complete_order", "Complete Order")}
                   </Button>
                 </div>
               </>
@@ -500,7 +541,7 @@ export function CheckoutFlow() {
 
       <Card className="h-fit p-6">
         <Heading as="h2" size="sm">
-          Order Summary
+          {t("checkout.order_summary", "Order Summary")}
         </Heading>
         <ul className="mt-4 flex flex-col gap-3">
           {items.map((item) => (
@@ -516,7 +557,7 @@ export function CheckoutFlow() {
         </ul>
         <div className="mt-4 flex items-center justify-between border-t border-stone-200 pt-4">
           <Text size="sm" className="font-medium">
-            Subtotal
+            {t("checkout.subtotal", "Subtotal")}
           </Text>
           <Text size="sm" className="font-medium">
             {formatMoney(subtotal)}
@@ -524,14 +565,60 @@ export function CheckoutFlow() {
         </div>
         <div className="mt-2 flex items-center justify-between">
           <Text size="sm" tone="muted">
-            Delivery
+            {t("checkout.delivery_label", "Delivery")}
           </Text>
           <Text size="sm" tone="muted">
-            {selectedDeliveryMethod ? (selectedDeliveryMethod.fee.amount ? formatMoney(selectedDeliveryMethod.fee) : "Free") : "–"}
+            {selectedDeliveryMethod ? (selectedDeliveryMethod.fee.amount ? formatMoney(selectedDeliveryMethod.fee) : t("checkout.free", "Free")) : "–"}
           </Text>
         </div>
-        <div className="mt-2 flex items-center justify-between">
-          <Text className="font-medium">Total</Text>
+
+        <div className="mt-4 border-t border-stone-200 pt-4">
+          {appliedDiscount ? (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Text size="sm" tone="muted">
+                  {t("checkout.discount_label", "Discount")} ({appliedDiscount.code})
+                </Text>
+                <button
+                  type="button"
+                  onClick={() => { setAppliedDiscount(null); setDiscountCodeInput(""); }}
+                  className="text-xs text-stone-400 hover:text-stone-700"
+                >
+                  ✕
+                </button>
+              </div>
+              <Text size="sm" tone="muted">
+                −{formatMoney({ amount: discountAmount, currency: subtotal.currency })}
+              </Text>
+            </div>
+          ) : (
+            <div className="flex gap-2">
+              <Input
+                placeholder={t("checkout.discount_code", "Discount code")}
+                value={discountCodeInput}
+                onChange={(e) => setDiscountCodeInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void applyDiscountCode(); }}
+                className="flex-1 text-sm"
+              />
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => void applyDiscountCode()}
+                disabled={isValidatingCode || !discountCodeInput.trim()}
+              >
+                {isValidatingCode ? "…" : t("checkout.apply", "Apply")}
+              </Button>
+            </div>
+          )}
+          {discountError && (
+            <Text size="sm" tone="danger" className="mt-1">
+              {discountError}
+            </Text>
+          )}
+        </div>
+
+        <div className="mt-2 flex items-center justify-between border-t border-stone-200 pt-4">
+          <Text className="font-medium">{t("checkout.total", "Total")}</Text>
           <Text className="font-medium">{formatMoney(grandTotal)}</Text>
         </div>
       </Card>
@@ -540,11 +627,12 @@ export function CheckoutFlow() {
 }
 
 function StepIndicator({ step }: { step: Step }) {
+  const { t } = useLanguage();
   const steps: { key: Step; label: string }[] = [
-    { key: "details", label: "Details" },
-    { key: "delivery", label: "Delivery" },
-    { key: "payment", label: "Payment" },
-    { key: "confirmation", label: "Review" },
+    { key: "details", label: t("checkout.step_details", "Details") },
+    { key: "delivery", label: t("checkout.step_delivery", "Delivery") },
+    { key: "payment", label: t("checkout.step_payment", "Payment") },
+    { key: "confirmation", label: t("checkout.step_review", "Review") },
   ];
   const currentIndex = steps.findIndex((s) => s.key === step);
   return (
@@ -610,7 +698,7 @@ function SummaryRow({ label, value, emphasize }: { label: string; value: string;
   );
 }
 
-function OrderSummary({ order }: { order: PlacedOrder }) {
+function OrderSummary({ order, totalLabel }: { order: PlacedOrder; totalLabel: string }) {
   return (
     <div className="mt-6 flex flex-col gap-2 text-sm">
       {order.items.map((item, i) => (
@@ -624,7 +712,7 @@ function OrderSummary({ order }: { order: PlacedOrder }) {
         </div>
       ))}
       <div className="mt-2 flex items-center justify-between border-t border-stone-200 pt-2 font-medium text-stone-900">
-        <span>Total</span>
+        <span>{totalLabel}</span>
         <span>{formatMoney(order.total)}</span>
       </div>
     </div>
@@ -640,30 +728,32 @@ function AddressFields({
   onChange: (a: CheckoutAddress) => void;
   className?: string;
 }) {
+  const { t } = useLanguage();
+
   function update<K extends keyof CheckoutAddress>(key: K, value: CheckoutAddress[K]) {
     onChange({ ...address, [key]: value });
   }
 
   return (
     <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${className ?? ""}`}>
-      <FormField label="Address line 1" htmlFor="addr-line1" className="sm:col-span-2">
+      <FormField label={t("common.address_line1", "Address line 1")} htmlFor="addr-line1" className="sm:col-span-2">
         <Input id="addr-line1" value={address.line1} onChange={(e) => update("line1", e.target.value)} />
       </FormField>
-      <FormField label="Address line 2" htmlFor="addr-line2" hint="Optional" className="sm:col-span-2">
+      <FormField label={t("common.address_line2", "Address line 2")} htmlFor="addr-line2" hint={t("common.optional", "Optional")} className="sm:col-span-2">
         <Input id="addr-line2" value={address.line2} onChange={(e) => update("line2", e.target.value)} />
       </FormField>
-      <FormField label="City" htmlFor="addr-city">
+      <FormField label={t("common.city", "City")} htmlFor="addr-city">
         <Input id="addr-city" value={address.city} onChange={(e) => update("city", e.target.value)} />
       </FormField>
-      <FormField label="Region / State" htmlFor="addr-region" hint="Optional">
+      <FormField label={t("common.region", "Region / State")} htmlFor="addr-region" hint={t("common.optional", "Optional")}>
         <Input id="addr-region" value={address.region} onChange={(e) => update("region", e.target.value)} />
       </FormField>
-      <FormField label="Postal code" htmlFor="addr-postal-code">
+      <FormField label={t("common.postal_code", "Postal code")} htmlFor="addr-postal-code">
         <Input id="addr-postal-code" value={address.postal_code} onChange={(e) => update("postal_code", e.target.value)} />
       </FormField>
-      <FormField label="Country" htmlFor="addr-country-code">
+      <FormField label={t("common.country", "Country")} htmlFor="addr-country-code">
         <Select id="addr-country-code" value={address.country_code} onChange={(e) => update("country_code", e.target.value)}>
-          <option value="">Select a country</option>
+          <option value="">{t("common.select_country", "Select a country")}</option>
           {COUNTRIES.map((country) => (
             <option key={country.code} value={country.code}>
               {country.name}

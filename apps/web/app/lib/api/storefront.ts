@@ -16,6 +16,7 @@ export type NavCategory = {
   name: string;
   slug: string;
   image_url?: string;
+  has_promotion?: boolean;
 };
 
 export type NavType = {
@@ -42,14 +43,17 @@ export type StorefrontProduct = {
   description: string;
   base_price: Money;
   compare_at_price?: Money;
+  promotion_price?: Money;
+  promotion_label?: string;
   image_url?: string;
   in_stock: boolean;
   created_at: string;
 };
 
-type RawStorefrontProduct = Omit<StorefrontProduct, "base_price" | "compare_at_price"> & {
+type RawStorefrontProduct = Omit<StorefrontProduct, "base_price" | "compare_at_price" | "promotion_price"> & {
   base_price: MoneyDTO;
   compare_at_price?: MoneyDTO;
+  promotion_price?: MoneyDTO;
 };
 
 function fromRawProduct(raw: RawStorefrontProduct): StorefrontProduct {
@@ -57,6 +61,7 @@ function fromRawProduct(raw: RawStorefrontProduct): StorefrontProduct {
     ...raw,
     base_price: fromMoneyDTO(raw.base_price),
     compare_at_price: raw.compare_at_price ? fromMoneyDTO(raw.compare_at_price) : undefined,
+    promotion_price: raw.promotion_price ? fromMoneyDTO(raw.promotion_price) : undefined,
   };
 }
 
@@ -67,6 +72,8 @@ export type StorefrontProductFilters = {
   q?: string;
   limit?: number;
   locale?: string;
+  productIds?: string[];
+  hasPromotion?: boolean;
 };
 
 function buildProductFilterParams(filters: StorefrontProductFilters): URLSearchParams {
@@ -76,6 +83,8 @@ function buildProductFilterParams(filters: StorefrontProductFilters): URLSearchP
   for (const id of filters.attributeValueIds ?? []) params.append("attribute_value_id", id);
   if (filters.q) params.set("q", filters.q);
   if (filters.limit) params.set("limit", String(filters.limit));
+  for (const id of filters.productIds ?? []) params.append("product_id", id);
+  if (filters.hasPromotion) params.set("has_promotion", "true");
   return withLocale(params, filters.locale);
 }
 
@@ -235,4 +244,13 @@ export function getUiStrings(locale?: string): Promise<Record<string, string>> {
   return apiFetch<Record<string, string>>(`/api/v1/storefront/ui-strings${query ? `?${query}` : ""}`, {
     auth: false,
   });
+}
+
+export async function getBestInCategoryProducts(locale?: string): Promise<StorefrontProduct[]> {
+  const query = withLocale(new URLSearchParams(), locale).toString();
+  const raw = await apiFetch<RawStorefrontProduct[]>(
+    `/api/v1/storefront/products/best-in-category${query ? `?${query}` : ""}`,
+    { auth: false },
+  );
+  return raw.map(fromRawProduct);
 }

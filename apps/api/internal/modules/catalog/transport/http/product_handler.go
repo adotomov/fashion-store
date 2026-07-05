@@ -67,6 +67,7 @@ type productResponse struct {
 	Status         string                 `json:"status"`
 	BasePrice      moneyResponse          `json:"base_price"`
 	CompareAtPrice *moneyResponse         `json:"compare_at_price,omitempty"`
+	NKSCode        string                 `json:"nks_code"`
 	CategoryIDs    []string               `json:"category_ids,omitempty"`
 	CatalogIDs     []string               `json:"catalog_ids,omitempty"`
 	Attributes     []attributeRefResponse `json:"attributes,omitempty"`
@@ -85,6 +86,7 @@ func toProductResponse(p domain.Product) productResponse {
 		Description:  p.Description,
 		Status:       string(p.Status),
 		BasePrice:    toMoneyResponse(p.BasePrice),
+		NKSCode:      p.NKSCode,
 		VariantCount: p.VariantCount,
 		CreatedAt:    p.CreatedAt.Format(timeFormat),
 		UpdatedAt:    p.UpdatedAt.Format(timeFormat),
@@ -166,6 +168,7 @@ type updateProductRequest struct {
 	BasePrice           *moneyResponse `json:"base_price,omitempty"`
 	CompareAtPrice      *moneyResponse `json:"compare_at_price,omitempty"`
 	ClearCompareAtPrice bool           `json:"clear_compare_at_price,omitempty"`
+	NKSCode             *string        `json:"nks_code,omitempty"`
 }
 
 func (h *ProductHandler) update(w http.ResponseWriter, r *http.Request) {
@@ -181,7 +184,7 @@ func (h *ProductHandler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := application.UpdateProductInput{Name: req.Name, Description: req.Description}
+	input := application.UpdateProductInput{Name: req.Name, Description: req.Description, NKSCode: req.NKSCode}
 	if req.Status != nil {
 		status := domain.ProductStatus(*req.Status)
 		input.Status = &status

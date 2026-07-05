@@ -1,0 +1,324 @@
+package application
+
+import (
+	"bytes"
+	"context"
+	"encoding/csv"
+	"errors"
+	"fmt"
+	"strings"
+	"time"
+
+	"github.com/google/uuid"
+
+	"github.com/adotomov/fashion-store/apps/api/internal/modules/invoicing/domain"
+	ordersdomain "github.com/adotomov/fashion-store/apps/api/internal/modules/orders/domain"
+	"github.com/adotomov/fashion-store/apps/api/internal/shared/money"
+)
+
+type Service struct {
+	repo       Repository
+	orders     OrderReader
+	catalogNKS ProductNKSReader
+}
+
+func NewService(repo Repository, orders OrderReader, catalogNKS ProductNKSReader) *Service {
+	return &Service{repo: repo, orders: orders, catalogNKS: catalogNKS}
+}
+
+// GenerateForOrder creates a фактура invoice for the given order. It is
+// idempotent: if an invoice already exists for the order, the existing one is
+// returned without creating a duplicate.
+func (s *Service) GenerateForOrder(ctx context.Context, orderID uuid.UUID, actor string) (*domain.Invoice, error) {
+	existing, err := s.repo.FindByOrderID(ctx, orderID)
+	if err != nil && !errors.Is(err, domain.ErrInvoiceNotFound) {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+
+	order, err := s.orders.FindByID(ctx, orderID)
+	if err != nil {
+		return nil, fmt.Errorf("load order: %w", err)
+	}
+
+	settings, err := s.repo.GetSettings(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load invoice settings: %w", err)
+	}
+	if settings.CompanyEIK == "" || settings.NRAStoreNumber == "" {
+		return nil, domain.ErrSettingsIncomplete
+	}
+
+	lineItems, grandTotalIncl, grandTotalExcl, grandVAT := s.buildLineItems(ctx, order)
+
+	recipientAddr := buildAddressString(order.ShippingAddress)
+
+	inv := domain.Invoice{
+		ID:           uuid.New(),
+		DocumentType: domain.DocumentTypeFaktura,
+		OrderID:      orderID,
+		OrderNumber:  order.OrderNumber,
+		PlacedAt:     order.PlacedAt,
+		PaymentMethod: order.PaymentMethod,
+
+		CompanyName:      settings.CompanyName,
+		CompanyLegalType: settings.CompanyLegalType,
+		CompanyEIK:       settings.CompanyEIK,
+		CompanyAddress:   formatSettingsAddress(settings),
+		CompanyEmail:     settings.CompanyEmail,
+		CompanyPhone:     settings.CompanyPhone,
+		NRAStoreNumber:   settings.NRAStoreNumber,
+		VATNumber:        settings.VATNumber,
+		VATRate:          settings.VATRate,
+
+		RecipientName:    order.ContactName,
+		RecipientAddress: recipientAddr,
+		RecipientEmail:   order.ContactEmail,
+
+		SubtotalExclVAT: money.Money{AmountMinor: grandTotalExcl, Currency: order.Total.Currency},
+		VATAmount:       money.Money{AmountMinor: grandVAT, Currency: order.Total.Currency},
+		TotalInclVAT:    money.Money{AmountMinor: grandTotalIncl, Currency: order.Total.Currency},
+		DeliveryFee:     order.DeliveryFee,
+		DiscountAmount:  order.DiscountAmount,
+
+		LineItems: lineItems,
+	}
+
+	// Payment reference
+	switch order.PaymentMethod {
+	case ordersdomain.PaymentMethodCardOnline:
+		if order.Payment != nil {
+			inv.CardProvider = &order.Payment.Provider
+			inv.CardProviderReference = &order.Payment.ProviderReference
+		}
+	case ordersdomain.PaymentMethodCashOnDelivery, ordersdomain.PaymentMethodCardOnEasyBox:
+		couriers, _ := s.repo.ListCouriers(ctx)
+		if carrier := order.Carrier; carrier != nil {
+			inv.CourierName = carrier
+			for _, c := range couriers {
+				if strings.EqualFold(c.Name, *carrier) || strings.EqualFold(c.Identifier, *carrier) {
+					inv.CourierIdentifier = &c.Identifier
+					break
+				}
+			}
+		}
+	}
+
+	created, err := s.repo.CreateInvoice(ctx, inv)
+	if err != nil {
+		return nil, fmt.Errorf("create invoice: %w", err)
+	}
+
+	_ = s.repo.LogAuditEvent(ctx, created.InvoiceNumber, "invoice.created", actor, nil)
+	return created, nil
+}
+
+// GenerateStorno issues a сторно invoice referencing the original фактура.
+func (s *Service) GenerateStorno(ctx context.Context, invoiceID uuid.UUID, actor string) (*domain.Invoice, error) {
+	original, err := s.repo.FindByID(ctx, invoiceID)
+	if err != nil {
+		return nil, err
+	}
+	if original.DocumentType == domain.DocumentTypeStorno {
+		return nil, domain.ErrCannotStornoAStorno
+	}
+
+	storno := *original
+	storno.ID = uuid.New()
+	storno.InvoiceNumber = "" // assigned by DB sequence default
+	storno.DocumentType = domain.DocumentTypeStorno
+	storno.StornoOfInvoiceID = &original.ID
+	storno.CreatedAt = time.Time{}
+
+	created, err := s.repo.CreateInvoice(ctx, storno)
+	if err != nil {
+		return nil, fmt.Errorf("create storno invoice: %w", err)
+	}
+
+	_ = s.repo.LogAuditEvent(ctx, created.InvoiceNumber, "invoice.storno_issued", actor, map[string]any{
+		"original_invoice_number": original.InvoiceNumber,
+	})
+	return created, nil
+}
+
+func (s *Service) List(ctx context.Context, filter ListFilter) ([]domain.Invoice, error) {
+	return s.repo.List(ctx, filter)
+}
+
+func (s *Service) FindByID(ctx context.Context, id uuid.UUID) (*domain.Invoice, error) {
+	return s.repo.FindByID(ctx, id)
+}
+
+func (s *Service) GetSettings(ctx context.Context) (domain.InvoiceSettings, error) {
+	return s.repo.GetSettings(ctx)
+}
+
+func (s *Service) SaveSettings(ctx context.Context, settings domain.InvoiceSettings) error {
+	return s.repo.SaveSettings(ctx, settings)
+}
+
+func (s *Service) ListCouriers(ctx context.Context) ([]domain.Courier, error) {
+	return s.repo.ListCouriers(ctx)
+}
+
+func (s *Service) CreateCourier(ctx context.Context, courier domain.Courier) (*domain.Courier, error) {
+	courier.ID = uuid.New()
+	return s.repo.CreateCourier(ctx, courier)
+}
+
+func (s *Service) UpdateCourier(ctx context.Context, id uuid.UUID, courier domain.Courier) (*domain.Courier, error) {
+	return s.repo.UpdateCourier(ctx, id, courier)
+}
+
+func (s *Service) DeleteCourier(ctx context.Context, id uuid.UUID) error {
+	return s.repo.DeleteCourier(ctx, id)
+}
+
+// ExportCSV returns a CSV byte slice for invoices in the given date range.
+func (s *Service) ExportCSV(ctx context.Context, from, to time.Time, actor string) ([]byte, error) {
+	invoices, err := s.repo.List(ctx, ListFilter{From: &from, To: &to, Limit: 10000})
+	if err != nil {
+		return nil, err
+	}
+
+	loc, _ := time.LoadLocation("Europe/Sofia")
+
+	var buf bytes.Buffer
+	w := csv.NewWriter(&buf)
+	_ = w.Write([]string{
+		"invoice_number", "document_type", "order_number", "date_sofia",
+		"payment_method", "recipient_name", "subtotal_excl_vat", "vat_amount",
+		"total_incl_vat", "currency", "delivery_fee",
+	})
+	for _, inv := range invoices {
+		dateSofia := inv.CreatedAt.In(loc).Format("2006-01-02 15:04:05")
+		_ = w.Write([]string{
+			inv.InvoiceNumber,
+			string(inv.DocumentType),
+			inv.OrderNumber,
+			dateSofia,
+			inv.PaymentMethod,
+			inv.RecipientName,
+			formatMinor(inv.SubtotalExclVAT.AmountMinor),
+			formatMinor(inv.VATAmount.AmountMinor),
+			formatMinor(inv.TotalInclVAT.AmountMinor),
+			inv.TotalInclVAT.Currency,
+			formatMinor(inv.DeliveryFee.AmountMinor),
+		})
+	}
+	w.Flush()
+
+	_ = s.repo.LogAuditEvent(ctx, "*", "invoice.csv_exported", actor, map[string]any{
+		"from": from.Format(time.RFC3339),
+		"to":   to.Format(time.RFC3339),
+		"rows": len(invoices),
+	})
+	return buf.Bytes(), nil
+}
+
+func (s *Service) LogPDFView(ctx context.Context, inv *domain.Invoice, actor string) {
+	_ = s.repo.LogAuditEvent(ctx, inv.InvoiceNumber, "invoice.pdf_viewed", actor, nil)
+}
+
+// buildLineItems computes per-line VAT breakdown for all order items using
+// 20%-inclusive pricing: excl = floor(incl * 100 / 120), vat = incl - excl.
+func (s *Service) buildLineItems(ctx context.Context, order *ordersdomain.Order) (
+	items []domain.InvoiceLineItem, grandInclMinor, grandExclMinor, grandVATMinor int64,
+) {
+	for i, oi := range order.Items {
+		nksCode := ""
+		if oi.ProductID != nil {
+			nksCode, _ = s.catalogNKS.GetNKSCode(ctx, *oi.ProductID)
+		}
+
+		unitIncl := oi.UnitPrice.AmountMinor
+		unitExcl := unitIncl * 100 / 120
+		vatUnit := unitIncl - unitExcl
+
+		qty := int64(oi.Quantity)
+		lineIncl := unitIncl * qty
+		lineExcl := unitExcl * qty
+		lineVAT := vatUnit * qty
+
+		grandInclMinor += lineIncl
+		grandExclMinor += lineExcl
+		grandVATMinor += lineVAT
+
+		items = append(items, domain.InvoiceLineItem{
+			ID:                uuid.New(),
+			ProductName:       oi.ProductName,
+			VariantLabel:      oi.VariantLabel,
+			NKSCode:           nksCode,
+			Quantity:          oi.Quantity,
+			UnitPriceInclVAT:  money.Money{AmountMinor: unitIncl, Currency: oi.UnitPrice.Currency},
+			UnitPriceExclVAT:  money.Money{AmountMinor: unitExcl, Currency: oi.UnitPrice.Currency},
+			VATPerUnit:        money.Money{AmountMinor: vatUnit, Currency: oi.UnitPrice.Currency},
+			LineTotalInclVAT:  money.Money{AmountMinor: lineIncl, Currency: oi.UnitPrice.Currency},
+			LineTotalExclVAT:  money.Money{AmountMinor: lineExcl, Currency: oi.UnitPrice.Currency},
+			LineVATAmount:     money.Money{AmountMinor: lineVAT, Currency: oi.UnitPrice.Currency},
+			SortOrder:         i,
+		})
+	}
+
+	// Add delivery fee to grand totals (also VAT-inclusive)
+	if order.DeliveryFee.AmountMinor > 0 {
+		df := order.DeliveryFee.AmountMinor
+		dfExcl := df * 100 / 120
+		grandInclMinor += df
+		grandExclMinor += dfExcl
+		grandVATMinor += df - dfExcl
+	}
+
+	// Subtract discount from incl total; split proportionally for excl/VAT
+	if order.DiscountAmount != nil && order.DiscountAmount.AmountMinor > 0 {
+		disc := order.DiscountAmount.AmountMinor
+		discExcl := disc * 100 / 120
+		grandInclMinor -= disc
+		grandExclMinor -= discExcl
+		grandVATMinor -= disc - discExcl
+	}
+
+	return items, grandInclMinor, grandExclMinor, grandVATMinor
+}
+
+func formatSettingsAddress(s domain.InvoiceSettings) string {
+	var parts []string
+	if s.CompanyAddressStreet != "" {
+		parts = append(parts, s.CompanyAddressStreet)
+	}
+	cityPart := strings.TrimSpace(s.CompanyAddressPostalCode + " " + s.CompanyAddressCity)
+	if cityPart != "" {
+		parts = append(parts, cityPart)
+	}
+	if s.CompanyAddressCountry != "" {
+		parts = append(parts, s.CompanyAddressCountry)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func buildAddressString(addr ordersdomain.OrderAddress) string {
+	parts := []string{addr.Line1}
+	if addr.Line2 != "" {
+		parts = append(parts, addr.Line2)
+	}
+	cityLine := addr.City
+	if addr.Region != "" {
+		cityLine += ", " + addr.Region
+	}
+	if addr.PostalCode != "" {
+		cityLine += " " + addr.PostalCode
+	}
+	parts = append(parts, cityLine, addr.CountryCode)
+	return strings.Join(parts, ", ")
+}
+
+func formatMinor(minor int64) string {
+	major := minor / 100
+	cents := minor % 100
+	if cents < 0 {
+		cents = -cents
+	}
+	return fmt.Sprintf("%d.%02d", major, cents)
+}

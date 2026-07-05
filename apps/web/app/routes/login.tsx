@@ -1,11 +1,13 @@
 import { Link, Navigate, useLocation } from "react-router";
 
 import { useAuth } from "../features/auth/AuthContext";
+import { useLanguage } from "../features/i18n/LanguageContext";
 import { GoogleSignInButton } from "../features/auth/GoogleSignInButton";
 import { useStoreBranding } from "../features/store-settings/StoreSettingsContext";
 import { Eyebrow, Heading, Text } from "../components/ui/Text";
 
 export default function Login() {
+  const { t } = useLanguage();
   const { isAuthenticated, isLoading } = useAuth();
   const { storeName, logoUrl } = useStoreBranding();
   const location = useLocation();
@@ -26,12 +28,12 @@ export default function Login() {
         />
         <div className="absolute inset-0 bg-gradient-to-t from-stone-950/70 via-stone-950/10 to-stone-950/40" />
         <div className="absolute inset-x-0 bottom-0 p-12">
-          <Eyebrow className="text-stone-100/80">New Season</Eyebrow>
+          <Eyebrow className="text-stone-100/80">{t("login.hero_eyebrow", "New Season")}</Eyebrow>
           <Heading as="h2" size="lg" className="mt-3 text-white">
-            Crafted pieces, made to last.
+            {t("login.hero_heading", "Crafted pieces, made to last.")}
           </Heading>
           <Text className="mt-2 max-w-sm text-stone-100/80">
-            Sign in to track orders, save favorites, and check out faster.
+            {t("login.hero_subtext", "Sign in to track orders, save favorites, and check out faster.")}
           </Text>
         </div>
       </div>
@@ -44,10 +46,10 @@ export default function Login() {
           </Link>
 
           <Heading as="h1" size="lg" className="mt-10">
-            Welcome back
+            {t("login.welcome_back", "Welcome back")}
           </Heading>
           <Text tone="muted" className="mt-2">
-            Sign in to access your account, orders, and wishlist.
+            {t("login.subheading", "Sign in to access your account, orders, and wishlist.")}
           </Text>
 
           <div className="mt-8">
@@ -55,7 +57,7 @@ export default function Login() {
           </div>
 
           <Text size="xs" tone="muted" className="mt-8 text-center">
-            By continuing, you agree to {storeName}&apos;s{" "}
+            {t("login.terms_prefix", "By continuing, you agree to")} {storeName}&apos;s{" "}
             <Link to="/legal/terms" className="underline hover:text-stone-700">
               Terms of Service
             </Link>{" "}
@@ -68,9 +70,9 @@ export default function Login() {
 
           <Text size="sm" tone="muted" className="mt-10 text-center">
             <Link to="/shop" className="font-medium text-stone-900 underline hover:text-stone-700">
-              Continue browsing
+              {t("login.continue_browsing", "Continue browsing")}
             </Link>{" "}
-            without signing in
+            {t("login.without_signin", "without signing in")}
           </Text>
         </div>
       </div>

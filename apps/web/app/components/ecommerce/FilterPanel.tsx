@@ -1,3 +1,4 @@
+import { useLanguage } from "../../features/i18n/LanguageContext";
 import { cn } from "../../lib/utils/cn";
 import { Checkbox } from "../ui/Checkbox";
 import { type ColorOption, ColorSwatch } from "../ui/ColorSwatch";
@@ -24,6 +25,7 @@ type FilterPanelProps = {
 };
 
 export function FilterPanel({ groups, selected, onToggle, onClear, className }: FilterPanelProps) {
+  const { t } = useLanguage();
   const hasActiveFilters = Object.values(selected).some((ids) => ids.length > 0);
 
   return (
@@ -32,12 +34,12 @@ export function FilterPanel({ groups, selected, onToggle, onClear, className }: 
         <div className="flex items-center gap-2">
           <Icon name="filters" size={16} className="text-stone-500" />
           <Text size="sm" className="font-medium">
-            Filters
+            {t("shop.filters", "Filters")}
           </Text>
         </div>
         {hasActiveFilters && (
           <button type="button" onClick={onClear} className="text-xs text-stone-500 underline hover:text-stone-900">
-            Clear all
+            {t("shop.clear_filters", "Clear all")}
           </button>
         )}
       </div>

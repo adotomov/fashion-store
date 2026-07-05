@@ -64,6 +64,7 @@ type placeOrderRequest struct {
 	DeliveryOfficeID string         `json:"delivery_office_id,omitempty"`
 	PaymentMethod    string         `json:"payment_method"`
 	Card             cardRequest    `json:"card"`
+	DiscountCode     string         `json:"discount_code,omitempty"`
 }
 
 func (req placeOrderRequest) toInput() application.PlaceOrderInput {
@@ -83,6 +84,7 @@ func (req placeOrderRequest) toInput() application.PlaceOrderInput {
 		Card: application.CardInput{
 			Number: req.Card.Number, ExpMonth: req.Card.ExpMonth, ExpYear: req.Card.ExpYear, CVV: req.Card.CVV,
 		},
+		DiscountCode: req.DiscountCode,
 	}
 }
 
@@ -102,6 +104,8 @@ type orderResultResponse struct {
 	DeliveryFee    moneyResponse       `json:"delivery_fee"`
 	PaymentMethod  string              `json:"payment_method"`
 	PlacedAt       string              `json:"placed_at"`
+	DiscountCode   *string             `json:"discount_code,omitempty"`
+	DiscountAmount *moneyResponse      `json:"discount_amount,omitempty"`
 	Items          []orderItemResponse `json:"items"`
 }
 
@@ -115,7 +119,12 @@ func toOrderResultResponse(o application.OrderResult) orderResultResponse {
 		DeliveryFee:    moneyResponse{AmountMinor: o.DeliveryFee.AmountMinor, Currency: o.DeliveryFee.Currency},
 		PaymentMethod:  o.PaymentMethod,
 		PlacedAt:       o.PlacedAt.Format(timeFormat),
+		DiscountCode:   o.DiscountCode,
 		Items:          make([]orderItemResponse, 0, len(o.Items)),
+	}
+	if o.DiscountAmount != nil {
+		dm := moneyResponse{AmountMinor: o.DiscountAmount.AmountMinor, Currency: o.DiscountAmount.Currency}
+		resp.DiscountAmount = &dm
 	}
 	for _, item := range o.Items {
 		resp.Items = append(resp.Items, orderItemResponse{

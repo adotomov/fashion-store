@@ -3,14 +3,26 @@ import { Link } from "react-router";
 
 import { useLanguage } from "../../features/i18n/LanguageContext";
 import { type StorefrontProduct, listStorefrontProducts, resolveImageUrl } from "../../lib/api/storefront";
+import { getPublicHeroSettings, type HeroSettings } from "../../lib/api/admin-appearance";
 import { cn } from "../../lib/utils/cn";
 import { buttonStyles } from "../ui/Button";
 import { Price } from "../ui/Price";
 import { Eyebrow, Heading, Text } from "../ui/Text";
 
+const HERO_DEFAULTS: HeroSettings = {
+  eyebrow: "New Season",
+  heading: "Quietly considered style, for every day.",
+  subtext:
+    "Clothing, jewelry, bags, and accessories — thoughtfully made, finished by hand, and built to last beyond a single season.",
+  cta_primary_label: "Shop All Items",
+  cta_primary_url: "/shop",
+  updated_at: "",
+};
+
 export function Hero() {
   const { locale } = useLanguage();
   const [highlight, setHighlight] = useState<StorefrontProduct | null>(null);
+  const [settings, setSettings] = useState<HeroSettings>(HERO_DEFAULTS);
 
   useEffect(() => {
     listStorefrontProducts({ limit: 1, locale })
@@ -18,49 +30,60 @@ export function Hero() {
       .catch(() => {});
   }, [locale]);
 
+  useEffect(() => {
+    getPublicHeroSettings()
+      .then(setSettings)
+      .catch(() => {}); // fall back to defaults silently
+  }, []);
+
   return (
     <section className="relative isolate overflow-hidden bg-stone-950">
-      {/* Mesh gradient backdrop: layered radial blobs in the brand palette,
-          darkened with a top-to-bottom scrim so the headline stays legible
-          without needing a licensed photograph. */}
-      <div
-        className="absolute inset-0"
-        style={{
-          backgroundImage: [
-            "radial-gradient(ellipse 60% 50% at 20% 20%, rgba(178,84,60,0.55), transparent 60%)",
-            "radial-gradient(ellipse 50% 60% at 85% 15%, rgba(92,122,82,0.45), transparent 60%)",
-            "radial-gradient(ellipse 70% 60% at 50% 100%, rgba(163,144,127,0.5), transparent 60%)",
-            "linear-gradient(135deg, #1f1f1f 0%, #323232 50%, #1f1f1f 100%)",
-          ].join(", "),
-        }}
-      />
+      {settings.background_image_url ? (
+        <div
+          className="absolute inset-0 bg-cover bg-center"
+          style={{ backgroundImage: `url(${resolveImageUrl(settings.background_image_url)})` }}
+        />
+      ) : (
+        <div
+          className="absolute inset-0"
+          style={{
+            backgroundImage: [
+              "radial-gradient(ellipse 60% 50% at 20% 20%, rgba(178,84,60,0.55), transparent 60%)",
+              "radial-gradient(ellipse 50% 60% at 85% 15%, rgba(92,122,82,0.45), transparent 60%)",
+              "radial-gradient(ellipse 70% 60% at 50% 100%, rgba(163,144,127,0.5), transparent 60%)",
+              "linear-gradient(135deg, #1f1f1f 0%, #323232 50%, #1f1f1f 100%)",
+            ].join(", "),
+          }}
+        />
+      )}
       <div className="absolute inset-0 bg-gradient-to-t from-stone-950 via-stone-950/40 to-stone-950/10" />
 
       <div className="relative mx-auto flex min-h-[34rem] max-w-7xl flex-col justify-center px-4 py-20 sm:px-6 lg:min-h-[40rem] lg:px-8">
         <div className="max-w-xl">
-          <Eyebrow className="text-clay-100/90">New Season</Eyebrow>
+          <Eyebrow className="text-clay-100/90">{settings.eyebrow}</Eyebrow>
           <Heading as="h1" size="xl" className="mt-3 text-white">
-            Quietly considered style, for every day.
+            {settings.heading}
           </Heading>
           <Text size="lg" className="mt-4 max-w-md text-stone-200">
-            Clothing, jewelry, bags, and accessories — thoughtfully made, finished by hand, and built to last beyond
-            a single season.
+            {settings.subtext}
           </Text>
           <div className="mt-8 flex flex-wrap items-center gap-4">
             <Link
-              to="/shop"
+              to={settings.cta_primary_url}
               state={{ resetFilters: true }}
               className={cn(buttonStyles({ variant: "primary", size: "lg" }), "bg-white text-stone-900 hover:bg-stone-100")}
             >
-              Shop All Items
+              {settings.cta_primary_label}
             </Link>
-            <Link
-              to="/shop?sale=true"
-              state={{ resetFilters: true }}
-              className={cn(buttonStyles({ variant: "outline", size: "lg" }), "border-white/40 text-white hover:bg-white/10")}
-            >
-              View the Sale
-            </Link>
+            {settings.cta_secondary_label && settings.cta_secondary_url && (
+              <Link
+                to={settings.cta_secondary_url}
+                state={{ resetFilters: true }}
+                className={cn(buttonStyles({ variant: "outline", size: "lg" }), "border-white/40 text-white hover:bg-white/10")}
+              >
+                {settings.cta_secondary_label}
+              </Link>
+            )}
           </div>
         </div>
 

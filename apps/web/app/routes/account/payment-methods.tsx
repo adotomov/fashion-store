@@ -11,6 +11,7 @@ import { Input } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
 import { Select } from "../../components/ui/Select";
 import { Text } from "../../components/ui/Text";
+import { useLanguage } from "../../features/i18n/LanguageContext";
 import {
   type PaymentMethod,
   type PaymentMethodInput,
@@ -36,6 +37,7 @@ const emptyForm: PaymentMethodInput = {
 };
 
 export default function PaymentMethods() {
+  const { t } = useLanguage();
   const [methods, setMethods] = useState<PaymentMethod[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -48,7 +50,7 @@ export default function PaymentMethods() {
     try {
       setMethods(await listPaymentMethods());
     } catch {
-      setError("Could not load payment methods.");
+      setError(t("account.payment.load_error", "Could not load payment methods."));
     }
   }
 
@@ -82,11 +84,11 @@ export default function PaymentMethods() {
 
   async function handleSave() {
     if (!form.brand.trim()) {
-      setSaveError("Card brand is required.");
+      setSaveError(t("account.payment.brand_required", "Card brand is required."));
       return;
     }
     if (!/^\d{4}$/.test(form.last4)) {
-      setSaveError("Last 4 digits must be exactly 4 numbers.");
+      setSaveError(t("account.payment.last4_error", "Last 4 digits must be exactly 4 numbers."));
       return;
     }
     setIsSaving(true);
@@ -100,7 +102,7 @@ export default function PaymentMethods() {
       setIsModalOpen(false);
       await refresh();
     } catch {
-      setSaveError(editingMethod ? "Could not save changes. Try again." : "Could not add card. Try again.");
+      setSaveError(editingMethod ? t("account.payment.save_error", "Could not save changes. Try again.") : t("account.payment.add_error", "Could not add card. Try again."));
     } finally {
       setIsSaving(false);
     }
@@ -114,7 +116,7 @@ export default function PaymentMethods() {
       await deletePaymentMethod(method.id);
       await refresh();
     } catch {
-      setError("Could not remove payment method.");
+      setError(t("account.payment.remove_error", "Could not remove payment method."));
     }
   }
 
@@ -123,7 +125,7 @@ export default function PaymentMethods() {
       <div className="flex items-center justify-end">
         <Button variant="primary" onClick={openCreateModal}>
           <Icon name="plus" size={16} />
-          Add Card
+          {t("account.payment.add_button", "Add Card")}
         </Button>
       </div>
 
@@ -135,10 +137,10 @@ export default function PaymentMethods() {
 
       {methods === null ? (
         <Text size="sm" tone="muted">
-          Loading…
+          {t("common.loading", "Loading…")}
         </Text>
       ) : methods.length === 0 ? (
-        <EmptyState icon="payment" title="No payment methods yet" description="Add a card to use at checkout." />
+        <EmptyState icon="payment" title={t("account.payment.empty_title", "No payment methods yet")} description={t("account.payment.empty_desc", "Add a card to use at checkout.")} />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {methods.map((method) => (
@@ -147,14 +149,14 @@ export default function PaymentMethods() {
                 <div className="flex items-center gap-2">
                   <Icon name="payment" size={18} className="text-stone-500" />
                   <Text className="font-medium">{method.brand}</Text>
-                  {method.is_default && <Badge variant="brand">Default</Badge>}
+                  {method.is_default && <Badge variant="brand">{t("common.default_badge", "Default")}</Badge>}
                 </div>
                 <div className="flex items-center gap-1">
                   <Button
                     variant="ghost"
                     size="sm"
-                    aria-label="Edit payment method"
-                    title="Edit payment method"
+                    aria-label={t("account.payment.edit", "Edit payment method")}
+                    title={t("account.payment.edit", "Edit payment method")}
                     onClick={() => openEditModal(method)}
                   >
                     <Icon name="pencil" size={15} />
@@ -162,8 +164,8 @@ export default function PaymentMethods() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    aria-label="Remove payment method"
-                    title="Remove payment method"
+                    aria-label={t("account.payment.remove", "Remove payment method")}
+                    title={t("account.payment.remove", "Remove payment method")}
                     onClick={() => handleDelete(method)}
                     className="text-danger-600 hover:bg-danger-50"
                   >
@@ -174,7 +176,7 @@ export default function PaymentMethods() {
               <div className="mt-3 flex flex-col gap-0.5 text-sm text-stone-600">
                 <span>•••• •••• •••• {method.last4}</span>
                 <span>
-                  Expires {String(method.exp_month).padStart(2, "0")}/{method.exp_year}
+                  {t("account.payment.expires", "Expires")} {String(method.exp_month).padStart(2, "0")}/{method.exp_year}
                 </span>
               </div>
             </Card>
@@ -182,7 +184,7 @@ export default function PaymentMethods() {
         </div>
       )}
 
-      <Modal open={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingMethod ? "Edit Card" : "Add Card"}>
+      <Modal open={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingMethod ? t("account.payment.modal_edit", "Edit Card") : t("account.payment.modal_add", "Add Card")}>
         <div className="flex flex-col gap-4">
           {saveError && (
             <Text size="sm" tone="danger">
@@ -190,11 +192,11 @@ export default function PaymentMethods() {
             </Text>
           )}
           <Text size="sm" tone="muted">
-            For your security, we only store the card brand, last 4 digits, and expiry — never the full card number.
+            {t("account.payment.security_note", "For your security, we only store the card brand, last 4 digits, and expiry — never the full card number.")}
           </Text>
-          <FormField label="Card brand" htmlFor="payment-brand">
+          <FormField label={t("account.payment.brand", "Card brand")} htmlFor="payment-brand">
             <Select id="payment-brand" value={form.brand} onChange={(e) => update("brand", e.target.value)}>
-              <option value="">Choose a brand…</option>
+              <option value="">{t("account.payment.brand_placeholder", "Choose a brand…")}</option>
               {brands.map((brand) => (
                 <option key={brand} value={brand}>
                   {brand}
@@ -202,7 +204,7 @@ export default function PaymentMethods() {
               ))}
             </Select>
           </FormField>
-          <FormField label="Last 4 digits" htmlFor="payment-last4">
+          <FormField label={t("account.payment.last4", "Last 4 digits")} htmlFor="payment-last4">
             <Input
               id="payment-last4"
               value={form.last4}
@@ -213,7 +215,7 @@ export default function PaymentMethods() {
             />
           </FormField>
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Expiry month" htmlFor="payment-exp-month">
+            <FormField label={t("common.expiry_month", "Expiry month")} htmlFor="payment-exp-month">
               <Select
                 id="payment-exp-month"
                 value={form.exp_month}
@@ -226,7 +228,7 @@ export default function PaymentMethods() {
                 ))}
               </Select>
             </FormField>
-            <FormField label="Expiry year" htmlFor="payment-exp-year">
+            <FormField label={t("common.expiry_year", "Expiry year")} htmlFor="payment-exp-year">
               <Select
                 id="payment-exp-year"
                 value={form.exp_year}
@@ -242,7 +244,7 @@ export default function PaymentMethods() {
           </div>
           <Checkbox
             id="payment-is-default"
-            label="Set as default payment method"
+            label={t("account.payment.set_default", "Set as default payment method")}
             checked={form.is_default}
             onChange={(e) => update("is_default", e.target.checked)}
           />
@@ -250,10 +252,10 @@ export default function PaymentMethods() {
 
         <div className="mt-6 flex justify-end gap-3">
           <Button variant="outline" onClick={() => setIsModalOpen(false)} disabled={isSaving}>
-            Cancel
+            {t("common.cancel", "Cancel")}
           </Button>
           <Button variant="primary" onClick={handleSave} disabled={isSaving}>
-            {isSaving ? "Saving…" : "Save"}
+            {isSaving ? t("common.saving", "Saving…") : t("common.save", "Save")}
           </Button>
         </div>
       </Modal>

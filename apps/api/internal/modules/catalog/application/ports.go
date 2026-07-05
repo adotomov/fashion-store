@@ -78,6 +78,10 @@ type ProductRepository interface {
 	// only by FindByID), so filtering by membership needs its own query.
 	ProductIDsByCategory(ctx context.Context, categoryID uuid.UUID) ([]uuid.UUID, error)
 	ProductIDsByCatalog(ctx context.Context, catalogID uuid.UUID) ([]uuid.UUID, error)
+	// BestInCategoryProductIDs returns one active product ID per category,
+	// picking the most recently created product in each. Used to populate the
+	// "Best in its Category" home page section.
+	BestInCategoryProductIDs(ctx context.Context) ([]uuid.UUID, error)
 
 	// ProductIDsByAttributeValues matches products with AND semantics across
 	// distinct attributes and OR semantics within the same attribute (e.g.
@@ -101,4 +105,7 @@ type ProductRepository interface {
 	DeleteMedia(ctx context.Context, mediaID uuid.UUID) error
 
 	Stats(ctx context.Context) (CatalogStats, error)
+
+	// GetNKSCode returns the NRA commodity code for a product, or "" if not set.
+	GetNKSCode(ctx context.Context, productID uuid.UUID) (string, error)
 }

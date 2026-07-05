@@ -57,6 +57,7 @@ export type PlaceOrderInput = {
   delivery_office_id?: string;
   payment_method: PaymentMethodCode;
   card?: Card;
+  discount_code?: string;
 };
 
 export type OrderItem = {
@@ -75,15 +76,31 @@ export type PlacedOrder = {
   delivery_fee: Money;
   payment_method: PaymentMethodCode;
   placed_at: string;
+  discount_code?: string;
+  discount_amount?: Money;
   items: OrderItem[];
 };
 
 type RawOrderItem = Omit<OrderItem, "unit_price"> & { unit_price: MoneyDTO };
-type RawPlacedOrder = Omit<PlacedOrder, "total" | "delivery_fee" | "items"> & {
+type RawPlacedOrder = Omit<PlacedOrder, "total" | "delivery_fee" | "discount_amount" | "items"> & {
   total: MoneyDTO;
   delivery_fee: MoneyDTO;
+  discount_amount?: MoneyDTO;
   items: RawOrderItem[];
 };
+
+export type DiscountCodeValidation = {
+  code: string;
+  value_percent: number;
+  valid: boolean;
+};
+
+export async function validateDiscountCode(code: string): Promise<DiscountCodeValidation> {
+  return apiFetch<DiscountCodeValidation>(
+    `/api/v1/checkout/discount?code=${encodeURIComponent(code)}`,
+    { auth: false },
+  );
+}
 
 export async function placeOrder(input: PlaceOrderInput): Promise<PlacedOrder> {
   const token = getCartToken();
@@ -96,6 +113,7 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlacedOrder> {
     ...raw,
     total: fromMoneyDTO(raw.total),
     delivery_fee: fromMoneyDTO(raw.delivery_fee),
+    discount_amount: raw.discount_amount ? fromMoneyDTO(raw.discount_amount) : undefined,
     items: raw.items.map((item) => ({ ...item, unit_price: fromMoneyDTO(item.unit_price) })),
   };
 }

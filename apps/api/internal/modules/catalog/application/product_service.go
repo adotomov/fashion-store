@@ -99,12 +99,19 @@ func (s *ProductService) UpdateProduct(ctx context.Context, id uuid.UUID, input 
 	} else if input.CompareAtPrice != nil {
 		product.CompareAtPrice = input.CompareAtPrice
 	}
+	if input.NKSCode != nil {
+		product.NKSCode = *input.NKSCode
+	}
 
 	return s.repo.Update(ctx, *product)
 }
 
 func (s *ProductService) DeleteProduct(ctx context.Context, id uuid.UUID) error {
 	return s.repo.Delete(ctx, id)
+}
+
+func (s *ProductService) GetNKSCode(ctx context.Context, productID uuid.UUID) (string, error) {
+	return s.repo.GetNKSCode(ctx, productID)
 }
 
 func (s *ProductService) SetCategories(ctx context.Context, productID uuid.UUID, categoryIDs []uuid.UUID) error {
@@ -125,6 +132,10 @@ func (s *ProductService) ProductIDsByCategory(ctx context.Context, categoryID uu
 
 func (s *ProductService) ProductIDsByCatalog(ctx context.Context, catalogID uuid.UUID) ([]uuid.UUID, error) {
 	return s.repo.ProductIDsByCatalog(ctx, catalogID)
+}
+
+func (s *ProductService) BestInCategoryProductIDs(ctx context.Context) ([]uuid.UUID, error) {
+	return s.repo.BestInCategoryProductIDs(ctx)
 }
 
 func (s *ProductService) ProductIDsByAttributeValues(ctx context.Context, valueIDs []uuid.UUID) ([]uuid.UUID, error) {

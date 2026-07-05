@@ -1,5 +1,6 @@
 import { Link } from "react-router";
 
+import { useLanguage } from "../../features/i18n/LanguageContext";
 import type { Money } from "../../lib/money/money";
 import { cn } from "../../lib/utils/cn";
 import { Badge } from "../ui/Badge";
@@ -14,6 +15,8 @@ export type ProductCardProps = {
   title: string;
   price: Money;
   compareAtPrice?: Money;
+  promotionPrice?: Money;
+  promotionLabel?: string;
   badge?: string;
   outOfStock?: boolean;
   isWishlisted?: boolean;
@@ -27,12 +30,18 @@ export function ProductCard({
   title,
   price,
   compareAtPrice,
+  promotionPrice,
+  promotionLabel,
   badge,
   outOfStock = false,
   isWishlisted = false,
   onToggleWishlist,
   className,
 }: ProductCardProps) {
+  const { t } = useLanguage();
+  const displayPrice = promotionPrice ?? price;
+  const displayCompare = promotionPrice ? price : compareAtPrice;
+  const displayBadge = promotionLabel ?? badge;
   return (
     <div className={cn("group relative flex flex-col", className)}>
       <div className="relative aspect-[3/4] w-full overflow-hidden rounded-sm bg-stone-50">
@@ -57,17 +66,17 @@ export function ProductCard({
 
         {outOfStock ? (
           <Badge variant="danger" className="absolute left-3 top-3">
-            Out of Stock
+            {t("product.out_of_stock", "Out of Stock")}
           </Badge>
         ) : (
-          badge && <Badge variant="accent" className="absolute left-3 top-3">{badge}</Badge>
+          displayBadge && <Badge variant="accent" className="absolute left-3 top-3">{displayBadge}</Badge>
         )}
 
         <Button
           variant="outline"
           size="icon"
           aria-pressed={isWishlisted}
-          aria-label="Add to wishlist"
+          aria-label={t("product.wishlist_add", "Add to wishlist")}
           onClick={onToggleWishlist}
           className="absolute right-3 top-3 border-none bg-white/90 hover:bg-white"
         >
@@ -79,7 +88,7 @@ export function ProductCard({
         <Text size="sm" className="line-clamp-2 font-medium">
           {title}
         </Text>
-        <Price price={price} compareAtPrice={compareAtPrice} size="sm" className="mt-1.5" />
+        <Price price={displayPrice} compareAtPrice={displayCompare} size="sm" className="mt-1.5" />
       </Link>
     </div>
   );

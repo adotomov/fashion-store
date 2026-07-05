@@ -3,11 +3,13 @@ import { useEffect, useState } from "react";
 import { Footer } from "../components/ecommerce/Footer";
 import { Header } from "../components/ecommerce/Header";
 import { Heading, Text } from "../components/ui/Text";
+import { useLanguage } from "../features/i18n/LanguageContext";
 import { type StorefrontStoreSettings, getStoreSettings, resolveImageUrl } from "../lib/api/storefront";
 
 export const handle = { title: "About" };
 
 export default function About() {
+  const { t } = useLanguage();
   const [settings, setSettings] = useState<StorefrontStoreSettings | null>(null);
 
   useEffect(() => {
@@ -32,7 +34,7 @@ export default function About() {
             About {settings?.store_name ?? "Us"}
           </Heading>
           <Text className="mt-6 whitespace-pre-line leading-relaxed" tone="muted">
-            {settings?.company_description ?? "More information about us is coming soon."}
+            {settings?.company_description ?? t("about.placeholder", "More information about us is coming soon.")}
           </Text>
         </div>
       </main>

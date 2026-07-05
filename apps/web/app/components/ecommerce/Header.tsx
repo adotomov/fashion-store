@@ -22,7 +22,7 @@ export function Header({ className }: HeaderProps) {
   const { itemCount: cartCount } = useCart();
   const { count: wishlistCount } = useWishlist();
   const { storeName, logoUrl } = useStoreBranding();
-  const { locale } = useLanguage();
+  const { locale, t } = useLanguage();
   const location = useLocation();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
@@ -60,7 +60,7 @@ export function Header({ className }: HeaderProps) {
         <button
           type="button"
           className="-ml-2 p-2 lg:hidden"
-          aria-label="Toggle menu"
+          aria-label={t("header.toggle_menu", "Toggle menu")}
           onClick={() => setMenuOpen((open) => !open)}
         >
           <Icon name={menuOpen ? "close" : "menu"} size={22} />
@@ -77,7 +77,7 @@ export function Header({ className }: HeaderProps) {
             state={{ resetFilters: true }}
             className="py-7 text-sm font-medium text-stone-700 transition-colors hover:text-stone-900"
           >
-            Shop All
+            {t("nav.shop_all", "Shop All")}
           </Link>
           {navTypes.map((type) => (
             <div key={type.id} onMouseEnter={() => setOpenTypeId(type.id)}>
@@ -109,15 +109,15 @@ export function Header({ className }: HeaderProps) {
                   onBlur={() => {
                     if (!searchQuery) setSearchOpen(false);
                   }}
-                  placeholder="Search products…"
-                  aria-label="Search products"
+                  placeholder={t("header.search_placeholder", "Search products…")}
+                  aria-label={t("header.search_placeholder", "Search products…")}
                   className="h-9 w-44 rounded-sm border border-stone-300 px-3 text-sm focus:border-stone-900 focus:outline-none sm:w-56"
                 />
               </form>
             ) : (
               <button
                 type="button"
-                aria-label="Search"
+                aria-label={t("header.search", "Search")}
                 className="rounded-sm p-2.5 hover:bg-stone-50"
                 onClick={() => setSearchOpen(true)}
               >
@@ -131,19 +131,19 @@ export function Header({ className }: HeaderProps) {
             <Link
               to="/login"
               state={{ from: { pathname: location.pathname, search: location.search } }}
-              aria-label="Account"
+              aria-label={t("header.account", "Account")}
               className="rounded-sm p-2.5 hover:bg-stone-50"
             >
               <Icon name="profile" size={20} />
             </Link>
           )}
           {isAuthenticated && (
-            <Link to="/wishlist" aria-label="Wishlist" className="relative rounded-sm p-2.5 hover:bg-stone-50">
+            <Link to="/wishlist" aria-label={t("header.wishlist", "Wishlist")} className="relative rounded-sm p-2.5 hover:bg-stone-50">
               <Icon name="wishlist" size={20} />
               {wishlistCount > 0 && <CountBadge count={wishlistCount} />}
             </Link>
           )}
-          <Link to="/cart" aria-label="Cart" className="relative rounded-sm p-2.5 hover:bg-stone-50">
+          <Link to="/cart" aria-label={t("header.cart", "Cart")} className="relative rounded-sm p-2.5 hover:bg-stone-50">
             <Icon name="cart" size={20} />
             {cartCount > 0 && <CountBadge count={cartCount} />}
           </Link>
@@ -193,7 +193,7 @@ export function Header({ className }: HeaderProps) {
             onClick={() => setMenuOpen(false)}
             className="rounded-sm px-2 py-2.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
           >
-            Shop All
+            {t("nav.shop_all", "Shop All")}
           </Link>
           {navTypes.map((type) => (
             <div key={type.id}>

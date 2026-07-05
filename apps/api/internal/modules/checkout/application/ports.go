@@ -90,9 +90,11 @@ type CreateOrderInput struct {
 
 	ReservationID uuid.UUID
 
-	Status string
-	Total  money.Money
-	Items  []CreateOrderItemInput
+	Status         string
+	Total          money.Money
+	DiscountCode   *string
+	DiscountAmount *money.Money
+	Items          []CreateOrderItemInput
 }
 
 type CreateOrderItemInput struct {
@@ -121,6 +123,8 @@ type OrderResult struct {
 	DeliveryFee    money.Money
 	PaymentMethod  string
 	PlacedAt       time.Time
+	DiscountCode   *string
+	DiscountAmount *money.Money
 	Items          []OrderResultItem
 }
 
@@ -192,4 +196,24 @@ type ChargeResult struct {
 // verified, without touching PlaceOrder.
 type PaymentGateway interface {
 	Charge(ctx context.Context, input ChargeInput) (ChargeResult, error)
+}
+
+// DiscountInfo carries the result of a valid discount code lookup.
+type DiscountInfo struct {
+	CodeID       uuid.UUID
+	ValuePercent int
+}
+
+// DiscountGateway validates discount codes and records their use after a
+// successful order — isolated from the promotions module's domain so
+// checkout never imports promotions packages directly.
+type DiscountGateway interface {
+	ValidateCode(ctx context.Context, code string) (DiscountInfo, error)
+	UseCode(ctx context.Context, codeID uuid.UUID) error
+}
+
+// InvoiceGateway triggers invoice generation without importing the invoicing
+// module's domain directly — same hexagonal pattern as FulfillmentGateway.
+type InvoiceGateway interface {
+	GenerateForOrder(ctx context.Context, orderID uuid.UUID) error
 }

@@ -90,6 +90,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		httpx.WriteError(w, http.StatusBadRequest, "delivery_method_unavailable", "this delivery method is currently unavailable")
 	case errors.Is(err, domain.ErrOfficeRequired):
 		httpx.WriteError(w, http.StatusBadRequest, "office_required", "a pickup locker is required for this delivery method")
+	case errors.Is(err, domain.ErrInvalidDiscountCode):
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_discount_code", "discount code is invalid, expired, or exhausted")
 	case errors.Is(err, domain.ErrInsufficientStock):
 		httpx.WriteError(w, http.StatusConflict, "insufficient_stock", "not enough stock available")
 	case errors.Is(err, domain.ErrPaymentFailed):

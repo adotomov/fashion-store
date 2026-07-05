@@ -15,14 +15,17 @@ export type WishlistItem = {
   image_url?: string;
   base_price: Money;
   compare_at_price?: Money;
+  promotion_price?: Money;
+  promotion_label?: string;
   in_stock: boolean;
   sizes: string[];
   created_at: string;
 };
 
-type RawWishlistItem = Omit<WishlistItem, "base_price" | "compare_at_price"> & {
+type RawWishlistItem = Omit<WishlistItem, "base_price" | "compare_at_price" | "promotion_price"> & {
   base_price: MoneyDTO;
   compare_at_price?: MoneyDTO;
+  promotion_price?: MoneyDTO;
 };
 
 function fromRawItem(raw: RawWishlistItem): WishlistItem {
@@ -30,6 +33,7 @@ function fromRawItem(raw: RawWishlistItem): WishlistItem {
     ...raw,
     base_price: fromMoneyDTO(raw.base_price),
     compare_at_price: raw.compare_at_price ? fromMoneyDTO(raw.compare_at_price) : undefined,
+    promotion_price: raw.promotion_price ? fromMoneyDTO(raw.promotion_price) : undefined,
   };
 }
 

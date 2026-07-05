@@ -8,7 +8,7 @@ import { Eyebrow, Heading } from "../ui/Text";
 import { ProductCard } from "./ProductCard";
 
 export function NewArrivals() {
-  const { locale } = useLanguage();
+  const { locale, t } = useLanguage();
   const { isAuthenticated } = useAuth();
   const { isWishlisted, toggle } = useWishlist();
   const [products, setProducts] = useState<StorefrontProduct[] | null>(null);
@@ -23,9 +23,9 @@ export function NewArrivals() {
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
-      <Eyebrow>New In</Eyebrow>
+      <Eyebrow>{t("home.new_in", "New In")}</Eyebrow>
       <Heading as="h2" size="lg" className="mt-2">
-        New Arrivals
+        {t("home.new_arrivals", "New Arrivals")}
       </Heading>
 
       <div className="mt-8 grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3 lg:grid-cols-4">
@@ -41,6 +41,8 @@ export function NewArrivals() {
                 title={product.name}
                 price={product.base_price}
                 compareAtPrice={product.compare_at_price}
+                promotionPrice={product.promotion_price}
+                promotionLabel={product.promotion_label}
                 outOfStock={!product.in_stock}
                 isWishlisted={isAuthenticated && isWishlisted(product.id)}
                 onToggleWishlist={isAuthenticated ? () => toggle(product.id) : undefined}

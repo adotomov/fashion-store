@@ -12,6 +12,7 @@ import { Modal } from "../../components/ui/Modal";
 import { Select } from "../../components/ui/Select";
 import { Text } from "../../components/ui/Text";
 import { useAuth } from "../../features/auth/AuthContext";
+import { useLanguage } from "../../features/i18n/LanguageContext";
 import { COUNTRIES } from "../../lib/data/countries";
 import {
   type Address,
@@ -38,6 +39,7 @@ const emptyForm: AddressInput = {
 };
 
 export default function Addresses() {
+  const { t } = useLanguage();
   const { profile } = useAuth();
   const [addresses, setAddresses] = useState<Address[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -51,7 +53,7 @@ export default function Addresses() {
     try {
       setAddresses(await listAddresses());
     } catch {
-      setError("Could not load addresses.");
+      setError(t("account.addresses.load_error", "Could not load addresses."));
     }
   }
 
@@ -90,7 +92,7 @@ export default function Addresses() {
 
   async function handleSave() {
     if (!form.line1.trim() || !form.city.trim() || !form.postal_code.trim()) {
-      setSaveError("Address line 1, city, and postal code are required.");
+      setSaveError(t("account.addresses.required_error", "Address line 1, city, and postal code are required."));
       return;
     }
     setIsSaving(true);
@@ -109,7 +111,7 @@ export default function Addresses() {
       setIsModalOpen(false);
       await refresh();
     } catch {
-      setSaveError(editingAddress ? "Could not save changes. Try again." : "Could not create address. Try again.");
+      setSaveError(editingAddress ? t("account.addresses.save_error", "Could not save changes. Try again.") : t("account.addresses.create_error", "Could not create address. Try again."));
     } finally {
       setIsSaving(false);
     }
@@ -123,7 +125,7 @@ export default function Addresses() {
       await deleteAddress(address.id);
       await refresh();
     } catch {
-      setError("Could not delete address.");
+      setError(t("account.addresses.delete_error", "Could not delete address."));
     }
   }
 
@@ -132,7 +134,7 @@ export default function Addresses() {
       <div className="flex items-center justify-end">
         <Button variant="primary" onClick={openCreateModal}>
           <Icon name="plus" size={16} />
-          Add Address
+          {t("account.addresses.add_button", "Add Address")}
         </Button>
       </div>
 
@@ -144,25 +146,25 @@ export default function Addresses() {
 
       {addresses === null ? (
         <Text size="sm" tone="muted">
-          Loading…
+          {t("common.loading", "Loading…")}
         </Text>
       ) : addresses.length === 0 ? (
-        <EmptyState icon="mapPin" title="No addresses yet" description="Add a shipping address to get started." />
+        <EmptyState icon="mapPin" title={t("account.addresses.empty_title", "No addresses yet")} description={t("account.addresses.empty_desc", "Add a shipping address to get started.")} />
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {addresses.map((address) => (
             <Card key={address.id} className="p-5">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-2">
-                  <Text className="font-medium">{address.label || "Address"}</Text>
-                  {address.is_default && <Badge variant="brand">Default</Badge>}
+                  <Text className="font-medium">{address.label || t("account.addresses.address_label", "Address")}</Text>
+                  {address.is_default && <Badge variant="brand">{t("common.default_badge", "Default")}</Badge>}
                 </div>
                 <div className="flex items-center gap-1">
                   <Button
                     variant="ghost"
                     size="sm"
-                    aria-label="Edit address"
-                    title="Edit address"
+                    aria-label={t("account.addresses.edit", "Edit address")}
+                    title={t("account.addresses.edit", "Edit address")}
                     onClick={() => openEditModal(address)}
                   >
                     <Icon name="pencil" size={15} />
@@ -170,8 +172,8 @@ export default function Addresses() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    aria-label="Delete address"
-                    title="Delete address"
+                    aria-label={t("account.addresses.delete", "Delete address")}
+                    title={t("account.addresses.delete", "Delete address")}
                     onClick={() => handleDelete(address)}
                     className="text-danger-600 hover:bg-danger-50"
                   >
@@ -195,41 +197,41 @@ export default function Addresses() {
         </div>
       )}
 
-      <Modal open={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingAddress ? "Edit Address" : "Add Address"}>
+      <Modal open={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingAddress ? t("account.addresses.modal_edit", "Edit Address") : t("account.addresses.modal_add", "Add Address")}>
         <div className="flex flex-col gap-4">
           {saveError && (
             <Text size="sm" tone="danger">
               {saveError}
             </Text>
           )}
-          <FormField label="Label" htmlFor="address-label" hint="Optional, e.g. Home or Office">
+          <FormField label={t("account.addresses.label", "Label")} htmlFor="address-label" hint={t("account.addresses.label_hint", "Optional, e.g. Home or Office")}>
             <Input id="address-label" value={form.label} onChange={(e) => update("label", e.target.value)} placeholder="Home" />
           </FormField>
-          <FormField label="Address line 1" htmlFor="address-line1">
+          <FormField label={t("common.address_line1", "Address line 1")} htmlFor="address-line1">
             <Input id="address-line1" value={form.line1} onChange={(e) => update("line1", e.target.value)} autoFocus />
           </FormField>
-          <FormField label="Address line 2" htmlFor="address-line2" hint="Optional">
+          <FormField label={t("common.address_line2", "Address line 2")} htmlFor="address-line2" hint={t("common.optional", "Optional")}>
             <Input id="address-line2" value={form.line2} onChange={(e) => update("line2", e.target.value)} />
           </FormField>
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="City" htmlFor="address-city">
+            <FormField label={t("common.city", "City")} htmlFor="address-city">
               <Input id="address-city" value={form.city} onChange={(e) => update("city", e.target.value)} />
             </FormField>
-            <FormField label="Region / State" htmlFor="address-region" hint="Optional">
+            <FormField label={t("common.region", "Region / State")} htmlFor="address-region" hint={t("common.optional", "Optional")}>
               <Input id="address-region" value={form.region} onChange={(e) => update("region", e.target.value)} />
             </FormField>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Postal code" htmlFor="address-postal-code">
+            <FormField label={t("common.postal_code", "Postal code")} htmlFor="address-postal-code">
               <Input id="address-postal-code" value={form.postal_code} onChange={(e) => update("postal_code", e.target.value)} />
             </FormField>
-            <FormField label="Country" htmlFor="address-country-code">
+            <FormField label={t("common.country", "Country")} htmlFor="address-country-code">
               <Select
                 id="address-country-code"
                 value={form.country_code}
                 onChange={(e) => update("country_code", e.target.value)}
               >
-                <option value="">Select a country</option>
+                <option value="">{t("common.select_country", "Select a country")}</option>
                 {COUNTRIES.map((country) => (
                   <option key={country.code} value={country.code}>
                     {country.name}
@@ -240,7 +242,7 @@ export default function Addresses() {
           </div>
           <Checkbox
             id="address-is-default"
-            label="Set as default address"
+            label={t("account.addresses.set_default", "Set as default address")}
             checked={form.is_default}
             onChange={(e) => update("is_default", e.target.checked)}
           />
@@ -248,10 +250,10 @@ export default function Addresses() {
 
         <div className="mt-6 flex justify-end gap-3">
           <Button variant="outline" onClick={() => setIsModalOpen(false)} disabled={isSaving}>
-            Cancel
+            {t("common.cancel", "Cancel")}
           </Button>
           <Button variant="primary" onClick={handleSave} disabled={isSaving}>
-            {isSaving ? "Saving…" : "Save"}
+            {isSaving ? t("common.saving", "Saving…") : t("common.save", "Save")}
           </Button>
         </div>
       </Modal>

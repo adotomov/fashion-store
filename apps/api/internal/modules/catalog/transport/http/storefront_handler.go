@@ -1,6 +1,7 @@
 package http
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"sort"
@@ -14,6 +15,7 @@ import (
 	"github.com/adotomov/fashion-store/apps/api/internal/modules/catalog/domain"
 	i18napplication "github.com/adotomov/fashion-store/apps/api/internal/modules/i18n/application"
 	"github.com/adotomov/fashion-store/apps/api/internal/shared/httpx"
+	"github.com/adotomov/fashion-store/apps/api/internal/shared/money"
 )
 
 // Entity type tags used as the entity_type column in the shared translations
@@ -28,6 +30,27 @@ const (
 	entityTypeAttrValue   = "attribute_value"
 )
 
+// EffectivePromoPrice is the storefront's view of an active promotion price
+// for a product — decoupled from the promotions module's domain types.
+type EffectivePromoPrice struct {
+	Price money.Money
+	Label string
+}
+
+// StorefrontPromotionsGateway is the minimal interface the storefront handler
+// needs from the promotions module. BasePrices must include the base price for
+// each product ID so the adapter can compute the discounted effective price
+// without the storefront handler importing promotions domain types directly.
+type StorefrontPromotionsGateway interface {
+	GetEffectivePrices(ctx context.Context, productBasePrices map[uuid.UUID]money.Money) (map[uuid.UUID]EffectivePromoPrice, error)
+}
+
+// NavCategoryPromotionsGateway returns which of the given category IDs have
+// at least one currently active promotion targeting them.
+type NavCategoryPromotionsGateway interface {
+	GetCategoriesWithActivePromotions(ctx context.Context, categoryIDs []uuid.UUID) (map[uuid.UUID]bool, error)
+}
+
 // StorefrontHandler exposes read-only, public (no admin auth) endpoints
 // backing the customer-facing site: nav menu, product listings, and media
 // file serving. It composes the same services the admin handlers use, but
@@ -41,6 +64,8 @@ type StorefrontHandler struct {
 	productService     *application.ProductService
 	catalogService     *application.CatalogService
 	translations       *i18napplication.TranslationService
+	promotions         StorefrontPromotionsGateway
+	navPromos          NavCategoryPromotionsGateway
 }
 
 func NewStorefrontHandler(
@@ -49,6 +74,8 @@ func NewStorefrontHandler(
 	productService *application.ProductService,
 	catalogService *application.CatalogService,
 	translations *i18napplication.TranslationService,
+	promotions StorefrontPromotionsGateway,
+	navPromos NavCategoryPromotionsGateway,
 ) *StorefrontHandler {
 	return &StorefrontHandler{
 		productTypeService: productTypeService,
@@ -56,6 +83,8 @@ func NewStorefrontHandler(
 		productService:     productService,
 		catalogService:     catalogService,
 		translations:       translations,
+		promotions:         promotions,
+		navPromos:          navPromos,
 	}
 }
 
@@ -63,6 +92,7 @@ func (h *StorefrontHandler) RegisterRoutes(r chi.Router) {
 	r.Route("/storefront", func(r chi.Router) {
 		r.Get("/nav", h.nav)
 		r.Get("/products", h.listProducts)
+		r.Get("/products/best-in-category", h.bestInCategory)
 		r.Get("/products/{slug}", h.getProduct)
 		r.Get("/catalogs", h.listCatalogs)
 		r.Get("/facets", h.facets)
@@ -79,10 +109,11 @@ func localeOf(r *http.Request) string {
 }
 
 type navCategoryResponse struct {
-	ID       string  `json:"id"`
-	Name     string  `json:"name"`
-	Slug     string  `json:"slug"`
-	ImageURL *string `json:"image_url,omitempty"`
+	ID           string  `json:"id"`
+	Name         string  `json:"name"`
+	Slug         string  `json:"slug"`
+	ImageURL     *string `json:"image_url,omitempty"`
+	HasPromotion bool    `json:"has_promotion"`
 }
 
 type navTypeResponse struct {
@@ -159,6 +190,27 @@ func (h *StorefrontHandler) nav(w http.ResponseWriter, r *http.Request) {
 			Categories: cats,
 		})
 	}
+
+	// Annotate categories with active-promotion flags (best-effort).
+	if h.navPromos != nil {
+		var ids []uuid.UUID
+		for i := range resp {
+			for j := range resp[i].Categories {
+				id, _ := uuid.Parse(resp[i].Categories[j].ID)
+				ids = append(ids, id)
+			}
+		}
+		if len(ids) > 0 {
+			promoted, _ := h.navPromos.GetCategoriesWithActivePromotions(r.Context(), ids)
+			for i := range resp {
+				for j := range resp[i].Categories {
+					id, _ := uuid.Parse(resp[i].Categories[j].ID)
+					resp[i].Categories[j].HasPromotion = promoted[id]
+				}
+			}
+		}
+	}
+
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
@@ -169,6 +221,11 @@ type storefrontProductResponse struct {
 	Description    string                    `json:"description"`
 	BasePrice      moneyResponse             `json:"base_price"`
 	CompareAtPrice *moneyResponse            `json:"compare_at_price,omitempty"`
+	// PromotionPrice is the effective discounted price when an active promotion
+	// applies to this product. The frontend shows BasePrice struck through and
+	// PromotionPrice as the actual selling price.
+	PromotionPrice *moneyResponse `json:"promotion_price,omitempty"`
+	PromotionLabel *string        `json:"promotion_label,omitempty"`
 	ImageURL       *string                   `json:"image_url,omitempty"`
 	Media          []storefrontMediaResponse `json:"media,omitempty"`
 	Attributes     []attributeRefResponse    `json:"attributes,omitempty"`
@@ -303,7 +360,18 @@ func (h *StorefrontHandler) listProducts(w http.ResponseWriter, r *http.Request)
 		allowedIDs = intersectOrSet(allowedIDs, toIDSet(ids))
 	}
 
+	// Optional explicit product ID filter (for curated home sections).
+	productIDFilter, err := parseIDListParam(r, "product_id")
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_product_id", "product_id is invalid")
+		return
+	}
+	if len(productIDFilter) > 0 {
+		allowedIDs = intersectOrSet(allowedIDs, toIDSet(productIDFilter))
+	}
+
 	query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
+	hasPromotionOnly := r.URL.Query().Get("has_promotion") == "true"
 
 	limit := -1
 	if raw := r.URL.Query().Get("limit"); raw != "" {
@@ -319,7 +387,8 @@ func (h *StorefrontHandler) listProducts(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	resp := make([]storefrontProductResponse, 0, len(products))
+	// Collect active product IDs for promotion lookup.
+	filtered := make([]domain.Product, 0, len(products))
 	for _, p := range products {
 		if p.Status != domain.ProductStatusActive {
 			continue
@@ -327,6 +396,20 @@ func (h *StorefrontHandler) listProducts(w http.ResponseWriter, r *http.Request)
 		if allowedIDs != nil && !allowedIDs[p.ID] {
 			continue
 		}
+		filtered = append(filtered, p)
+	}
+
+	basePrices := make(map[uuid.UUID]money.Money, len(filtered))
+	for _, p := range filtered {
+		basePrices[p.ID] = p.BasePrice
+	}
+	var promos map[uuid.UUID]EffectivePromoPrice
+	if h.promotions != nil {
+		promos, _ = h.promotions.GetEffectivePrices(r.Context(), basePrices) // best-effort
+	}
+
+	resp := make([]storefrontProductResponse, 0, len(filtered))
+	for _, p := range filtered {
 		item := toStorefrontProductResponse(p)
 		if v, ok := productTranslations[p.ID]["name"]; ok {
 			item.Name = v
@@ -339,10 +422,78 @@ func (h *StorefrontHandler) listProducts(w http.ResponseWriter, r *http.Request)
 			!strings.Contains(strings.ToLower(item.Description), query) {
 			continue
 		}
+		if ep, ok := promos[p.ID]; ok {
+			pr := toMoneyResponse(ep.Price)
+			item.PromotionPrice = &pr
+			item.PromotionLabel = &ep.Label
+		}
+		if hasPromotionOnly && item.PromotionPrice == nil {
+			continue
+		}
 		resp = append(resp, item)
 		if limit > 0 && len(resp) >= limit {
 			break
 		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *StorefrontHandler) bestInCategory(w http.ResponseWriter, r *http.Request) {
+	ids, err := h.productService.BestInCategoryProductIDs(r.Context())
+	if err != nil {
+		writeCatalogModuleError(w, err)
+		return
+	}
+	if len(ids) == 0 {
+		httpx.WriteJSON(w, http.StatusOK, []storefrontProductResponse{})
+		return
+	}
+
+	products, err := h.productService.ListProducts(r.Context())
+	if err != nil {
+		writeCatalogModuleError(w, err)
+		return
+	}
+	idSet := toIDSet(ids)
+
+	locale := localeOf(r)
+	productTranslations, err := h.translations.ListByEntityType(r.Context(), entityTypeProduct, locale)
+	if err != nil {
+		writeCatalogModuleError(w, err)
+		return
+	}
+
+	var active []domain.Product
+	for _, p := range products {
+		if p.Status == domain.ProductStatusActive && idSet[p.ID] {
+			active = append(active, p)
+		}
+	}
+
+	basePrices := make(map[uuid.UUID]money.Money, len(active))
+	for _, p := range active {
+		basePrices[p.ID] = p.BasePrice
+	}
+	var promos map[uuid.UUID]EffectivePromoPrice
+	if h.promotions != nil {
+		promos, _ = h.promotions.GetEffectivePrices(r.Context(), basePrices)
+	}
+
+	resp := make([]storefrontProductResponse, 0, len(active))
+	for _, p := range active {
+		item := toStorefrontProductResponse(p)
+		if v, ok := productTranslations[p.ID]["name"]; ok {
+			item.Name = v
+		}
+		if v, ok := productTranslations[p.ID]["description"]; ok {
+			item.Description = v
+		}
+		if ep, ok := promos[p.ID]; ok {
+			pr := toMoneyResponse(ep.Price)
+			item.PromotionPrice = &pr
+			item.PromotionLabel = &ep.Label
+		}
+		resp = append(resp, item)
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
@@ -462,6 +613,15 @@ func (h *StorefrontHandler) getProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := fields["description"]; ok {
 		resp.Description = v
+	}
+	if h.promotions != nil {
+		if promos, _ := h.promotions.GetEffectivePrices(r.Context(), map[uuid.UUID]money.Money{product.ID: product.BasePrice}); promos != nil {
+			if ep, ok := promos[product.ID]; ok {
+				pr := toMoneyResponse(ep.Price)
+				resp.PromotionPrice = &pr
+				resp.PromotionLabel = &ep.Label
+			}
+		}
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }

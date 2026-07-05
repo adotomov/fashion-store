@@ -26,6 +26,7 @@ import {
   ShoppingBag,
   SlidersHorizontal,
   Star,
+  Tag,
   Trash2,
   Truck,
   User,
@@ -111,6 +112,7 @@ const icons = {
   bell: Bell,
   chevronsUpDown: ChevronsUpDown,
   globe: Globe,
+  tag: Tag,
 } as const;
 
 export type IconName = keyof typeof icons;

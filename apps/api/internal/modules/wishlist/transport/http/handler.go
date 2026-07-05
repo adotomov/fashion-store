@@ -11,14 +11,16 @@ import (
 	"github.com/adotomov/fashion-store/apps/api/internal/modules/wishlist/domain"
 	"github.com/adotomov/fashion-store/apps/api/internal/shared/authctx"
 	"github.com/adotomov/fashion-store/apps/api/internal/shared/httpx"
+	"github.com/adotomov/fashion-store/apps/api/internal/shared/money"
 )
 
 type Handler struct {
-	service *application.Service
+	service    *application.Service
+	promotions PromotionsGateway
 }
 
-func NewHandler(service *application.Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *application.Service, promotions PromotionsGateway) *Handler {
+	return &Handler{service: service, promotions: promotions}
 }
 
 func (h *Handler) RegisterRoutes(r chi.Router, requireAuth func(http.Handler) http.Handler) {
@@ -47,9 +49,24 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var promos map[uuid.UUID]EffectivePromoPrice
+	if h.promotions != nil && len(items) > 0 {
+		basePrices := make(map[uuid.UUID]money.Money, len(items))
+		for _, item := range items {
+			basePrices[item.ProductID] = item.BasePrice
+		}
+		promos, _ = h.promotions.GetEffectivePrices(r.Context(), basePrices)
+	}
+
 	resp := make([]itemResponse, 0, len(items))
 	for _, item := range items {
-		resp = append(resp, toItemResponse(item))
+		r := toItemResponse(item)
+		if ep, ok := promos[item.ProductID]; ok {
+			pr := toMoneyResponse(ep.Price)
+			r.PromotionPrice = &pr
+			r.PromotionLabel = &ep.Label
+		}
+		resp = append(resp, r)
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }

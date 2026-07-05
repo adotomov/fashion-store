@@ -38,4 +38,5 @@ type PlaceOrderInput struct {
 	DeliveryOfficeID string
 	PaymentMethod    string
 	Card             CardInput
+	DiscountCode     string
 }

@@ -5,6 +5,7 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
 import { Text } from "../../components/ui/Text";
+import { useLanguage } from "../../features/i18n/LanguageContext";
 import { type Order, type OrderStatus, listOrders } from "../../lib/api/orders";
 import { formatMoney } from "../../lib/money/money";
 
@@ -31,6 +32,7 @@ function formatShipmentStatus(status: string): string {
 }
 
 export default function Orders() {
+  const { t } = useLanguage();
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -38,7 +40,7 @@ export default function Orders() {
   useEffect(() => {
     listOrders()
       .then(setOrders)
-      .catch(() => setError("Could not load your orders."));
+      .catch(() => setError(t("account.orders.load_error", "Could not load your orders.")));
   }, []);
 
   if (error) {
@@ -52,13 +54,13 @@ export default function Orders() {
   if (orders === null) {
     return (
       <Text size="sm" tone="muted">
-        Loading…
+        {t("common.loading", "Loading…")}
       </Text>
     );
   }
 
   if (orders.length === 0) {
-    return <EmptyState icon="inventory" title="No orders yet" description="Your placed orders will show up here." />;
+    return <EmptyState icon="inventory" title={t("account.orders.empty_title", "No orders yet")} description={t("account.orders.empty_desc", "Your placed orders will show up here.")} />;
   }
 
   return (
@@ -66,11 +68,11 @@ export default function Orders() {
       <table className="w-full text-left text-sm">
         <thead className="border-b border-stone-200 bg-stone-50 text-xs uppercase tracking-wide text-stone-500">
           <tr>
-            <th className="px-4 py-3 font-medium">Order</th>
-            <th className="px-4 py-3 font-medium">Date</th>
-            <th className="px-4 py-3 font-medium">Status</th>
-            <th className="px-4 py-3 font-medium">Items</th>
-            <th className="px-4 py-3 font-medium">Total</th>
+            <th className="px-4 py-3 font-medium">{t("account.orders.col_order", "Order")}</th>
+            <th className="px-4 py-3 font-medium">{t("account.orders.col_date", "Date")}</th>
+            <th className="px-4 py-3 font-medium">{t("account.orders.col_status", "Status")}</th>
+            <th className="px-4 py-3 font-medium">{t("account.orders.col_items", "Items")}</th>
+            <th className="px-4 py-3 font-medium">{t("account.orders.col_total", "Total")}</th>
             <th className="px-4 py-3 font-medium" />
           </tr>
         </thead>
@@ -92,7 +94,7 @@ export default function Orders() {
                       variant="ghost"
                       size="sm"
                       onClick={() => setExpandedId(isExpanded ? null : order.id)}
-                      aria-label={isExpanded ? "Hide order items" : "Show order items"}
+                      aria-label={isExpanded ? t("account.orders.hide_items", "Hide order items") : t("account.orders.show_items", "Show order items")}
                     >
                       <Icon name={isExpanded ? "chevronDown" : "chevronRight"} size={16} />
                     </Button>
@@ -104,7 +106,7 @@ export default function Orders() {
                       {order.tracking_number && (
                         <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
                           <Text size="sm" className="font-medium">
-                            {order.carrier ?? "Carrier"} — {order.tracking_number}
+                            {order.carrier ?? t("account.orders.carrier", "Carrier")} — {order.tracking_number}
                           </Text>
                           {order.shipment_status && <Badge variant="brand">{formatShipmentStatus(order.shipment_status)}</Badge>}
                         </div>

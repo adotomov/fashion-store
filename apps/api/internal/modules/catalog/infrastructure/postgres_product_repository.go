@@ -74,7 +74,7 @@ func (r *PostgresProductRepository) Create(ctx context.Context, product domain.P
 		INSERT INTO products (name, slug, description, status, base_price_amount, base_price_currency)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, name, slug, COALESCE(description, ''), status, base_price_amount, base_price_currency,
-			compare_at_price_amount, compare_at_price_currency, created_at, updated_at`,
+			compare_at_price_amount, compare_at_price_currency, COALESCE(nks_code, ''), created_at, updated_at`,
 		product.Name, product.Slug, product.Description, product.Status,
 		product.BasePrice.AmountMinor, product.BasePrice.Currency)
 
@@ -92,7 +92,7 @@ func (r *PostgresProductRepository) Create(ctx context.Context, product domain.P
 func (r *PostgresProductRepository) List(ctx context.Context) ([]domain.Product, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT p.id, p.name, p.slug, COALESCE(p.description, ''), p.status, p.base_price_amount, p.base_price_currency,
-		       p.compare_at_price_amount, p.compare_at_price_currency, p.created_at, p.updated_at, COUNT(v.id),
+		       p.compare_at_price_amount, p.compare_at_price_currency, COALESCE(p.nks_code, ''), p.created_at, p.updated_at, COUNT(v.id),
 		       (SELECT m.id FROM product_media m WHERE m.product_id = p.id ORDER BY m.position LIMIT 1),
 		       (SELECT m.bucket FROM product_media m WHERE m.product_id = p.id ORDER BY m.position LIMIT 1),
 		       (SELECT m.object_key FROM product_media m WHERE m.product_id = p.id ORDER BY m.position LIMIT 1),
@@ -122,7 +122,7 @@ func (r *PostgresProductRepository) List(ctx context.Context) ([]domain.Product,
 		var mediaID *uuid.UUID
 		var mediaBucket, mediaObjectKey, mediaContentType *string
 		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Status, &amount, &currency,
-			&compareAmount, &compareCurrency, &p.CreatedAt, &p.UpdatedAt, &p.VariantCount,
+			&compareAmount, &compareCurrency, &p.NKSCode, &p.CreatedAt, &p.UpdatedAt, &p.VariantCount,
 			&mediaID, &mediaBucket, &mediaObjectKey, &mediaContentType, &p.InStock); err != nil {
 			return nil, err
 		}
@@ -147,7 +147,7 @@ func (r *PostgresProductRepository) List(ctx context.Context) ([]domain.Product,
 func (r *PostgresProductRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain.Product, error) {
 	row := r.db.QueryRow(ctx, `
 		SELECT id, name, slug, COALESCE(description, ''), status, base_price_amount, base_price_currency,
-			compare_at_price_amount, compare_at_price_currency, created_at, updated_at
+			compare_at_price_amount, compare_at_price_currency, COALESCE(nks_code, ''), created_at, updated_at
 		FROM products WHERE id = $1`, id)
 
 	product, err := scanProduct(row)
@@ -160,7 +160,7 @@ func (r *PostgresProductRepository) FindByID(ctx context.Context, id uuid.UUID) 
 func (r *PostgresProductRepository) FindBySlug(ctx context.Context, slug string) (*domain.Product, error) {
 	row := r.db.QueryRow(ctx, `
 		SELECT id, name, slug, COALESCE(description, ''), status, base_price_amount, base_price_currency,
-			compare_at_price_amount, compare_at_price_currency, created_at, updated_at
+			compare_at_price_amount, compare_at_price_currency, COALESCE(nks_code, ''), created_at, updated_at
 		FROM products WHERE slug = $1`, slug)
 
 	product, err := scanProduct(row)
@@ -216,12 +216,13 @@ func (r *PostgresProductRepository) Update(ctx context.Context, product domain.P
 	row := r.db.QueryRow(ctx, `
 		UPDATE products SET name = $2, description = $3, status = $4,
 			base_price_amount = $5, base_price_currency = $6,
-			compare_at_price_amount = $7, compare_at_price_currency = $8, updated_at = NOW()
+			compare_at_price_amount = $7, compare_at_price_currency = $8,
+			nks_code = NULLIF($9, ''), updated_at = NOW()
 		WHERE id = $1
 		RETURNING id, name, slug, COALESCE(description, ''), status, base_price_amount, base_price_currency,
-			compare_at_price_amount, compare_at_price_currency, created_at, updated_at`,
+			compare_at_price_amount, compare_at_price_currency, COALESCE(nks_code, ''), created_at, updated_at`,
 		product.ID, product.Name, product.Description, product.Status,
-		product.BasePrice.AmountMinor, product.BasePrice.Currency, compareAmount, compareCurrency)
+		product.BasePrice.AmountMinor, product.BasePrice.Currency, compareAmount, compareCurrency, product.NKSCode)
 
 	return scanProduct(row)
 }
@@ -309,6 +310,29 @@ func (r *PostgresProductRepository) ProductIDsByCategory(ctx context.Context, ca
 
 func (r *PostgresProductRepository) ProductIDsByCatalog(ctx context.Context, catalogID uuid.UUID) ([]uuid.UUID, error) {
 	return r.idsFor(ctx, "catalog_products", "catalog_id", "product_id", catalogID)
+}
+
+func (r *PostgresProductRepository) BestInCategoryProductIDs(ctx context.Context) ([]uuid.UUID, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT DISTINCT ON (pc.category_id) p.id
+		FROM products p
+		JOIN product_categories pc ON pc.product_id = p.id
+		WHERE p.status = 'active'
+		ORDER BY pc.category_id, p.created_at DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func (r *PostgresProductRepository) ProductIDsByAttributeValues(ctx context.Context, valueIDs []uuid.UUID) ([]uuid.UUID, error) {
@@ -464,7 +488,7 @@ func scanProduct(row pgx.Row) (*domain.Product, error) {
 	var compareAmount *int64
 	var compareCurrency *string
 	err := row.Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Status, &amount, &currency,
-		&compareAmount, &compareCurrency, &p.CreatedAt, &p.UpdatedAt)
+		&compareAmount, &compareCurrency, &p.NKSCode, &p.CreatedAt, &p.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrProductNotFound
 	}
@@ -476,4 +500,13 @@ func scanProduct(row pgx.Row) (*domain.Product, error) {
 		p.CompareAtPrice = &money.Money{AmountMinor: *compareAmount, Currency: *compareCurrency}
 	}
 	return &p, nil
+}
+
+func (r *PostgresProductRepository) GetNKSCode(ctx context.Context, productID uuid.UUID) (string, error) {
+	var code string
+	err := r.db.QueryRow(ctx, `SELECT COALESCE(nks_code, '') FROM products WHERE id = $1`, productID).Scan(&code)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return "", nil
+	}
+	return code, err
 }

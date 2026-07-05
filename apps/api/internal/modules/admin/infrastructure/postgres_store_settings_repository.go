@@ -3,6 +3,7 @@ package infrastructure
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -57,4 +58,144 @@ func scanStoreSettings(row pgx.Row) (*domain.StoreSettings, error) {
 		return nil, err
 	}
 	return &s, nil
+}
+
+func (r *PostgresStoreSettingsRepository) GetHeroSettings(ctx context.Context) (domain.HeroSettings, error) {
+	var s domain.HeroSettings
+	err := r.db.QueryRow(ctx, `
+		SELECT eyebrow, heading, subtext,
+		       cta_primary_label, cta_primary_url,
+		       cta_secondary_label, cta_secondary_url,
+		       background_image_bucket, background_image_object_key,
+		       background_image_content_type, background_image_size_bytes,
+		       updated_at
+		FROM hero_settings LIMIT 1
+	`).Scan(
+		&s.Eyebrow, &s.Heading, &s.Subtext,
+		&s.CTAPrimaryLabel, &s.CTAPrimaryURL,
+		&s.CTASecondaryLabel, &s.CTASecondaryURL,
+		&s.BackgroundBucket, &s.BackgroundObjectKey,
+		&s.BackgroundContentType, &s.BackgroundSizeBytes,
+		&s.UpdatedAt,
+	)
+	return s, err
+}
+
+func (r *PostgresStoreSettingsRepository) SaveHeroSettings(ctx context.Context, s domain.HeroSettings) (domain.HeroSettings, error) {
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO hero_settings (id, eyebrow, heading, subtext,
+		    cta_primary_label, cta_primary_url,
+		    cta_secondary_label, cta_secondary_url,
+		    background_image_bucket, background_image_object_key,
+		    background_image_content_type, background_image_size_bytes,
+		    updated_at)
+		VALUES (TRUE, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+		ON CONFLICT (id) DO UPDATE SET
+		    eyebrow                       = EXCLUDED.eyebrow,
+		    heading                       = EXCLUDED.heading,
+		    subtext                       = EXCLUDED.subtext,
+		    cta_primary_label             = EXCLUDED.cta_primary_label,
+		    cta_primary_url               = EXCLUDED.cta_primary_url,
+		    cta_secondary_label           = EXCLUDED.cta_secondary_label,
+		    cta_secondary_url             = EXCLUDED.cta_secondary_url,
+		    background_image_bucket       = EXCLUDED.background_image_bucket,
+		    background_image_object_key   = EXCLUDED.background_image_object_key,
+		    background_image_content_type = EXCLUDED.background_image_content_type,
+		    background_image_size_bytes   = EXCLUDED.background_image_size_bytes,
+		    updated_at                    = NOW()
+		RETURNING eyebrow, heading, subtext,
+		    cta_primary_label, cta_primary_url,
+		    cta_secondary_label, cta_secondary_url,
+		    background_image_bucket, background_image_object_key,
+		    background_image_content_type, background_image_size_bytes,
+		    updated_at
+	`,
+		s.Eyebrow, s.Heading, s.Subtext,
+		s.CTAPrimaryLabel, s.CTAPrimaryURL,
+		s.CTASecondaryLabel, s.CTASecondaryURL,
+		s.BackgroundBucket, s.BackgroundObjectKey,
+		s.BackgroundContentType, s.BackgroundSizeBytes,
+	).Scan(
+		&s.Eyebrow, &s.Heading, &s.Subtext,
+		&s.CTAPrimaryLabel, &s.CTAPrimaryURL,
+		&s.CTASecondaryLabel, &s.CTASecondaryURL,
+		&s.BackgroundBucket, &s.BackgroundObjectKey,
+		&s.BackgroundContentType, &s.BackgroundSizeBytes,
+		&s.UpdatedAt,
+	)
+	return s, err
+}
+
+func (r *PostgresStoreSettingsRepository) ListHomeSections(ctx context.Context) ([]domain.HomeSection, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, enabled, eyebrow, heading, updated_at
+		FROM home_sections ORDER BY id
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var sections []domain.HomeSection
+	for rows.Next() {
+		var s domain.HomeSection
+		if err := rows.Scan(&s.ID, &s.Enabled, &s.Eyebrow, &s.Heading, &s.UpdatedAt); err != nil {
+			return nil, err
+		}
+		sections = append(sections, s)
+	}
+	return sections, rows.Err()
+}
+
+func (r *PostgresStoreSettingsRepository) SaveHomeSection(ctx context.Context, s domain.HomeSection) (domain.HomeSection, error) {
+	var result domain.HomeSection
+	err := r.db.QueryRow(ctx, `
+		UPDATE home_sections
+		SET enabled = $2, eyebrow = $3, heading = $4, updated_at = NOW()
+		WHERE id = $1
+		RETURNING id, enabled, eyebrow, heading, updated_at
+	`, s.ID, s.Enabled, s.Eyebrow, s.Heading).Scan(
+		&result.ID, &result.Enabled, &result.Eyebrow, &result.Heading, &result.UpdatedAt,
+	)
+	return result, err
+}
+
+func (r *PostgresStoreSettingsRepository) GetSectionProductIDs(ctx context.Context, sectionID string) ([]uuid.UUID, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT product_id FROM home_section_products
+		WHERE section_id = $1
+		ORDER BY sort_order, product_id
+	`, sectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func (r *PostgresStoreSettingsRepository) SetSectionProducts(ctx context.Context, sectionID string, productIDs []uuid.UUID) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, `DELETE FROM home_section_products WHERE section_id = $1`, sectionID); err != nil {
+		return err
+	}
+	for i, productID := range productIDs {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO home_section_products (section_id, product_id, sort_order)
+			VALUES ($1, $2, $3)
+		`, sectionID, productID, i); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }

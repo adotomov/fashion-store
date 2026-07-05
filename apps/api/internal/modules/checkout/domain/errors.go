@@ -10,6 +10,7 @@ var (
 	ErrPaymentFailed             = errors.New("payment failed")
 	ErrDeliveryMethodUnavailable = errors.New("delivery method is currently unavailable")
 	ErrOfficeRequired            = errors.New("a pickup locker is required for this delivery method")
+	ErrInvalidDiscountCode       = errors.New("discount code is invalid, expired, or exhausted")
 )
 
 type ValidationError string

@@ -48,3 +48,20 @@ type StoreDocumentRepository interface {
 	Upsert(ctx context.Context, doc domain.StoreDocument) (*domain.StoreDocument, error)
 	Delete(ctx context.Context, docType domain.DocumentType, locale string) error
 }
+
+// HeroSettingsRepository persists the singleton hero_settings row.
+// The row always exists (seeded by migration) and is only ever upserted.
+type HeroSettingsRepository interface {
+	GetHeroSettings(ctx context.Context) (domain.HeroSettings, error)
+	SaveHeroSettings(ctx context.Context, s domain.HeroSettings) (domain.HeroSettings, error)
+}
+
+// HomeSectionsRepository persists the home_sections and home_section_products
+// rows. The four section rows are seeded by migration and are only updated,
+// never inserted or deleted from application code.
+type HomeSectionsRepository interface {
+	ListHomeSections(ctx context.Context) ([]domain.HomeSection, error)
+	SaveHomeSection(ctx context.Context, s domain.HomeSection) (domain.HomeSection, error)
+	GetSectionProductIDs(ctx context.Context, sectionID string) ([]uuid.UUID, error)
+	SetSectionProducts(ctx context.Context, sectionID string, productIDs []uuid.UUID) error
+}

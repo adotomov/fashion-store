@@ -33,7 +33,7 @@ export const handle = { title: "Product" };
 
 export default function ProductDetail() {
   const { slug } = useParams<{ slug: string }>();
-  const { locale } = useLanguage();
+  const { locale, t } = useLanguage();
   const [product, setProduct] = useState<StorefrontProductDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   // attribute_id -> selected attribute_value_id
@@ -59,7 +59,7 @@ export default function ProductDetail() {
           setSelectedValues(initial);
         }
       })
-      .catch(() => setError("Could not load this product."));
+      .catch(() => setError(t("product.load_error", "Could not load this product.")));
   }, [slug, locale]);
 
   if (error) {
@@ -76,7 +76,7 @@ export default function ProductDetail() {
     return (
       <Shell>
         <Text size="sm" tone="muted" className="py-16 text-center">
-          Loading…
+          {t("common.loading", "Loading…")}
         </Text>
       </Shell>
     );
@@ -116,7 +116,9 @@ export default function ProductDetail() {
 
   const matchedVariant = variantForSelection({});
   const isOutOfStock = product.variants.length > 0 && (!matchedVariant || !isVariantInStock(matchedVariant));
-  const price = matchedVariant?.price_override ?? product.base_price;
+  const basePrice = matchedVariant?.price_override ?? product.base_price;
+  const displayPrice = product.promotion_price ?? basePrice;
+  const displayCompare = product.promotion_price ? basePrice : product.compare_at_price;
   const images = product.media.map((m) => ({ src: resolveImageUrl(m.url), alt: m.alt_text || product.name }));
 
   async function handleAddToCart() {
@@ -128,7 +130,7 @@ export default function ProductDetail() {
       await addItem(matchedVariant.id);
       setAddedToCart(true);
     } catch {
-      setAddToCartError("Could not add this item to your cart.");
+      setAddToCartError(t("product.add_to_cart_error", "Could not add this item to your cart."));
     } finally {
       setIsAddingToCart(false);
     }
@@ -164,8 +166,9 @@ export default function ProductDetail() {
               {product.name}
             </Heading>
             <div className="mt-3 flex items-center gap-3">
-              <Price price={price} compareAtPrice={product.compare_at_price} size="lg" />
-              {isOutOfStock && <Badge variant="danger">Out of Stock</Badge>}
+              <Price price={displayPrice} compareAtPrice={displayCompare} size="lg" />
+              {product.promotion_label && <Badge variant="accent">{product.promotion_label}</Badge>}
+              {isOutOfStock && <Badge variant="danger">{t("product.out_of_stock", "Out of Stock")}</Badge>}
             </div>
           </div>
 
@@ -213,13 +216,13 @@ export default function ProductDetail() {
               onClick={handleAddToCart}
             >
               <Icon name="cart" size={18} />
-              {isOutOfStock ? "Out of Stock" : isAddingToCart ? "Adding…" : addedToCart ? "Added" : "Add to Cart"}
+              {isOutOfStock ? t("product.out_of_stock", "Out of Stock") : isAddingToCart ? t("product.adding_to_cart", "Adding…") : addedToCart ? t("product.added_to_cart", "Added") : t("product.add_to_cart", "Add to Cart")}
             </Button>
             <Button
               variant="outline"
               size="lg"
               aria-pressed={isAuthenticated && isWishlisted(product.id)}
-              aria-label="Add to wishlist"
+              aria-label={t("product.wishlist_add", "Add to wishlist")}
               onClick={() => toggle(product.id)}
               disabled={!isAuthenticated}
             >

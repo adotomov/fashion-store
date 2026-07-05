@@ -30,7 +30,7 @@ export default function Shop() {
   const [searchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const { locale } = useLanguage();
+  const { locale, t } = useLanguage();
   const { isAuthenticated } = useAuth();
   const { isWishlisted, toggle } = useWishlist();
 
@@ -119,7 +119,7 @@ export default function Shop() {
       locale,
     })
       .then(setProducts)
-      .catch(() => setError("Could not load products."));
+      .catch(() => setError(t("shop.load_error", "Could not load products.")));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categoryKey, selectedCatalogId, attributeKey, searchQuery, locale]);
 
@@ -133,7 +133,7 @@ export default function Shop() {
 
   const visibleCategories = useMemo(() => {
     if (selectedTypeSlugs.length === 0) {
-      return navTypes.flatMap((t) => t.categories);
+      return navTypes.flatMap((nt) => nt.categories);
     }
     return selectedTypeSlugs.flatMap((slug) => categoriesByType.get(slug) ?? []);
   }, [navTypes, selectedTypeSlugs, categoriesByType]);
@@ -144,7 +144,7 @@ export default function Shop() {
 
   function handleToggle(groupId: string, optionId: string) {
     if (groupId === "type") {
-      const type = navTypes.find((t) => t.slug === optionId);
+      const type = navTypes.find((nt) => nt.slug === optionId);
       const isCurrentlySelected = selectedTypeSlugs.includes(optionId);
       setSelectedTypeSlugs((prev) => toggleInList(prev, optionId));
       // Keep the category group in sync: adding a type pre-selects its
@@ -175,13 +175,13 @@ export default function Shop() {
   const filterGroups: FilterGroup[] = [
     {
       id: "type",
-      label: "Type",
+      label: t("shop.filter_type", "Type"),
       type: "checkbox",
-      options: navTypes.map((t) => ({ id: t.slug, label: t.name })),
+      options: navTypes.map((nt) => ({ id: nt.slug, label: nt.name })),
     },
     {
       id: "category",
-      label: "Category",
+      label: t("shop.filter_category", "Category"),
       type: "checkbox",
       options: visibleCategories.map((c) => ({ id: c.id, label: c.name })),
     },
@@ -206,12 +206,12 @@ export default function Shop() {
   }
 
   const heading = searchQuery
-    ? `Search results for "${searchQuery}"`
+    ? `${t("shop.search_results_for", "Search results for")} "${searchQuery}"`
     : selectedCategoryIds.length === 1
-      ? visibleCategories.find((c) => c.id === selectedCategoryIds[0])?.name ?? "Shop"
+      ? visibleCategories.find((c) => c.id === selectedCategoryIds[0])?.name ?? t("nav.shop_all", "Shop All")
       : selectedTypeSlugs.length === 1
-        ? navTypes.find((t) => t.slug === selectedTypeSlugs[0])?.name ?? "Shop"
-        : "All Products";
+        ? navTypes.find((nt) => nt.slug === selectedTypeSlugs[0])?.name ?? t("nav.shop_all", "Shop All")
+        : t("shop.all_products", "All Products");
 
   function clearSearch() {
     const next = new URLSearchParams(searchParams);
@@ -222,9 +222,9 @@ export default function Shop() {
   const breadcrumbItems = [
     { label: "Home", href: "/" },
     ...(selectedTypeSlugs.length === 1
-      ? [{ label: navTypes.find((t) => t.slug === selectedTypeSlugs[0])?.name ?? selectedTypeSlugs[0], href: `/shop?type=${selectedTypeSlugs[0]}` }]
+      ? [{ label: navTypes.find((nt) => nt.slug === selectedTypeSlugs[0])?.name ?? selectedTypeSlugs[0], href: `/shop?type=${selectedTypeSlugs[0]}` }]
       : []),
-    ...(selectedCategoryIds.length === 1 ? [{ label: heading }] : selectedTypeSlugs.length !== 1 ? [{ label: "Shop" }] : []),
+    ...(selectedCategoryIds.length === 1 ? [{ label: heading }] : selectedTypeSlugs.length !== 1 ? [{ label: t("nav.shop_all", "Shop All") }] : []),
   ];
 
   return (
@@ -263,10 +263,10 @@ export default function Shop() {
               <div className="mb-4 flex items-center justify-between lg:justify-end">
                 <Button variant="outline" size="sm" className="lg:hidden" onClick={() => setMobileFiltersOpen(true)}>
                   <Icon name="filters" size={16} />
-                  Filters
+                  {t("shop.filters", "Filters")}
                 </Button>
                 <Text size="sm" tone="muted">
-                  {products ? `${products.length} item${products.length === 1 ? "" : "s"}` : "Loading…"}
+                  {products ? `${products.length} item${products.length === 1 ? "" : "s"}` : t("common.loading", "Loading…")}
                 </Text>
               </div>
 
@@ -278,7 +278,7 @@ export default function Shop() {
                 </div>
               ) : products.length === 0 ? (
                 <Text size="sm" tone="muted" className="py-16 text-center">
-                  No products match these filters yet.
+                  {t("shop.no_products", "No products match these filters yet.")}
                 </Text>
               ) : (
                 <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3">
@@ -290,6 +290,8 @@ export default function Shop() {
                       title={product.name}
                       price={product.base_price}
                       compareAtPrice={product.compare_at_price}
+                      promotionPrice={product.promotion_price}
+                      promotionLabel={product.promotion_label}
                       outOfStock={!product.in_stock}
                       isWishlisted={isAuthenticated && isWishlisted(product.id)}
                       onToggleWishlist={isAuthenticated ? () => toggle(product.id) : undefined}
@@ -303,7 +305,7 @@ export default function Shop() {
       </main>
       <Footer />
 
-      <Modal open={mobileFiltersOpen} onClose={() => setMobileFiltersOpen(false)} title="Filters">
+      <Modal open={mobileFiltersOpen} onClose={() => setMobileFiltersOpen(false)} title={t("shop.filters", "Filters")}>
         <FilterPanel groups={filterGroups} selected={selected} onToggle={handleToggle} onClear={handleClear} />
       </Modal>
     </div>

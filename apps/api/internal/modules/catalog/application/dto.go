@@ -53,6 +53,7 @@ type UpdateProductInput struct {
 	BasePrice           *money.Money
 	CompareAtPrice      *money.Money
 	ClearCompareAtPrice bool
+	NKSCode             *string
 }
 
 // TopProduct is one row of the admin dashboard's "best sellers" ranking —

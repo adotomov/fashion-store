@@ -45,6 +45,7 @@ export default function ProductDetail() {
   // actions, since they're distinct sub-resource operations, not form fields.
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [nksCode, setNksCode] = useState("");
   const [status, setStatus] = useState<ProductStatus>("draft");
   const [priceAmount, setPriceAmount] = useState("0");
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
@@ -61,6 +62,7 @@ export default function ProductDetail() {
       setProduct(loaded);
       setName(loaded.name);
       setDescription(loaded.description);
+      setNksCode(loaded.nks_code ?? "");
       setStatus(loaded.status);
       setPriceAmount((loaded.base_price.amount / 100).toFixed(2));
       setSelectedCategoryIds(loaded.category_ids ?? []);
@@ -101,6 +103,7 @@ export default function ProductDetail() {
         updateProduct(id, {
           name,
           description,
+          nks_code: nksCode,
           status,
           base_price: { amount: Math.round(Number(priceAmount) * 100), currency: product?.base_price.currency ?? "EUR" },
         }),
@@ -190,6 +193,9 @@ export default function ProductDetail() {
             </FormField>
             <FormField label="Description" htmlFor="description">
               <Textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} />
+            </FormField>
+            <FormField label="НКС код (НАП)" htmlFor="nks-code" hint="Номенклатурен код на стоката — незадължително">
+              <Input id="nks-code" value={nksCode} onChange={(e) => setNksCode(e.target.value)} placeholder="напр. 62.03.32" />
             </FormField>
             <TranslationFields
               entityType="product"

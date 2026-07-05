@@ -1,9 +1,25 @@
 package http
 
 import (
+	"context"
+
+	"github.com/google/uuid"
+
 	"github.com/adotomov/fashion-store/apps/api/internal/modules/wishlist/domain"
 	"github.com/adotomov/fashion-store/apps/api/internal/shared/money"
 )
+
+// PromotionsGateway is the minimal interface the wishlist handler needs to
+// decorate items with their currently active promotion price.
+type PromotionsGateway interface {
+	GetEffectivePrices(ctx context.Context, productBasePrices map[uuid.UUID]money.Money) (map[uuid.UUID]EffectivePromoPrice, error)
+}
+
+// EffectivePromoPrice is the wishlist handler's view of an active promotion.
+type EffectivePromoPrice struct {
+	Price money.Money
+	Label string
+}
 
 type moneyResponse struct {
 	AmountMinor int64  `json:"amount_minor"`
@@ -22,6 +38,8 @@ type itemResponse struct {
 	ImageURL       *string        `json:"image_url,omitempty"`
 	BasePrice      moneyResponse  `json:"base_price"`
 	CompareAtPrice *moneyResponse `json:"compare_at_price,omitempty"`
+	PromotionPrice *moneyResponse `json:"promotion_price,omitempty"`
+	PromotionLabel *string        `json:"promotion_label,omitempty"`
 	InStock        bool           `json:"in_stock"`
 	Sizes          []string       `json:"sizes"`
 	CreatedAt      string         `json:"created_at"`
