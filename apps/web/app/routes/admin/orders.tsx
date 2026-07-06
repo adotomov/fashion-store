@@ -1,5 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 
+import { useAdminPermissions } from "../../features/admin/AdminPermissionsContext";
+
 import { EmptyState } from "../../components/admin/EmptyState";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -43,6 +45,7 @@ function formatDate(value: string): string {
 }
 
 export default function AdminOrders() {
+  const { isReadOnly } = useAdminPermissions();
   const [orders, setOrders] = useState<AdminOrder[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -187,7 +190,7 @@ export default function AdminOrders() {
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex justify-end gap-1">
-                          <Button variant="ghost" size="sm" onClick={() => openFulfillmentModal(order)}>
+                          <Button variant="ghost" size="sm" onClick={() => openFulfillmentModal(order)} disabled={isReadOnly}>
                             Update
                           </Button>
                           <Button
@@ -310,7 +313,7 @@ export default function AdminOrders() {
           <Button variant="outline" onClick={() => setFulfillmentOrder(null)} disabled={isSaving}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleSaveFulfillment} disabled={isSaving}>
+          <Button variant="primary" onClick={handleSaveFulfillment} disabled={isSaving || isReadOnly}>
             {isSaving ? "Saving…" : "Save"}
           </Button>
         </div>

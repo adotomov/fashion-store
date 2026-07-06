@@ -40,12 +40,13 @@ type StoreAddressRepository interface {
 	Get(ctx context.Context, id uuid.UUID) (*domain.StoreAddress, error)
 }
 
-// StoreDocumentRepository persists legal document uploads keyed by
-// (type, locale) — each language has its own Terms/Privacy file.
+// StoreDocumentRepository persists legal documents keyed by (type, locale).
+// Documents are either inline Markdown (UpsertContent) or GCS file uploads (Upsert).
 type StoreDocumentRepository interface {
 	List(ctx context.Context, docType domain.DocumentType) ([]domain.StoreDocument, error)
 	Get(ctx context.Context, docType domain.DocumentType, locale string) (*domain.StoreDocument, error)
 	Upsert(ctx context.Context, doc domain.StoreDocument) (*domain.StoreDocument, error)
+	UpsertContent(ctx context.Context, docType domain.DocumentType, locale, content string) (*domain.StoreDocument, error)
 	Delete(ctx context.Context, docType domain.DocumentType, locale string) error
 }
 

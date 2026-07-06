@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
+import { useAdminPermissions } from "../../features/admin/AdminPermissionsContext";
+
 import { EmptyState } from "../../components/admin/EmptyState";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -35,6 +37,7 @@ function variantLabel(variant: ProductVariant): string {
 }
 
 export default function AdminInventory() {
+  const { isReadOnly } = useAdminPermissions();
   const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState<InventoryItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -194,7 +197,7 @@ export default function AdminInventory() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-end">
-        <Button variant="primary" onClick={openCreateModal}>
+        <Button variant="primary" onClick={openCreateModal} disabled={isReadOnly}>
           <Icon name="plus" size={16} />
           Assign SKU
         </Button>
@@ -252,7 +255,7 @@ export default function AdminInventory() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => openAdjustModal(item)}>
+                      <Button variant="ghost" size="sm" onClick={() => openAdjustModal(item)} disabled={isReadOnly}>
                         Adjust
                       </Button>
                       <Button variant="ghost" size="sm" onClick={() => openMovementsModal(item)}>
@@ -321,7 +324,7 @@ export default function AdminInventory() {
           >
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleCreate} disabled={isSaving}>
+          <Button variant="primary" onClick={handleCreate} disabled={isSaving || isReadOnly}>
             {isSaving ? "Saving…" : "Save"}
           </Button>
         </div>
@@ -356,7 +359,7 @@ export default function AdminInventory() {
           <Button variant="outline" onClick={() => setAdjustItem(null)}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleAdjust}>
+          <Button variant="primary" onClick={handleAdjust} disabled={isReadOnly}>
             Save
           </Button>
         </div>

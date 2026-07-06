@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
 
+import { useAdminPermissions } from "../../../features/admin/AdminPermissionsContext";
+
 import { EmptyState } from "../EmptyState";
 import { Badge } from "../../ui/Badge";
 import { Button } from "../../ui/Button";
@@ -25,6 +27,7 @@ const statusVariant = {
 } as const;
 
 export function ProductsTab() {
+  const { isReadOnly } = useAdminPermissions();
   const navigate = useNavigate();
   const [products, setProducts] = useState<Product[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +88,7 @@ export function ProductsTab() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-end">
-        <Button variant="primary" onClick={openCreateModal}>
+        <Button variant="primary" onClick={openCreateModal} disabled={isReadOnly}>
           <Icon name="plus" size={16} />
           Create
         </Button>
@@ -139,6 +142,7 @@ export function ProductsTab() {
                       aria-label="Delete product"
                       title="Delete product"
                       onClick={(e) => handleDelete(product, e)}
+                      disabled={isReadOnly}
                       className="text-danger-600 hover:bg-danger-50"
                     >
                       <Icon name="trash" size={15} />
@@ -166,7 +170,7 @@ export function ProductsTab() {
           <Button variant="outline" onClick={() => setIsModalOpen(false)} disabled={isSaving}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleSave} disabled={isSaving}>
+          <Button variant="primary" onClick={handleSave} disabled={isSaving || isReadOnly}>
             {isSaving ? "Saving…" : "Save & Continue"}
           </Button>
         </div>

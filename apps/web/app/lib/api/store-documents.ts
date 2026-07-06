@@ -41,3 +41,28 @@ export function deleteStoreDocument(type: DocumentType, locale: string): Promise
     method: "DELETE",
   });
 }
+
+export type LegalContent = {
+  locale: string;
+  content_md: string;
+};
+
+export function getLegalContent(type: DocumentType, locale: string): Promise<LegalContent> {
+  return apiFetch<LegalContent>(
+    `/api/v1/admin/store-settings/documents/${type}/content?locale=${encodeURIComponent(locale)}`,
+  );
+}
+
+export function saveLegalContent(type: DocumentType, locale: string, content_md: string): Promise<LegalContent> {
+  return apiFetch<LegalContent>(`/api/v1/admin/store-settings/documents/${type}/content`, {
+    method: "PUT",
+    body: { locale, content_md },
+  });
+}
+
+export function getStorefrontLegalContent(type: DocumentType, locale: string): Promise<LegalContent> {
+  return apiFetch<LegalContent>(
+    `/api/v1/storefront/store-settings/documents/${type}/content?locale=${encodeURIComponent(locale)}`,
+    { auth: false },
+  );
+}

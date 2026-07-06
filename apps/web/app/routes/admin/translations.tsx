@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 
+import { useAdminPermissions } from "../../features/admin/AdminPermissionsContext";
+
 import { Badge } from "../../components/ui/Badge";
 import { Card } from "../../components/ui/Card";
 import { Input } from "../../components/ui/Input";
@@ -11,6 +13,7 @@ import { type UIString, listAllUiStrings, upsertUiString } from "../../lib/api/u
 export const handle = { title: "Translations" };
 
 export default function AdminTranslations() {
+  const { isReadOnly } = useAdminPermissions();
   const [languages, setLanguages] = useState<Language[]>([]);
   const [strings, setStrings] = useState<UIString[]>([]);
   const [locale, setLocale] = useState("en");
@@ -133,8 +136,9 @@ export default function AdminTranslations() {
                       <Input
                         defaultValue={value}
                         placeholder={!value ? "Not translated yet" : undefined}
+                        disabled={isReadOnly}
                         onBlur={(e) => {
-                          if (e.target.value !== value) handleChange(key, e.target.value);
+                          if (!isReadOnly && e.target.value !== value) handleChange(key, e.target.value);
                         }}
                       />
                       {!value && <Badge variant="accent">Missing</Badge>}

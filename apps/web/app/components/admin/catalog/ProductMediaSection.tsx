@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import { useAdminPermissions } from "../../../features/admin/AdminPermissionsContext";
+
 import { Button } from "../../ui/Button";
 import { Icon } from "../../ui/Icon";
 import { Text } from "../../ui/Text";
@@ -18,6 +20,7 @@ type ProductMediaSectionProps = {
 };
 
 export function ProductMediaSection({ productId, media, onChange }: ProductMediaSectionProps) {
+  const { isReadOnly } = useAdminPermissions();
   const [previews, setPreviews] = useState<Record<string, string>>({});
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -132,15 +135,16 @@ export function ProductMediaSection({ productId, media, onChange }: ProductMedia
               type="text"
               placeholder="Alt text"
               defaultValue={item.alt_text}
-              onBlur={(e) => handleAltTextChange(item, e.target.value)}
-              className="h-8 rounded-sm border border-stone-300 px-2 text-xs"
+              onBlur={(e) => { if (!isReadOnly) handleAltTextChange(item, e.target.value); }}
+              disabled={isReadOnly}
+              className="h-8 rounded-sm border border-stone-300 px-2 text-xs disabled:cursor-not-allowed disabled:bg-stone-50 disabled:text-stone-400"
             />
             <div className="flex items-center justify-between">
               <div className="flex gap-1">
                 <button
                   type="button"
                   aria-label="Move earlier"
-                  disabled={index === 0}
+                  disabled={index === 0 || isReadOnly}
                   onClick={() => handleMove(item, -1)}
                   className="rounded-sm p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-30"
                 >
@@ -149,7 +153,7 @@ export function ProductMediaSection({ productId, media, onChange }: ProductMedia
                 <button
                   type="button"
                   aria-label="Move later"
-                  disabled={index === sorted.length - 1}
+                  disabled={index === sorted.length - 1 || isReadOnly}
                   onClick={() => handleMove(item, 1)}
                   className="rounded-sm p-1 text-stone-500 hover:bg-stone-100 disabled:opacity-30"
                 >
@@ -159,8 +163,9 @@ export function ProductMediaSection({ productId, media, onChange }: ProductMedia
               <button
                 type="button"
                 aria-label="Remove image"
+                disabled={isReadOnly}
                 onClick={() => handleDelete(item)}
-                className="rounded-sm p-1 text-danger-600 hover:bg-danger-50"
+                className="rounded-sm p-1 text-danger-600 hover:bg-danger-50 disabled:pointer-events-none disabled:opacity-30"
               >
                 <Icon name="trash" size={14} />
               </button>
@@ -168,18 +173,20 @@ export function ProductMediaSection({ productId, media, onChange }: ProductMedia
           </div>
         ))}
 
-        <label className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-2 rounded-sm border border-dashed border-stone-300 text-stone-500 hover:border-stone-400 hover:text-stone-700">
-          <Icon name="plus" size={20} />
-          <Text size="xs">{isUploading ? "Uploading…" : "Add image"}</Text>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/*"
-            onChange={handleFileSelected}
-            disabled={isUploading}
-            className="hidden"
-          />
-        </label>
+        {!isReadOnly && (
+          <label className="flex aspect-square cursor-pointer flex-col items-center justify-center gap-2 rounded-sm border border-dashed border-stone-300 text-stone-500 hover:border-stone-400 hover:text-stone-700">
+            <Icon name="plus" size={20} />
+            <Text size="xs">{isUploading ? "Uploading…" : "Add image"}</Text>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              onChange={handleFileSelected}
+              disabled={isUploading}
+              className="hidden"
+            />
+          </label>
+        )}
       </div>
     </div>
   );

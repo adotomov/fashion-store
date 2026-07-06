@@ -119,7 +119,7 @@ func (s *Service) AdminSetRoles(ctx context.Context, userID uuid.UUID, roles []d
 		return nil, domain.ValidationError("at least one role is required")
 	}
 	for _, r := range roles {
-		if r != domain.RoleUser && r != domain.RoleAdmin {
+		if r != domain.RoleUser && r != domain.RoleAdmin && r != domain.RoleAudit && r != domain.RoleAccountant {
 			return nil, domain.ValidationError("invalid role: " + string(r))
 		}
 	}

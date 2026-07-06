@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { useAdminPermissions } from "../../features/admin/AdminPermissionsContext";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { FormField } from "../../components/ui/FormField";
@@ -47,6 +48,7 @@ const emptyForm: FormState = {
 };
 
 export default function AdminAppearance() {
+  const { isReadOnly } = useAdminPermissions();
   const [form, setForm] = useState<FormState>(emptyForm);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -194,7 +196,7 @@ export default function AdminAppearance() {
         )}
 
         <div className="flex justify-end">
-          <Button type="submit" disabled={saving}>
+          <Button type="submit" disabled={saving || isReadOnly}>
             {saving ? "Saving…" : "Save Changes"}
           </Button>
         </div>

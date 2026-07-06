@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { useAdminPermissions } from "../../../features/admin/AdminPermissionsContext";
+
 import { EmptyState } from "../EmptyState";
 import { TranslationFields } from "../TranslationFields";
 import { Button } from "../../ui/Button";
@@ -16,6 +18,7 @@ import {
 } from "../../../lib/api/product-types";
 
 export function ProductTypesTab() {
+  const { isReadOnly } = useAdminPermissions();
   const [productTypes, setProductTypes] = useState<ProductType[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -80,7 +83,7 @@ export function ProductTypesTab() {
       </Text>
 
       <div className="flex items-center justify-end">
-        <Button variant="primary" onClick={openCreateModal}>
+        <Button variant="primary" onClick={openCreateModal} disabled={isReadOnly}>
           <Icon name="plus" size={16} />
           Create
         </Button>
@@ -120,6 +123,7 @@ export function ProductTypesTab() {
                         size="sm"
                         aria-label="Translate product type"
                         title="Translate"
+                        disabled={isReadOnly}
                         onClick={() => setTranslatingType(productType)}
                       >
                         <Icon name="globe" size={15} />
@@ -130,6 +134,7 @@ export function ProductTypesTab() {
                         aria-label="Delete product type"
                         title="Delete product type"
                         onClick={() => handleDelete(productType)}
+                        disabled={isReadOnly}
                         className="text-danger-600 hover:bg-danger-50"
                       >
                         <Icon name="trash" size={15} />
@@ -158,7 +163,7 @@ export function ProductTypesTab() {
           <Button variant="outline" onClick={() => setIsModalOpen(false)} disabled={isSaving}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleSave} disabled={isSaving}>
+          <Button variant="primary" onClick={handleSave} disabled={isSaving || isReadOnly}>
             {isSaving ? "Saving…" : "Save"}
           </Button>
         </div>

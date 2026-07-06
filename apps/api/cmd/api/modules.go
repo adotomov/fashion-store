@@ -486,7 +486,7 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 	authService := authapplication.NewService(verifier, identityRepo, sessionRepo, provisioner, a.Config.Auth.SessionTTL)
 
 	requireAdmin := func(next http.Handler) http.Handler {
-		return authhttp.RequireAuth(authService)(authhttp.RequireRole("admin")(next))
+		return authhttp.RequireAuth(authService)(authhttp.RequireAdminAccess()(next))
 	}
 
 	authHandler := authhttp.NewHandler(authService, a.Logger)

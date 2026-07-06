@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import { useAdminPermissions } from "../../../features/admin/AdminPermissionsContext";
+
 import { EmptyState } from "../EmptyState";
 import { TranslationFields } from "../TranslationFields";
 import { Button } from "../../ui/Button";
@@ -22,6 +24,7 @@ import {
 import { type ProductType, listProductTypes } from "../../../lib/api/product-types";
 
 export function CategoriesTab() {
+  const { isReadOnly } = useAdminPermissions();
   const [categories, setCategories] = useState<Category[] | null>(null);
   const [productTypes, setProductTypes] = useState<ProductType[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -177,7 +180,7 @@ export function CategoriesTab() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-end">
-        <Button variant="primary" onClick={openCreateModal}>
+        <Button variant="primary" onClick={openCreateModal} disabled={isReadOnly}>
           <Icon name="plus" size={16} />
           Create
         </Button>
@@ -221,6 +224,7 @@ export function CategoriesTab() {
                         size="sm"
                         aria-label="Edit category"
                         title="Edit category"
+                        disabled={isReadOnly}
                         onClick={() => openEditModal(category)}
                       >
                         <Icon name="pencil" size={15} />
@@ -231,6 +235,7 @@ export function CategoriesTab() {
                         aria-label="Delete category"
                         title="Delete category"
                         onClick={() => handleDelete(category)}
+                        disabled={isReadOnly}
                         className="text-danger-600 hover:bg-danger-50"
                       >
                         <Icon name="trash" size={15} />
@@ -309,7 +314,7 @@ export function CategoriesTab() {
                     variant="outline"
                     size="sm"
                     type="button"
-                    disabled={isThumbnailBusy}
+                    disabled={isThumbnailBusy || isReadOnly}
                     onClick={() => thumbnailInputRef.current?.click()}
                   >
                     {isThumbnailBusy ? "Uploading…" : thumbnailPreview ? "Replace" : "Upload"}
@@ -319,7 +324,7 @@ export function CategoriesTab() {
                       variant="ghost"
                       size="sm"
                       type="button"
-                      disabled={isThumbnailBusy}
+                      disabled={isThumbnailBusy || isReadOnly}
                       onClick={handleThumbnailRemove}
                       className="text-danger-600 hover:bg-danger-50"
                     >
@@ -351,7 +356,7 @@ export function CategoriesTab() {
           <Button variant="outline" onClick={() => setIsModalOpen(false)} disabled={isSaving}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleSave} disabled={isSaving}>
+          <Button variant="primary" onClick={handleSave} disabled={isSaving || isReadOnly}>
             {isSaving ? "Saving…" : "Save"}
           </Button>
         </div>

@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { useAdminPermissions } from "../../../features/admin/AdminPermissionsContext";
+
 import { EmptyState } from "../EmptyState";
 import { TranslationFields } from "../TranslationFields";
 import { Button } from "../../ui/Button";
@@ -26,6 +28,7 @@ function formatDate(value: string): string {
 }
 
 export function CatalogsTab() {
+  const { isReadOnly } = useAdminPermissions();
   const [catalogs, setCatalogs] = useState<Catalog[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -104,7 +107,7 @@ export function CatalogsTab() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-end">
-        <Button variant="primary" onClick={openCreateModal}>
+        <Button variant="primary" onClick={openCreateModal} disabled={isReadOnly}>
           <Icon name="plus" size={16} />
           Create
         </Button>
@@ -151,6 +154,7 @@ export function CatalogsTab() {
                   <td className="px-4 py-3">
                     <Select
                       value={catalog.status}
+                      disabled={isReadOnly}
                       onChange={(e) => handleStatusChange(catalog, e.target.value as CatalogStatus)}
                       className="h-9 w-32 text-xs"
                     >
@@ -184,6 +188,7 @@ export function CatalogsTab() {
                         size="sm"
                         aria-label="Translate catalog"
                         title="Translate"
+                        disabled={isReadOnly}
                         onClick={() => setTranslatingCatalog(catalog)}
                       >
                         <Icon name="globe" size={15} />
@@ -194,6 +199,7 @@ export function CatalogsTab() {
                         aria-label="Delete catalog"
                         title="Delete catalog"
                         onClick={() => handleDelete(catalog)}
+                        disabled={isReadOnly}
                         className="text-danger-600 hover:bg-danger-50"
                       >
                         <Icon name="trash" size={15} />
@@ -222,7 +228,7 @@ export function CatalogsTab() {
           <Button variant="outline" onClick={() => setIsModalOpen(false)} disabled={isSaving}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleSave} disabled={isSaving}>
+          <Button variant="primary" onClick={handleSave} disabled={isSaving || isReadOnly}>
             {isSaving ? "Saving…" : "Save"}
           </Button>
         </div>

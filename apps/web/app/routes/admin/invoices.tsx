@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { useAdminPermissions } from "../../features/admin/AdminPermissionsContext";
+
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -52,6 +54,7 @@ function paymentLabel(method: string) {
 }
 
 function InvoicesTab() {
+  const { isReadOnly } = useAdminPermissions();
   const [invoices, setInvoices] = useState<InvoiceListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
@@ -202,7 +205,7 @@ function InvoicesTab() {
                           View
                         </Button>
                         {inv.document_type === "фактура" && (
-                          <Button variant="ghost" size="sm" onClick={() => setStornoModal(inv)}>
+                          <Button variant="ghost" size="sm" onClick={() => setStornoModal(inv)} disabled={isReadOnly}>
                             Credit note
                           </Button>
                         )}
@@ -236,7 +239,7 @@ function InvoicesTab() {
             </Text>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setStornoModal(null)}>Cancel</Button>
-              <Button variant="primary" onClick={handleStorno} disabled={stornoLoading}>
+              <Button variant="primary" onClick={handleStorno} disabled={stornoLoading || isReadOnly}>
                 {stornoLoading ? "Processing…" : "Issue credit note"}
               </Button>
             </div>
@@ -263,6 +266,7 @@ const EMPTY_SETTINGS: InvoiceSettings = {
 };
 
 function SettingsTab() {
+  const { isReadOnly } = useAdminPermissions();
   const [settings, setSettings] = useState<InvoiceSettings>(EMPTY_SETTINGS);
   const [couriers, setCouriers] = useState<Courier[]>([]);
   const [loading, setLoading] = useState(true);
@@ -391,7 +395,7 @@ function SettingsTab() {
               <Input id="nra-number" value={settings.nra_store_number} onChange={(e) => setSettings({ ...settings, nra_store_number: e.target.value })} />
             </FormField>
             <div className="flex items-center gap-4">
-              <Button variant="primary" onClick={handleSaveSettings} disabled={isSaving}>
+              <Button variant="primary" onClick={handleSaveSettings} disabled={isSaving || isReadOnly}>
                 {isSaving ? "Saving…" : "Save"}
               </Button>
               {saved && <Text size="sm" tone="muted">Settings saved.</Text>}
@@ -403,7 +407,7 @@ function SettingsTab() {
       <section>
         <div className="flex items-center justify-between">
           <Eyebrow>Couriers</Eyebrow>
-          <Button variant="secondary" size="sm" onClick={openNewCourier}>+ Add courier</Button>
+          <Button variant="secondary" size="sm" onClick={openNewCourier} disabled={isReadOnly}>+ Add courier</Button>
         </div>
         <Card className="mt-3">
           {couriers.length === 0 ? (
@@ -430,8 +434,8 @@ function SettingsTab() {
                     <td className="px-4 py-3">{c.sort_order}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2">
-                        <Button variant="ghost" size="sm" onClick={() => openEditCourier(c)}>Edit</Button>
-                        <Button variant="ghost" size="sm" onClick={() => handleDeleteCourier(c.id)}>Delete</Button>
+                        <Button variant="ghost" size="sm" onClick={() => openEditCourier(c)} disabled={isReadOnly}>Edit</Button>
+                        <Button variant="ghost" size="sm" onClick={() => handleDeleteCourier(c.id)} disabled={isReadOnly}>Delete</Button>
                       </div>
                     </td>
                   </tr>
@@ -460,7 +464,7 @@ function SettingsTab() {
             </FormField>
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setCourierModal(null)}>Cancel</Button>
-              <Button variant="primary" onClick={handleSaveCourier} disabled={isSaving}>
+              <Button variant="primary" onClick={handleSaveCourier} disabled={isSaving || isReadOnly}>
                 {isSaving ? "Saving…" : "Save"}
               </Button>
             </div>

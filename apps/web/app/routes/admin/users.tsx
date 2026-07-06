@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { useAuth } from "../../features/auth/AuthContext";
+import { useAdminPermissions } from "../../features/admin/AdminPermissionsContext";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { EmptyState } from "../../components/admin/EmptyState";
@@ -19,6 +20,7 @@ function formatDate(value: string): string {
 
 export default function AdminUsers() {
   const { profile } = useAuth();
+  const { isReadOnly } = useAdminPermissions();
   const [users, setUsers] = useState<AdminUser[] | null>(null);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -50,10 +52,6 @@ export default function AdminUsers() {
     const isAdmin = user.roles.includes("admin");
     const nextRoles = isAdmin ? user.roles.filter((r) => r !== "admin") : [...user.roles, "admin"];
 
-    if (isAdmin && user.id === profile?.id) {
-      window.alert("You can't remove your own admin role.");
-      return;
-    }
     if (!window.confirm(isAdmin ? `Remove admin access from ${user.full_name || user.email}?` : `Grant admin access to ${user.full_name || user.email}?`)) {
       return;
     }
@@ -131,7 +129,11 @@ export default function AdminUsers() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          disabled={updatingId === user.id}
+                          disabled={
+                            isReadOnly ||
+                            updatingId === user.id ||
+                            (isAdmin && user.id === profile?.id)
+                          }
                           onClick={() => toggleAdmin(user)}
                         >
                           {isAdmin ? "Remove admin" : "Make admin"}

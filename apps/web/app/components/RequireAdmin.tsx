@@ -25,7 +25,12 @@ export function RequireAdmin({ children }: { children: ReactNode }) {
     return <Navigate to="/login" state={loginState} replace />;
   }
 
-  if (!profile?.roles.includes("admin")) {
+  const hasAdminAccess =
+    profile?.roles.includes("admin") ||
+    profile?.roles.includes("audit") ||
+    profile?.roles.includes("accountant");
+
+  if (!hasAdminAccess) {
     return <Navigate to="/" replace />;
   }
 

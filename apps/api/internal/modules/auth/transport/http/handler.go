@@ -180,3 +180,34 @@ func RequireRole(role string) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+// RequireAdminAccess returns middleware that enforces role-based access for
+// admin routes with method-level differentiation:
+//   - Mutating methods (POST/PUT/PATCH/DELETE) require the "admin" role.
+//   - Read methods (GET/HEAD/OPTIONS) accept "admin", "audit", or "accountant".
+//
+// Must run after RequireAuth so the principal is already in the request context.
+func RequireAdminAccess() func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			p, ok := authctx.FromContext(r.Context())
+			if !ok {
+				httpx.WriteError(w, http.StatusForbidden, "forbidden", "insufficient permissions")
+				return
+			}
+			switch r.Method {
+			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+				if !p.HasRole("admin") {
+					httpx.WriteError(w, http.StatusForbidden, "forbidden", "insufficient permissions")
+					return
+				}
+			default:
+				if !p.HasRole("admin") && !p.HasRole("audit") && !p.HasRole("accountant") {
+					httpx.WriteError(w, http.StatusForbidden, "forbidden", "insufficient permissions")
+					return
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}

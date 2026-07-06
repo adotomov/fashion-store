@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Link } from "react-router";
 
+import { useAdminPermissions } from "../../../features/admin/AdminPermissionsContext";
+
 import { Badge } from "../../ui/Badge";
 import { Button } from "../../ui/Button";
 import { Icon } from "../../ui/Icon";
@@ -30,6 +32,7 @@ export function ProductVariantsSection({
   attributes,
   onChange,
 }: ProductVariantsSectionProps) {
+  const { isReadOnly } = useAdminPermissions();
   const [selection, setSelection] = useState<Record<string, string>>({});
   const [priceOverride, setPriceOverride] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -118,6 +121,7 @@ export function ProductVariantsSection({
                   size="sm"
                   aria-label="Delete variant"
                   onClick={() => handleDelete(variant.id)}
+                  disabled={isReadOnly}
                   className="text-danger-600 hover:bg-danger-50"
                 >
                   <Icon name="trash" size={15} />
@@ -141,6 +145,7 @@ export function ProductVariantsSection({
               <Select
                 value={selection[attribute.id] ?? ""}
                 onChange={(e) => setSelection((prev) => ({ ...prev, [attribute.id]: e.target.value }))}
+                disabled={isReadOnly}
                 className="h-9 text-sm"
               >
                 <option value="">—</option>
@@ -165,7 +170,7 @@ export function ProductVariantsSection({
               className="h-9 text-sm"
             />
           </div>
-          <Button variant="outline" size="sm" onClick={handleAddVariant} disabled={isSaving}>
+          <Button variant="outline" size="sm" onClick={handleAddVariant} disabled={isSaving || isReadOnly}>
             {isSaving ? "Adding…" : "Add Variant"}
           </Button>
         </div>

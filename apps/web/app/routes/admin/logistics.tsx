@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { useAdminPermissions } from "../../features/admin/AdminPermissionsContext";
+
 import { EmptyState } from "../../components/admin/EmptyState";
 import { Accordion } from "../../components/ui/Accordion";
 import { Button } from "../../components/ui/Button";
@@ -71,6 +73,7 @@ function ProviderCard({
   provider: LogisticsProvider;
   onSaved: (updated: LogisticsProvider) => void;
 }) {
+  const { isReadOnly } = useAdminPermissions();
   const [enabled, setEnabled] = useState(provider.enabled);
   const [config, setConfig] = useState(provider.config);
   const [isSaving, setIsSaving] = useState(false);
@@ -108,7 +111,7 @@ function ProviderCard({
             {enabled ? "Offered at checkout." : "Disabled — hidden from checkout."}
           </Text>
         </div>
-        <Toggle checked={enabled} onChange={setEnabled} aria-label={`Enable ${provider.name}`} />
+        <Toggle checked={enabled} onChange={setEnabled} disabled={isReadOnly} aria-label={`Enable ${provider.name}`} />
       </div>
 
       <Accordion open={enabled}>
@@ -132,7 +135,7 @@ function ProviderCard({
         )}
 
         <div className="mt-6 flex justify-end">
-          <Button variant="primary" onClick={handleSave} disabled={isSaving}>
+          <Button variant="primary" onClick={handleSave} disabled={isSaving || isReadOnly}>
             {isSaving ? "Saving…" : "Save settings"}
           </Button>
         </div>

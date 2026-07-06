@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { useAdminPermissions } from "../../../features/admin/AdminPermissionsContext";
+
 import { EmptyState } from "../EmptyState";
 import { TranslationFields } from "../TranslationFields";
 import { Badge } from "../../ui/Badge";
@@ -20,6 +22,7 @@ import {
 } from "../../../lib/api/attributes";
 
 export function AttributesTab() {
+  const { isReadOnly } = useAdminPermissions();
   const [attributes, setAttributes] = useState<Attribute[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -100,7 +103,7 @@ export function AttributesTab() {
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-end">
-        <Button variant="primary" onClick={openCreateModal}>
+        <Button variant="primary" onClick={openCreateModal} disabled={isReadOnly}>
           <Icon name="plus" size={16} />
           Create
         </Button>
@@ -134,6 +137,7 @@ export function AttributesTab() {
                   aria-label="Delete attribute"
                   title="Delete attribute"
                   onClick={() => handleDeleteAttribute(attribute)}
+                  disabled={isReadOnly}
                   className="text-danger-600 hover:bg-danger-50"
                 >
                   <Icon name="trash" size={15} />
@@ -153,7 +157,8 @@ export function AttributesTab() {
                       type="button"
                       aria-label={`Remove ${value.value}`}
                       onClick={() => handleDeleteValue(attribute, value.id)}
-                      className="text-stone-400 hover:text-danger-600"
+                      disabled={isReadOnly}
+                      className="text-stone-400 hover:text-danger-600 disabled:pointer-events-none disabled:opacity-30"
                     >
                       <Icon name="close" size={12} />
                     </button>
@@ -171,9 +176,10 @@ export function AttributesTab() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter") handleAddValue(attribute);
                   }}
+                  disabled={isReadOnly}
                   className="h-9 text-sm"
                 />
-                <Button variant="outline" size="sm" onClick={() => handleAddValue(attribute)}>
+                <Button variant="outline" size="sm" onClick={() => handleAddValue(attribute)} disabled={isReadOnly}>
                   Add
                 </Button>
               </div>
@@ -201,7 +207,7 @@ export function AttributesTab() {
           <Button variant="outline" onClick={() => setIsModalOpen(false)} disabled={isSaving}>
             Cancel
           </Button>
-          <Button variant="primary" onClick={handleSave} disabled={isSaving}>
+          <Button variant="primary" onClick={handleSave} disabled={isSaving || isReadOnly}>
             {isSaving ? "Saving…" : "Save"}
           </Button>
         </div>

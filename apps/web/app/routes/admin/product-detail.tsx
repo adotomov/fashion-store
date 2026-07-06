@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 
+import { useAdminPermissions } from "../../features/admin/AdminPermissionsContext";
+
 import { AssignmentSelector } from "../../components/admin/catalog/AssignmentSelector";
 import { ProductMediaSection } from "../../components/admin/catalog/ProductMediaSection";
 import { ProductVariantsSection, variantDisplayLabel } from "../../components/admin/catalog/ProductVariantsSection";
@@ -30,6 +32,7 @@ import {
 export const handle = { title: "Product" };
 
 export default function ProductDetail() {
+  const { isReadOnly } = useAdminPermissions();
   const { id } = useParams<{ id: string }>();
   const [product, setProduct] = useState<Product | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -172,7 +175,7 @@ export default function ProductDetail() {
               Saved
             </Text>
           )}
-          <Button variant="primary" onClick={handleSaveClick} disabled={isSaving}>
+          <Button variant="primary" onClick={handleSaveClick} disabled={isSaving || isReadOnly}>
             {isSaving ? "Saving…" : "Save Changes"}
           </Button>
         </div>

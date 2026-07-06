@@ -1,6 +1,7 @@
 package http
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 
@@ -29,12 +30,15 @@ func (h *StoreDocumentHandler) RegisterRoutes(r chi.Router, requireAdmin func(ht
 			r.Post("/", h.upload)
 			r.Get("/file", h.serve)
 			r.Delete("/", h.delete)
+			r.Get("/content", h.getContent)
+			r.Put("/content", h.saveContent)
 		})
 	})
 }
 
 func (h *StoreDocumentHandler) RegisterStorefrontRoutes(r chi.Router) {
 	r.Get("/storefront/store-settings/documents/{type}/file", h.serve)
+	r.Get("/storefront/store-settings/documents/{type}/content", h.getContent)
 }
 
 func parseDocumentType(r *http.Request) (domain.DocumentType, error) {
@@ -156,4 +160,53 @@ func (h *StoreDocumentHandler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+type legalContentResponse struct {
+	Locale    string `json:"locale"`
+	ContentMD string `json:"content_md"`
+}
+
+func (h *StoreDocumentHandler) getContent(w http.ResponseWriter, r *http.Request) {
+	docType, err := parseDocumentType(r)
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	locale := localeFromQuery(r)
+	content, err := h.service.GetContent(r.Context(), docType, locale)
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, legalContentResponse{Locale: locale, ContentMD: content})
+}
+
+func (h *StoreDocumentHandler) saveContent(w http.ResponseWriter, r *http.Request) {
+	docType, err := parseDocumentType(r)
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	var body struct {
+		Locale    string `json:"locale"`
+		ContentMD string `json:"content_md"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "could not parse request body")
+		return
+	}
+	if body.Locale == "" {
+		body.Locale = "en"
+	}
+	doc, err := h.service.SaveContent(r.Context(), docType, body.Locale, body.ContentMD)
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	content := ""
+	if doc.ContentMD != nil {
+		content = *doc.ContentMD
+	}
+	httpx.WriteJSON(w, http.StatusOK, legalContentResponse{Locale: doc.Locale, ContentMD: content})
 }

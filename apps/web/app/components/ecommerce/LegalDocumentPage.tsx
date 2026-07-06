@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+
 import { Footer } from "./Footer";
 import { Header } from "./Header";
 import { Heading, Text } from "../ui/Text";
-import { buttonStyles } from "../ui/Button";
 import { useLanguage } from "../../features/i18n/LanguageContext";
-import { type DocumentType, storefrontDocumentUrl } from "../../lib/api/storefront";
+import { type DocumentType, getStorefrontLegalContent } from "../../lib/api/store-documents";
 
 type LegalDocumentPageProps = {
   title: string;
@@ -14,45 +16,46 @@ type LegalDocumentPageProps = {
 
 export function LegalDocumentPage({ title, documentType }: LegalDocumentPageProps) {
   const { locale } = useLanguage();
-  const [available, setAvailable] = useState<boolean | null>(null);
-  const fileUrl = storefrontDocumentUrl(documentType, locale);
+  const [content, setContent] = useState<string | null>(null);
+  const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    fetch(fileUrl, { method: "HEAD" })
-      .then((res) => {
-        if (!cancelled) setAvailable(res.ok);
+    setContent(null);
+    setNotFound(false);
+    getStorefrontLegalContent(documentType, locale)
+      .then((r) => {
+        if (!cancelled) setContent(r.content_md);
       })
       .catch(() => {
-        if (!cancelled) setAvailable(false);
+        if (!cancelled) setNotFound(true);
       });
     return () => {
       cancelled = true;
     };
-  }, [fileUrl]);
+  }, [documentType, locale]);
 
   return (
     <div className="flex min-h-screen flex-col">
       <Header />
       <main className="flex-1">
         <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <Heading as="h1" size="lg">
-              {title}
-            </Heading>
-            {available && (
-              <a href={fileUrl} download className={buttonStyles({ variant: "outline", size: "sm" })}>
-                Download
-              </a>
-            )}
-          </div>
+          <Heading as="h1" size="lg">
+            {title}
+          </Heading>
 
-          {available ? (
-            <iframe title={title} src={fileUrl} className="mt-8 h-[75vh] w-full rounded-sm border border-stone-200" />
-          ) : (
+          {notFound ? (
             <Text className="mt-6" tone="muted">
               This document is not available yet.
             </Text>
+          ) : content === null ? (
+            <Text className="mt-6" tone="muted">
+              Loading…
+            </Text>
+          ) : (
+            <div className="prose prose-stone mt-8 max-w-none">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+            </div>
           )}
         </div>
       </main>

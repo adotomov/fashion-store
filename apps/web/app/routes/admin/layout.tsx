@@ -1,8 +1,24 @@
-import { Outlet, useMatches } from "react-router";
+import { useEffect } from "react";
+import { Outlet, useLocation, useMatches, useNavigate } from "react-router";
 
 import { AdminHeader } from "../../components/admin/AdminHeader";
 import { AdminSidebar } from "../../components/admin/AdminSidebar";
 import { RequireAdmin } from "../../components/RequireAdmin";
+import { AdminPermissionsProvider, useAdminPermissions } from "../../features/admin/AdminPermissionsContext";
+
+function AccountantGuard() {
+  const { isAccountant, canAccessPath } = useAdminPermissions();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    if (isAccountant && !canAccessPath(location.pathname)) {
+      void navigate("/admin/invoices", { replace: true });
+    }
+  }, [isAccountant, location.pathname, canAccessPath, navigate]);
+
+  return null;
+}
 
 export default function AdminLayout() {
   const matches = useMatches();
@@ -10,15 +26,18 @@ export default function AdminLayout() {
 
   return (
     <RequireAdmin>
-      <div className="flex h-screen overflow-hidden bg-stone-50">
-        <AdminSidebar />
-        <div className="flex h-full flex-1 flex-col overflow-hidden">
-          <AdminHeader title={title} />
-          <main className="flex-1 overflow-y-auto p-8">
-            <Outlet />
-          </main>
+      <AdminPermissionsProvider>
+        <AccountantGuard />
+        <div className="flex h-screen overflow-hidden bg-stone-50">
+          <AdminSidebar />
+          <div className="flex h-full flex-1 flex-col overflow-hidden">
+            <AdminHeader title={title} />
+            <main className="flex-1 overflow-y-auto p-8">
+              <Outlet />
+            </main>
+          </div>
         </div>
-      </div>
+      </AdminPermissionsProvider>
     </RequireAdmin>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, NavLink } from "react-router";
 
 import { useAuth } from "../../features/auth/AuthContext";
+import { useAdminPermissions } from "../../features/admin/AdminPermissionsContext";
 import { useStoreBranding } from "../../features/store-settings/StoreSettingsContext";
 import { getUnviewedOrderCount } from "../../lib/api/admin-orders";
 import { cn } from "../../lib/utils/cn";
@@ -34,6 +35,7 @@ const UNVIEWED_POLL_INTERVAL_MS = 30_000;
 
 export function AdminSidebar() {
   const { profile, logout } = useAuth();
+  const { isAccountant } = useAdminPermissions();
   const { storeName, logoUrl } = useStoreBranding();
   const initials = getInitials(profile?.full_name || profile?.email || "?");
   const [unviewedCount, setUnviewedCount] = useState(0);
@@ -69,28 +71,38 @@ export function AdminSidebar() {
 
       <nav className="flex-1 overflow-y-auto px-3 py-4">
         <ul className="flex flex-col gap-1">
-          {navItems.map((item) => (
-            <li key={item.href}>
-              <NavLink
-                to={item.href}
-                end={item.href === "/admin"}
-                className={({ isActive }) =>
-                  cn(
-                    "flex items-center gap-3 rounded-sm px-3 py-2.5 text-sm font-medium transition-colors",
-                    isActive ? "bg-stone-900 text-white" : "text-stone-600 hover:bg-stone-50 hover:text-stone-900",
-                  )
-                }
-              >
-                <Icon name={item.icon} size={18} />
-                {item.label}
-                {item.href === "/admin/orders" && unviewedCount > 0 && (
-                  <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-clay-500 px-1.5 text-xs font-medium text-white">
-                    {unviewedCount}
-                  </span>
-                )}
-              </NavLink>
-            </li>
-          ))}
+          {navItems.map((item) => {
+            const locked = isAccountant && item.href !== "/admin/invoices";
+            return (
+              <li key={item.href}>
+                <NavLink
+                  to={item.href}
+                  end={item.href === "/admin"}
+                  aria-disabled={locked}
+                  tabIndex={locked ? -1 : undefined}
+                  onClick={locked ? (e) => e.preventDefault() : undefined}
+                  className={({ isActive }) =>
+                    cn(
+                      "flex items-center gap-3 rounded-sm px-3 py-2.5 text-sm font-medium transition-colors",
+                      locked
+                        ? "pointer-events-none cursor-not-allowed text-stone-300"
+                        : isActive
+                          ? "bg-stone-900 text-white"
+                          : "text-stone-600 hover:bg-stone-50 hover:text-stone-900",
+                    )
+                  }
+                >
+                  <Icon name={item.icon} size={18} />
+                  {item.label}
+                  {item.href === "/admin/orders" && unviewedCount > 0 && !locked && (
+                    <span className="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-clay-500 px-1.5 text-xs font-medium text-white">
+                      {unviewedCount}
+                    </span>
+                  )}
+                </NavLink>
+              </li>
+            );
+          })}
         </ul>
       </nav>
 

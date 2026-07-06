@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+
+import { useAdminPermissions } from "../../features/admin/AdminPermissionsContext";
 import { useStoreBranding } from "../../features/store-settings/StoreSettingsContext";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -29,10 +33,8 @@ import {
 } from "../../lib/api/store-addresses";
 import {
   type DocumentType,
-  type StoreDocument,
-  deleteStoreDocument,
-  listStoreDocuments,
-  uploadStoreDocument,
+  getLegalContent,
+  saveLegalContent,
 } from "../../lib/api/store-documents";
 import {
   type StoreSettings,
@@ -72,6 +74,7 @@ export default function AdminSettings() {
 // ---------------------------------------------------------------------------
 
 function IdentityTab() {
+  const { isReadOnly } = useAdminPermissions();
   const { refresh: refreshBranding } = useStoreBranding();
   const [settings, setSettings] = useState<StoreSettings | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -221,7 +224,7 @@ function IdentityTab() {
                     variant="outline"
                     size="sm"
                     type="button"
-                    disabled={isLogoBusy}
+                    disabled={isLogoBusy || isReadOnly}
                     onClick={() => logoInputRef.current?.click()}
                   >
                     {isLogoBusy ? "Uploading…" : logoPreview ? "Replace" : "Upload"}
@@ -231,7 +234,7 @@ function IdentityTab() {
                       variant="ghost"
                       size="sm"
                       type="button"
-                      disabled={isLogoBusy}
+                      disabled={isLogoBusy || isReadOnly}
                       onClick={handleLogoRemove}
                       className="text-danger-600 hover:bg-danger-50"
                     >
@@ -287,7 +290,7 @@ function IdentityTab() {
       </section>
 
       <div className="flex items-center gap-3">
-        <Button type="submit" variant="primary" disabled={isSaving}>
+        <Button type="submit" variant="primary" disabled={isSaving || isReadOnly}>
           {isSaving ? "Saving…" : "Save Changes"}
         </Button>
         {saveError && (
@@ -310,6 +313,7 @@ function IdentityTab() {
 // ---------------------------------------------------------------------------
 
 function ContactsTab() {
+  const { isReadOnly } = useAdminPermissions();
   const [settings, setSettings] = useState<StoreSettings | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -387,7 +391,7 @@ function ContactsTab() {
         </section>
 
         <div className="flex items-center gap-3">
-          <Button type="submit" variant="primary" disabled={isSaving}>
+          <Button type="submit" variant="primary" disabled={isSaving || isReadOnly}>
             {isSaving ? "Saving…" : "Save Changes"}
           </Button>
           {saveError && (
@@ -410,6 +414,7 @@ function ContactsTab() {
             variant="outline"
             size="sm"
             type="button"
+            disabled={isReadOnly}
             onClick={() => {
               setEditingAddress(null);
               setAddressModalOpen(true);
@@ -445,6 +450,7 @@ function ContactsTab() {
                       variant="ghost"
                       size="sm"
                       type="button"
+                      disabled={isReadOnly}
                       onClick={() => {
                         setEditingAddress(address);
                         setAddressModalOpen(true);
@@ -456,6 +462,7 @@ function ContactsTab() {
                       variant="ghost"
                       size="sm"
                       type="button"
+                      disabled={isReadOnly}
                       onClick={() => handleDeleteAddress(address.id)}
                       className="text-danger-600 hover:bg-danger-50"
                     >
@@ -581,162 +588,139 @@ function emptyAddressForm(): UpsertStoreAddressInput {
 }
 
 // ---------------------------------------------------------------------------
-// Legal Documents: per-language uploads for Terms of Service / Privacy Policy.
+// Legal Documents: per-language inline Markdown editors.
 // ---------------------------------------------------------------------------
 
 function LegalDocumentsTab() {
   return (
     <div className="flex flex-col gap-8">
-      <DocumentSection type="terms" title="Terms of Service" />
-      <DocumentSection type="privacy" title="Privacy Policy" />
+      <DocumentEditor type="terms" title="Terms of Service" />
+      <DocumentEditor type="privacy" title="Privacy Policy" />
     </div>
   );
 }
 
-function DocumentSection({ type, title }: { type: DocumentType; title: string }) {
-  const [docs, setDocs] = useState<StoreDocument[]>([]);
-  const [modalOpen, setModalOpen] = useState(false);
-
-  async function refresh() {
-    setDocs(await listStoreDocuments(type));
-  }
+function DocumentEditor({ type, title }: { type: DocumentType; title: string }) {
+  const { isReadOnly } = useAdminPermissions();
+  const [languages, setLanguages] = useState<Language[]>([]);
+  const [activeLocale, setActiveLocale] = useState("en");
+  const [content, setContent] = useState("");
+  const [preview, setPreview] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    refresh();
+    listLanguages()
+      .then(setLanguages)
+      .catch(() => {});
   }, []);
 
-  async function handleDelete(locale: string) {
-    await deleteStoreDocument(type, locale);
-    await refresh();
+  useEffect(() => {
+    setIsLoading(true);
+    setError(null);
+    setSavedAt(null);
+    getLegalContent(type, activeLocale)
+      .then((r) => setContent(r.content_md))
+      .catch(() => setContent(""))
+      .finally(() => setIsLoading(false));
+  }, [type, activeLocale]);
+
+  async function handleSave() {
+    setIsSaving(true);
+    setError(null);
+    try {
+      await saveLegalContent(type, activeLocale, content);
+      setSavedAt(Date.now());
+    } catch {
+      setError("Could not save. Please try again.");
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   return (
     <section>
       <div className="flex items-center justify-between">
         <Eyebrow>{title}</Eyebrow>
-        <Button variant="outline" size="sm" type="button" onClick={() => setModalOpen(true)}>
-          Upload
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            type="button"
+            onClick={() => setPreview((p) => !p)}
+          >
+            {preview ? "Edit" : "Preview"}
+          </Button>
+          <Button
+            variant="primary"
+            size="sm"
+            type="button"
+            disabled={isSaving || isReadOnly}
+            onClick={handleSave}
+          >
+            {isSaving ? "Saving…" : "Save"}
+          </Button>
+        </div>
       </div>
-      <Card className="mt-3 p-6">
-        {docs.length === 0 ? (
-          <Text size="sm" tone="muted">
-            No document uploaded yet.
-          </Text>
+
+      {languages.length > 1 && (
+        <div className="mt-3 flex gap-1">
+          {languages.map((lang) => (
+            <button
+              key={lang.code}
+              type="button"
+              onClick={() => setActiveLocale(lang.code)}
+              className={`rounded-sm px-3 py-1 text-xs font-medium transition-colors ${
+                activeLocale === lang.code
+                  ? "bg-stone-900 text-white"
+                  : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+              }`}
+            >
+              {lang.name}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <Card className="mt-3 overflow-hidden p-0">
+        {isLoading ? (
+          <div className="p-6">
+            <Text size="sm" tone="muted">Loading…</Text>
+          </div>
+        ) : preview ? (
+          <div className="prose prose-stone max-w-none p-6 text-sm">
+            <MarkdownPreview content={content} />
+          </div>
         ) : (
-          <ul className="flex flex-col gap-3">
-            {docs.map((doc) => (
-              <li key={doc.locale} className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <Badge variant="neutral">{doc.locale.toUpperCase()}</Badge>
-                  <Text size="sm">{doc.filename}</Text>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  type="button"
-                  onClick={() => handleDelete(doc.locale)}
-                  className="text-danger-600 hover:bg-danger-50"
-                >
-                  Remove
-                </Button>
-              </li>
-            ))}
-          </ul>
+          <textarea
+            value={content}
+            onChange={(e) => { setContent(e.target.value); setSavedAt(null); }}
+            disabled={isReadOnly}
+            rows={24}
+            placeholder={`# ${title}\n\nWrite the document content here using Markdown…`}
+            className="w-full resize-y bg-transparent p-6 font-mono text-sm leading-relaxed text-stone-800 outline-none placeholder:text-stone-400 disabled:cursor-not-allowed disabled:text-stone-400"
+          />
         )}
       </Card>
 
-      <UploadDocumentModal
-        open={modalOpen}
-        type={type}
-        onClose={() => setModalOpen(false)}
-        onUploaded={async () => {
-          setModalOpen(false);
-          await refresh();
-        }}
-      />
+      <div className="mt-2 flex items-center gap-3">
+        {error && <Text size="xs" tone="danger">{error}</Text>}
+        {!error && savedAt && <Text size="xs" tone="muted">Saved.</Text>}
+        <Text size="xs" tone="muted" className="ml-auto">
+          Markdown supported — headings, bold, lists, links.
+        </Text>
+      </div>
     </section>
   );
 }
 
-function UploadDocumentModal({
-  open,
-  type,
-  onClose,
-  onUploaded,
-}: {
-  open: boolean;
-  type: DocumentType;
-  onClose: () => void;
-  onUploaded: () => void;
-}) {
-  const [languages, setLanguages] = useState<Language[]>([]);
-  const [locale, setLocale] = useState("en");
-  const [file, setFile] = useState<File | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    if (open) {
-      listLanguages().then(setLanguages).catch(() => {});
-      setFile(null);
-      setError(null);
-    }
-  }, [open]);
-
-  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    if (!file) {
-      setError("Choose a file to upload.");
-      return;
-    }
-    setIsUploading(true);
-    setError(null);
-    try {
-      await uploadStoreDocument(type, locale, file);
-      onUploaded();
-    } catch {
-      setError("Could not upload document.");
-    } finally {
-      setIsUploading(false);
-    }
+function MarkdownPreview({ content }: { content: string }) {
+  if (!content.trim()) {
+    return <Text size="sm" tone="muted">Nothing to preview yet.</Text>;
   }
-
-  return (
-    <Modal open={open} onClose={onClose} title="Upload Document">
-      <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-        <FormField label="Language" htmlFor="document-locale">
-          <Select id="document-locale" value={locale} onChange={(e) => setLocale(e.target.value)}>
-            {languages.map((lang) => (
-              <option key={lang.code} value={lang.code}>
-                {lang.name}
-              </option>
-            ))}
-          </Select>
-        </FormField>
-
-        <FormField label="File" htmlFor="document-file" hint="PDF or Word document" error={error ?? undefined}>
-          <input
-            ref={fileInputRef}
-            id="document-file"
-            type="file"
-            accept="application/pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-        </FormField>
-
-        <div className="mt-2 flex justify-end gap-2">
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" disabled={isUploading}>
-            {isUploading ? "Uploading…" : "Upload"}
-          </Button>
-        </div>
-      </form>
-    </Modal>
-  );
+  return <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>;
 }
 
 // ---------------------------------------------------------------------------
@@ -744,6 +728,7 @@ function UploadDocumentModal({
 // ---------------------------------------------------------------------------
 
 function LanguagesTab() {
+  const { isReadOnly } = useAdminPermissions();
   const [languages, setLanguages] = useState<Language[]>([]);
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
@@ -806,7 +791,7 @@ function LanguagesTab() {
                   </div>
                   <div className="flex items-center gap-2">
                     {!lang.is_default && (
-                      <Button variant="ghost" size="sm" type="button" onClick={() => handleToggle(lang)}>
+                      <Button variant="ghost" size="sm" type="button" disabled={isReadOnly} onClick={() => handleToggle(lang)}>
                         {lang.enabled ? "Disable" : "Enable"}
                       </Button>
                     )}
@@ -815,6 +800,7 @@ function LanguagesTab() {
                         variant="ghost"
                         size="sm"
                         type="button"
+                        disabled={isReadOnly}
                         onClick={() => handleDelete(lang)}
                         className="text-danger-600 hover:bg-danger-50"
                       >
@@ -839,7 +825,7 @@ function LanguagesTab() {
             <FormField label="Name" htmlFor="lang-name" className="flex-1">
               <Input id="lang-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Bulgarian" />
             </FormField>
-            <Button type="submit" variant="primary" disabled={isAdding || !code.trim() || !name.trim()}>
+            <Button type="submit" variant="primary" disabled={isAdding || isReadOnly || !code.trim() || !name.trim()}>
               {isAdding ? "Adding…" : "Add Language"}
             </Button>
           </form>

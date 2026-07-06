@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 
+import { useAdminPermissions } from "../../features/admin/AdminPermissionsContext";
+
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -452,6 +454,7 @@ function PromotionsTab({
   onDeleted: (id: string) => void;
   onCreated: (p: Promotion) => void;
 }) {
+  const { isReadOnly } = useAdminPermissions();
   const [modalPromotion, setModalPromotion] = useState<Promotion | null | "new">(null);
 
   async function handleToggle(p: Promotion) {
@@ -476,7 +479,7 @@ function PromotionsTab({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex justify-end">
-        <Button size="sm" onClick={() => setModalPromotion("new")}>
+        <Button size="sm" onClick={() => setModalPromotion("new")} disabled={isReadOnly}>
           <Icon name="plus" size={16} />
           Add Promotion
         </Button>
@@ -511,21 +514,24 @@ function PromotionsTab({
                 <button
                   type="button"
                   onClick={() => void handleToggle(p)}
-                  className="text-xs text-stone-500 hover:text-stone-900 px-2 py-1 rounded border border-stone-200 hover:border-stone-400 transition-colors"
+                  disabled={isReadOnly}
+                  className="text-xs text-stone-500 hover:text-stone-900 px-2 py-1 rounded border border-stone-200 hover:border-stone-400 transition-colors disabled:pointer-events-none disabled:opacity-40"
                 >
                   {p.is_active ? "Deactivate" : "Activate"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setModalPromotion(p)}
-                  className="rounded p-1.5 text-stone-500 hover:bg-stone-100 hover:text-stone-900 transition-colors"
+                  disabled={isReadOnly}
+                  className="rounded p-1.5 text-stone-500 hover:bg-stone-100 hover:text-stone-900 transition-colors disabled:pointer-events-none disabled:opacity-40"
                 >
                   <Icon name="pencil" size={15} />
                 </button>
                 <button
                   type="button"
                   onClick={() => void handleDelete(p)}
-                  className="rounded p-1.5 text-stone-500 hover:bg-danger-50 hover:text-danger-600 transition-colors"
+                  disabled={isReadOnly}
+                  className="rounded p-1.5 text-stone-500 hover:bg-danger-50 hover:text-danger-600 transition-colors disabled:pointer-events-none disabled:opacity-40"
                 >
                   <Icon name="trash" size={15} />
                 </button>
@@ -706,6 +712,7 @@ function CodesTab({
   onDeleted: (id: string) => void;
   onCreated: (c: DiscountCode) => void;
 }) {
+  const { isReadOnly } = useAdminPermissions();
   const [modal, setModal] = useState<DiscountCode | null | "new">(null);
 
   async function handleToggle(c: DiscountCode) {
@@ -730,7 +737,7 @@ function CodesTab({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex justify-end">
-        <Button size="sm" onClick={() => setModal("new")}>
+        <Button size="sm" onClick={() => setModal("new")} disabled={isReadOnly}>
           <Icon name="plus" size={16} />
           Add Code
         </Button>
@@ -762,21 +769,24 @@ function CodesTab({
                 <button
                   type="button"
                   onClick={() => void handleToggle(c)}
-                  className="text-xs text-stone-500 hover:text-stone-900 px-2 py-1 rounded border border-stone-200 hover:border-stone-400 transition-colors"
+                  disabled={isReadOnly}
+                  className="text-xs text-stone-500 hover:text-stone-900 px-2 py-1 rounded border border-stone-200 hover:border-stone-400 transition-colors disabled:pointer-events-none disabled:opacity-40"
                 >
                   {c.is_active ? "Deactivate" : "Activate"}
                 </button>
                 <button
                   type="button"
                   onClick={() => setModal(c)}
-                  className="rounded p-1.5 text-stone-500 hover:bg-stone-100 hover:text-stone-900 transition-colors"
+                  disabled={isReadOnly}
+                  className="rounded p-1.5 text-stone-500 hover:bg-stone-100 hover:text-stone-900 transition-colors disabled:pointer-events-none disabled:opacity-40"
                 >
                   <Icon name="pencil" size={15} />
                 </button>
                 <button
                   type="button"
                   onClick={() => void handleDelete(c)}
-                  className="rounded p-1.5 text-stone-500 hover:bg-danger-50 hover:text-danger-600 transition-colors"
+                  disabled={isReadOnly}
+                  className="rounded p-1.5 text-stone-500 hover:bg-danger-50 hover:text-danger-600 transition-colors disabled:pointer-events-none disabled:opacity-40"
                 >
                   <Icon name="trash" size={15} />
                 </button>

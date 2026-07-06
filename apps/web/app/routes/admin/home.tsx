@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
+import { useAdminPermissions } from "../../features/admin/AdminPermissionsContext";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
@@ -80,6 +81,7 @@ const emptyForm: FormState = {
 };
 
 function HeroTab() {
+  const { isReadOnly } = useAdminPermissions();
   const [form, setForm] = useState<FormState>(emptyForm);
   const [backgroundImageUrl, setBackgroundImageUrl] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
@@ -194,7 +196,7 @@ function HeroTab() {
                 variant="outline"
                 size="sm"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={uploadingBg}
+                disabled={uploadingBg || isReadOnly}
               >
                 Replace
               </Button>
@@ -203,7 +205,7 @@ function HeroTab() {
                 variant="ghost"
                 size="sm"
                 onClick={() => void handleDeleteBackground()}
-                disabled={uploadingBg}
+                disabled={uploadingBg || isReadOnly}
                 className="text-danger-600 hover:bg-danger-50"
               >
                 {uploadingBg ? "Removing…" : "Remove"}
@@ -217,7 +219,7 @@ function HeroTab() {
               variant="outline"
               size="sm"
               onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingBg}
+              disabled={uploadingBg || isReadOnly}
             >
               {uploadingBg ? "Uploading…" : "Upload Image"}
             </Button>
@@ -325,7 +327,7 @@ function HeroTab() {
       )}
 
       <div className="flex justify-end">
-        <Button type="submit" disabled={saving}>
+        <Button type="submit" disabled={saving || isReadOnly}>
           {saving ? "Saving…" : "Save Changes"}
         </Button>
       </div>
@@ -394,6 +396,7 @@ function SectionCard({
   section: HomeSectionConfig;
   onSaved: () => void;
 }) {
+  const { isReadOnly } = useAdminPermissions();
   const [enabled, setEnabled] = useState(section.enabled);
   const [eyebrow, setEyebrow] = useState(section.eyebrow);
   const [heading, setHeading] = useState(section.heading);
@@ -467,7 +470,7 @@ function SectionCard({
           </div>
 
           <div className="flex items-center gap-3">
-            <Button type="submit" variant="primary" size="sm" disabled={isSaving}>
+            <Button type="submit" variant="primary" size="sm" disabled={isSaving || isReadOnly}>
               {isSaving ? "Saving…" : "Save"}
             </Button>
             {saveError && (
@@ -496,6 +499,7 @@ function SectionCard({
 // ─── Product picker for curated sections ─────────────────────────────────────
 
 function ProductPicker({ sectionId }: { sectionId: string }) {
+  const { isReadOnly } = useAdminPermissions();
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [search, setSearch] = useState("");
@@ -555,6 +559,7 @@ function ProductPicker({ sectionId }: { sectionId: string }) {
                 variant="ghost"
                 size="sm"
                 onClick={() => remove(product.id)}
+                disabled={isReadOnly}
                 className="text-danger-600 hover:bg-danger-50"
               >
                 Remove
@@ -588,6 +593,7 @@ function ProductPicker({ sectionId }: { sectionId: string }) {
                     variant="outline"
                     size="sm"
                     onClick={() => add(product.id)}
+                    disabled={isReadOnly}
                   >
                     Add
                   </Button>
@@ -599,7 +605,7 @@ function ProductPicker({ sectionId }: { sectionId: string }) {
       </div>
 
       <div className="flex items-center gap-3">
-        <Button type="button" variant="primary" size="sm" disabled={isSaving} onClick={() => void handleSave()}>
+        <Button type="button" variant="primary" size="sm" disabled={isSaving || isReadOnly} onClick={() => void handleSave()}>
           {isSaving ? "Saving…" : "Save Product List"}
         </Button>
         {saveError && (

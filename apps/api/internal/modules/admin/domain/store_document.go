@@ -11,11 +11,13 @@ const (
 	DocumentTypePrivacy DocumentType = "privacy"
 )
 
-// StoreDocument is one legal document upload for one (type, locale) pair —
-// e.g. the German Terms of Service is a separate row from the English one.
+// StoreDocument is one legal document for one (type, locale) pair.
+// Either ContentMD is set (inline Markdown editor flow) or the GCS
+// fields are set (legacy file-upload flow); never both at once.
 type StoreDocument struct {
 	Type        DocumentType
 	Locale      string
+	ContentMD   *string
 	Bucket      string
 	ObjectKey   string
 	ContentType string
