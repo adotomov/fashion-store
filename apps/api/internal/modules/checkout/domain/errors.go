@@ -6,6 +6,7 @@ var (
 	ErrCartEmpty                 = errors.New("cart is empty")
 	ErrInvalidDeliveryMethod     = errors.New("invalid delivery method")
 	ErrInvalidPaymentMethod      = errors.New("invalid payment method")
+	ErrPaymentMethodNotAllowed   = errors.New("payment method is not available for the chosen delivery method")
 	ErrInsufficientStock         = errors.New("not enough stock available")
 	ErrPaymentFailed             = errors.New("payment failed")
 	ErrDeliveryMethodUnavailable = errors.New("delivery method is currently unavailable")

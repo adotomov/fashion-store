@@ -16,12 +16,16 @@ type deliveryMethodResponse struct {
 	Code string        `json:"code"`
 	Name string        `json:"name"`
 	Fee  moneyResponse `json:"fee"`
+	// PaymentMethods lists the payment methods compatible with this delivery
+	// method, so the storefront only offers valid combinations at checkout.
+	PaymentMethods []string `json:"payment_methods"`
 }
 
 func toDeliveryMethodResponse(m domain.DeliveryMethod) deliveryMethodResponse {
 	return deliveryMethodResponse{
 		Code: m.Code, Name: m.Name,
-		Fee: moneyResponse{AmountMinor: m.Fee.AmountMinor, Currency: m.Fee.Currency},
+		Fee:            moneyResponse{AmountMinor: m.Fee.AmountMinor, Currency: m.Fee.Currency},
+		PaymentMethods: domain.PaymentMethodsFor(m.Code),
 	}
 }
 

@@ -86,6 +86,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_delivery_method", "delivery method is invalid")
 	case errors.Is(err, domain.ErrInvalidPaymentMethod):
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_payment_method", "payment method is invalid")
+	case errors.Is(err, domain.ErrPaymentMethodNotAllowed):
+		httpx.WriteError(w, http.StatusBadRequest, "payment_method_not_allowed", "this payment method is not available for the chosen delivery method")
 	case errors.Is(err, domain.ErrDeliveryMethodUnavailable):
 		httpx.WriteError(w, http.StatusBadRequest, "delivery_method_unavailable", "this delivery method is currently unavailable")
 	case errors.Is(err, domain.ErrOfficeRequired):

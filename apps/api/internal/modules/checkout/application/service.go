@@ -77,6 +77,9 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 	if !domain.ValidPaymentMethod(input.PaymentMethod) {
 		return OrderResult{}, domain.ErrInvalidPaymentMethod
 	}
+	if !domain.PaymentMethodAllowedFor(deliveryMethod.Code, input.PaymentMethod) {
+		return OrderResult{}, domain.ErrPaymentMethodNotAllowed
+	}
 	if !s.fulfillment.IsProviderEnabled(ctx, domain.ProviderFor(deliveryMethod.Code)) {
 		return OrderResult{}, domain.ErrDeliveryMethodUnavailable
 	}

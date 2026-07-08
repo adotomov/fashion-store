@@ -15,6 +15,8 @@ export type DeliveryMethod = {
   code: DeliveryMethodCode;
   name: string;
   fee: Money;
+  /** Payment methods compatible with this delivery method (server-decided). */
+  payment_methods: PaymentMethodCode[];
 };
 
 type RawDeliveryMethod = Omit<DeliveryMethod, "fee"> & { fee: MoneyDTO };

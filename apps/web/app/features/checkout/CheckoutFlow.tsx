@@ -61,14 +61,14 @@ export function CheckoutFlow() {
   const location = useLocation();
 
   const paymentMethodLabels: Record<PaymentMethodCode, string> = {
-    cash_on_delivery: t("checkout.cash_on_delivery", "Cash on Delivery"),
-    card_on_easybox: t("checkout.card_on_easybox", "Card on EasyBox Pickup"),
+    cash_on_delivery: t("checkout.cash_on_delivery", "Pay on Delivery"),
+    card_on_easybox: t("checkout.card_on_easybox", "Pay on Terminal"),
     card_online: t("checkout.card_online", "Pay by Card Online"),
   };
 
   const paymentMethodDescriptions: Record<PaymentMethodCode, string> = {
-    cash_on_delivery: t("checkout.cash_on_delivery_desc", "Pay in cash when your courier delivers the order."),
-    card_on_easybox: t("checkout.card_on_easybox_desc", "Pay by card at the locker when you collect your order."),
+    cash_on_delivery: t("checkout.cash_on_delivery_desc", "Pay by card or cash to the courier on delivery, or at a Speedy office."),
+    card_on_easybox: t("checkout.card_on_easybox_desc", "Pay by card on the locker's terminal when you collect your order."),
     card_online: t("checkout.card_online_desc", "Pay securely now with your card."),
   };
 
@@ -138,9 +138,18 @@ export function CheckoutFlow() {
       .catch(() => setOfficesError(t("checkout.load_lockers_error", "Could not load lockers for this city.")));
   }, [deliveryMethod, shippingAddress.city]);
 
+  // Payment options depend on the delivery method (a locker can't take cash,
+  // a courier has no locker terminal). Clear a selection that no longer fits
+  // when the delivery method changes, so we never submit an invalid combo.
+  useEffect(() => {
+    const allowed = deliveryMethods?.find((m) => m.code === deliveryMethod)?.payment_methods ?? [];
+    setPaymentMethod((current) => (current && allowed.includes(current) ? current : null));
+  }, [deliveryMethod, deliveryMethods]);
+
   const items = cart?.items ?? [];
   const subtotal = cart?.subtotal ?? { amount: 0, currency: "EUR" };
   const selectedDeliveryMethod = deliveryMethods?.find((m) => m.code === deliveryMethod) ?? null;
+  const allowedPaymentMethods = selectedDeliveryMethod?.payment_methods ?? [];
   const discountAmount = appliedDiscount
     ? Math.round(subtotal.amount * (appliedDiscount.value_percent / 100))
     : 0;
@@ -414,7 +423,7 @@ export function CheckoutFlow() {
               {t("checkout.payment_method", "Payment Method")}
             </Heading>
             <div className="mt-4 flex flex-col gap-3">
-              {(Object.keys(paymentMethodLabels) as PaymentMethodCode[]).map((method) => (
+              {allowedPaymentMethods.map((method) => (
                 <SelectableOption
                   key={method}
                   selected={paymentMethod === method}
