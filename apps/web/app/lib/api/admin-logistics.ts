@@ -5,6 +5,8 @@ export type LogisticsProvider = {
   name: string;
   enabled: boolean;
   config: Record<string, string>;
+  /** True when the API is running this provider against a fake/simulated client (SPEEDY_MODE=fake). */
+  dev_mode?: boolean;
   updated_at?: string;
 };
 

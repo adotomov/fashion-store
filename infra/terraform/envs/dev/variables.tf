@@ -81,3 +81,20 @@ variable "placeholder_image" {
   type        = string
   default     = "us-docker.pkg.dev/cloudrun/container/hello"
 }
+
+variable "speedy_mode" {
+  description = "Speedy logistics client mode. \"fake\" uses a local simulated client (no real Speedy API calls, no real shipments) — the default for this dev env. Set to \"real\" once live Speedy credentials are configured for the provider."
+  type        = string
+  default     = "fake"
+
+  validation {
+    condition     = contains(["fake", "real"], var.speedy_mode)
+    error_message = "speedy_mode must be either \"fake\" or \"real\"."
+  }
+}
+
+variable "fulfillment_poll_interval" {
+  description = "How often the shipment-tracking poller runs (Go duration string, e.g. \"15m\", \"30s\"). Note: with Cloud Run min instances = 0 the in-process poller only ticks while an instance is warm, so tracking auto-progression is best-effort on Cloud Run."
+  type        = string
+  default     = "15m"
+}

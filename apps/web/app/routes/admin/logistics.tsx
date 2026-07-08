@@ -4,6 +4,7 @@ import { useAdminPermissions } from "../../features/admin/AdminPermissionsContex
 
 import { EmptyState } from "../../components/admin/EmptyState";
 import { Accordion } from "../../components/ui/Accordion";
+import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card } from "../../components/ui/Card";
 import { FormField } from "../../components/ui/FormField";
@@ -104,9 +105,12 @@ function ProviderCard({
     <Card className="overflow-hidden">
       <div className="flex items-center justify-between px-6 py-5">
         <div>
-          <Heading as="h3" size="sm">
-            {provider.name}
-          </Heading>
+          <div className="flex items-center gap-2">
+            <Heading as="h3" size="sm">
+              {provider.name}
+            </Heading>
+            {provider.dev_mode && <Badge variant="accent">Dev integration</Badge>}
+          </div>
           <Text size="sm" tone="muted" className="mt-1">
             {enabled ? "Offered at checkout." : "Disabled — hidden from checkout."}
           </Text>
@@ -115,6 +119,18 @@ function ProviderCard({
       </div>
 
       <Accordion open={enabled}>
+        {provider.dev_mode && (
+          <div className="mb-4 rounded-sm border border-clay-100 bg-clay-50 px-4 py-3">
+            <Text size="sm" className="font-medium text-clay-700">
+              Running in dev mode
+            </Text>
+            <Text size="sm" tone="muted" className="mt-0.5">
+              This environment uses a simulated {provider.name} client (SPEEDY_MODE=fake). Shipments and tracking are
+              faked locally — no real labels are created and the carrier API isn't called. Credentials below are ignored.
+            </Text>
+          </div>
+        )}
+
         {provider.provider === "speedy" ? (
           <SpeedyConfigForm config={config} onChange={update} />
         ) : (

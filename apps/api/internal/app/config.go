@@ -7,13 +7,14 @@ import (
 )
 
 type Config struct {
-	App      AppConfig
-	HTTP     HTTPConfig
-	Database DatabaseConfig
-	Log      LogConfig
-	Google   GoogleConfig
-	Auth     AuthConfig
-	Storage  StorageConfig
+	App         AppConfig
+	HTTP        HTTPConfig
+	Database    DatabaseConfig
+	Log         LogConfig
+	Google      GoogleConfig
+	Auth        AuthConfig
+	Storage     StorageConfig
+	Fulfillment FulfillmentConfig
 }
 
 type AppConfig struct {
@@ -50,6 +51,22 @@ type StorageConfig struct {
 	ProjectID       string
 }
 
+// SpeedyModeFake selects a local fake Speedy client that returns canned
+// responses instead of calling the real Speedy Web API — used to exercise
+// delivery methods, shipment creation and tracking in dev without a real
+// carrier account or live parcels.
+const SpeedyModeFake = "fake"
+
+type FulfillmentConfig struct {
+	// SpeedyMode is "real" (default) or "fake". Anything other than "fake"
+	// keeps the real HTTP client, so production is never accidentally faked.
+	SpeedyMode string
+	// PollInterval controls how often the tracking poller runs. Kept short in
+	// dev (paired with the fake client's time-based progression) so an order
+	// visibly moves through statuses within minutes rather than hours.
+	PollInterval time.Duration
+}
+
 // LoadConfig loads configuration from environment variables.
 func LoadConfig() (*Config, error) {
 	dbURL := os.Getenv("DATABASE_URL")
@@ -64,6 +81,15 @@ func LoadConfig() (*Config, error) {
 			return nil, fmt.Errorf("invalid AUTH_SESSION_TTL: %w", err)
 		}
 		sessionTTL = d
+	}
+
+	pollInterval := 15 * time.Minute
+	if v := os.Getenv("FULFILLMENT_POLL_INTERVAL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid FULFILLMENT_POLL_INTERVAL: %w", err)
+		}
+		pollInterval = d
 	}
 
 	cfg := &Config{
@@ -93,6 +119,10 @@ func LoadConfig() (*Config, error) {
 			Bucket:          getEnv("STORAGE_BUCKET", "product-media"),
 			InsecureSkipTLS: getEnv("STORAGE_INSECURE_SKIP_TLS", "true") == "true",
 			ProjectID:       os.Getenv("STORAGE_PROJECT_ID"),
+		},
+		Fulfillment: FulfillmentConfig{
+			SpeedyMode:   getEnv("SPEEDY_MODE", "real"),
+			PollInterval: pollInterval,
 		},
 	}
 

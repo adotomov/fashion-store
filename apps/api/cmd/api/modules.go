@@ -29,15 +29,15 @@ import (
 	fulfillmentinfra "github.com/adotomov/fashion-store/apps/api/internal/modules/fulfillment/infrastructure"
 	fulfillmenthttp "github.com/adotomov/fashion-store/apps/api/internal/modules/fulfillment/transport/http"
 	i18napplication "github.com/adotomov/fashion-store/apps/api/internal/modules/i18n/application"
-	invoicingapplication "github.com/adotomov/fashion-store/apps/api/internal/modules/invoicing/application"
-	invoicinginfra "github.com/adotomov/fashion-store/apps/api/internal/modules/invoicing/infrastructure"
-	invoicinghttp "github.com/adotomov/fashion-store/apps/api/internal/modules/invoicing/transport/http"
 	i18ninfra "github.com/adotomov/fashion-store/apps/api/internal/modules/i18n/infrastructure"
 	i18nhttp "github.com/adotomov/fashion-store/apps/api/internal/modules/i18n/transport/http"
 	inventoryapplication "github.com/adotomov/fashion-store/apps/api/internal/modules/inventory/application"
 	inventorydomain "github.com/adotomov/fashion-store/apps/api/internal/modules/inventory/domain"
 	inventoryinfra "github.com/adotomov/fashion-store/apps/api/internal/modules/inventory/infrastructure"
 	inventoryhttp "github.com/adotomov/fashion-store/apps/api/internal/modules/inventory/transport/http"
+	invoicingapplication "github.com/adotomov/fashion-store/apps/api/internal/modules/invoicing/application"
+	invoicinginfra "github.com/adotomov/fashion-store/apps/api/internal/modules/invoicing/infrastructure"
+	invoicinghttp "github.com/adotomov/fashion-store/apps/api/internal/modules/invoicing/transport/http"
 	ordersapplication "github.com/adotomov/fashion-store/apps/api/internal/modules/orders/application"
 	ordersdomain "github.com/adotomov/fashion-store/apps/api/internal/modules/orders/domain"
 	ordersinfra "github.com/adotomov/fashion-store/apps/api/internal/modules/orders/infrastructure"
@@ -576,10 +576,17 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 	i18nStorefrontModule := i18nhttp.NewStorefrontModule(languageHandler, uiStringHandler)
 
 	fulfillmentSettingsRepo := fulfillmentinfra.NewPostgresSettingsRepository(a.DB)
-	fulfillmentSpeedyClient := fulfillmentinfra.NewSpeedyHTTPClient()
+	// Real HTTP client by default; SPEEDY_MODE=fake swaps in a local stand-in
+	// that returns canned responses, so delivery methods and tracking can be
+	// tested in dev without hitting Speedy or shipping real parcels.
+	var fulfillmentSpeedyClient fulfillmentapplication.SpeedyClient = fulfillmentinfra.NewSpeedyHTTPClient()
+	if a.Config.Fulfillment.SpeedyMode == app.SpeedyModeFake {
+		a.Logger.Warn("using FAKE Speedy client — no real shipments will be created", "speedy_mode", a.Config.Fulfillment.SpeedyMode)
+		fulfillmentSpeedyClient = fulfillmentinfra.NewFakeSpeedyClient()
+	}
 	fulfillmentOrderGateway := &fulfillmentOrderGatewayAdapter{orders: ordersService}
 	fulfillmentService := fulfillmentapplication.NewService(fulfillmentSettingsRepo, fulfillmentSpeedyClient, fulfillmentOrderGateway, a.Logger)
-	fulfillmentHandler := fulfillmenthttp.NewHandler(fulfillmentService)
+	fulfillmentHandler := fulfillmenthttp.NewHandler(fulfillmentService, a.Config.Fulfillment.SpeedyMode == app.SpeedyModeFake)
 	fulfillmentModule := fulfillmenthttp.NewModule(fulfillmentHandler, requireAdmin)
 
 	promotionsRepo := promotionsinfra.NewPostgresRepository(a.DB)
@@ -664,36 +671,36 @@ var defaultUIStrings = map[string]string{
 	"header.cart":               "Cart",
 
 	// Common UI
-	"common.loading":          "Loading…",
-	"common.saving":           "Saving…",
-	"common.back":             "Back",
-	"common.cancel":           "Cancel",
-	"common.save":             "Save",
-	"common.optional":         "Optional",
-	"common.default_badge":    "Default",
+	"common.loading":           "Loading…",
+	"common.saving":            "Saving…",
+	"common.back":              "Back",
+	"common.cancel":            "Cancel",
+	"common.save":              "Save",
+	"common.optional":          "Optional",
+	"common.default_badge":     "Default",
 	"common.continue_shopping": "Continue Shopping",
-	"common.full_name":        "Full name",
-	"common.email":            "Email",
-	"common.phone":            "Phone",
-	"common.address_line1":    "Address line 1",
-	"common.address_line2":    "Address line 2",
-	"common.city":             "City",
-	"common.region":           "Region / State",
-	"common.postal_code":      "Postal code",
-	"common.country":          "Country",
-	"common.select_country":   "Select a country",
-	"common.expiry_month":     "Expiry month",
-	"common.expiry_year":      "Expiry year",
+	"common.full_name":         "Full name",
+	"common.email":             "Email",
+	"common.phone":             "Phone",
+	"common.address_line1":     "Address line 1",
+	"common.address_line2":     "Address line 2",
+	"common.city":              "City",
+	"common.region":            "Region / State",
+	"common.postal_code":       "Postal code",
+	"common.country":           "Country",
+	"common.select_country":    "Select a country",
+	"common.expiry_month":      "Expiry month",
+	"common.expiry_year":       "Expiry year",
 
 	// Shop / Browse
-	"shop.all_products":      "All Products",
+	"shop.all_products":       "All Products",
 	"shop.search_results_for": "Search results for",
-	"shop.filters":           "Filters",
-	"shop.clear_filters":     "Clear all",
-	"shop.no_products":       "No products match these filters yet.",
-	"shop.load_error":        "Could not load products.",
-	"shop.filter_type":       "Type",
-	"shop.filter_category":   "Category",
+	"shop.filters":            "Filters",
+	"shop.clear_filters":      "Clear all",
+	"shop.no_products":        "No products match these filters yet.",
+	"shop.load_error":         "Could not load products.",
+	"shop.filter_type":        "Type",
+	"shop.filter_category":    "Category",
 
 	// Home page sections
 	"home.new_in":           "New In",
@@ -702,106 +709,106 @@ var defaultUIStrings = map[string]string{
 	"home.shop_by_category": "Shop by Category",
 
 	// Product
-	"product.add_to_cart":      "Add to Cart",
-	"product.out_of_stock":     "Out of Stock",
-	"product.select_size":      "Select Size",
-	"product.adding_to_cart":   "Adding…",
-	"product.added_to_cart":    "Added",
+	"product.add_to_cart":       "Add to Cart",
+	"product.out_of_stock":      "Out of Stock",
+	"product.select_size":       "Select Size",
+	"product.adding_to_cart":    "Adding…",
+	"product.added_to_cart":     "Added",
 	"product.add_to_cart_error": "Could not add this item to your cart.",
-	"product.load_error":       "Could not load this product.",
-	"product.wishlist_add":     "Add to wishlist",
-	"product.sold_out":         "Sold Out",
-	"product.available":        "Available",
-	"product.sale_badge":       "Sale",
+	"product.load_error":        "Could not load this product.",
+	"product.wishlist_add":      "Add to wishlist",
+	"product.sold_out":          "Sold Out",
+	"product.available":         "Available",
+	"product.sale_badge":        "Sale",
 
 	// Cart
-	"cart.title":          "Your Cart",
-	"cart.empty":          "Your cart is empty",
-	"cart.checkout":       "Checkout",
-	"cart.summary":        "Summary",
-	"cart.subtotal":       "Subtotal",
-	"cart.update_error":   "Could not update quantity.",
-	"cart.remove_error":   "Could not remove this item.",
-	"cart.decrease_qty":   "Decrease quantity",
-	"cart.increase_qty":   "Increase quantity",
-	"cart.remove_item":    "Remove item",
-	"cart.only":           "Only",
-	"cart.left_in_stock":  "left in stock",
+	"cart.title":         "Your Cart",
+	"cart.empty":         "Your cart is empty",
+	"cart.checkout":      "Checkout",
+	"cart.summary":       "Summary",
+	"cart.subtotal":      "Subtotal",
+	"cart.update_error":  "Could not update quantity.",
+	"cart.remove_error":  "Could not remove this item.",
+	"cart.decrease_qty":  "Decrease quantity",
+	"cart.increase_qty":  "Increase quantity",
+	"cart.remove_item":   "Remove item",
+	"cart.only":          "Only",
+	"cart.left_in_stock": "left in stock",
 
 	// Wishlist
-	"wishlist.title":      "Wishlist",
+	"wishlist.title":       "Wishlist",
 	"wishlist.empty_title": "Your wishlist is empty",
-	"wishlist.empty_desc": "Save items you love by tapping the heart on any product.",
+	"wishlist.empty_desc":  "Save items you love by tapping the heart on any product.",
 	"wishlist.sizes_label": "Sizes:",
-	"wishlist.remove":     "Remove from wishlist",
+	"wishlist.remove":      "Remove from wishlist",
 
 	// Checkout steps
-	"checkout.title":        "Checkout",
-	"checkout.place_order":  "Place Order",
+	"checkout.title":         "Checkout",
+	"checkout.place_order":   "Place Order",
 	"checkout.step_details":  "Details",
 	"checkout.step_delivery": "Delivery",
 	"checkout.step_payment":  "Payment",
 	"checkout.step_review":   "Review",
 
 	// Checkout — contact & shipping step
-	"checkout.contact_shipping":        "Contact & Shipping",
-	"checkout.signin_prompt":           "Have an account? Sign in for a faster checkout and to track this order.",
-	"checkout.login_register":          "Log In / Register",
-	"checkout.shipping_address":        "Shipping address",
-	"checkout.enter_new_address":       "Enter a new address",
+	"checkout.contact_shipping":         "Contact & Shipping",
+	"checkout.signin_prompt":            "Have an account? Sign in for a faster checkout and to track this order.",
+	"checkout.login_register":           "Log In / Register",
+	"checkout.shipping_address":         "Shipping address",
+	"checkout.enter_new_address":        "Enter a new address",
 	"checkout.billing_same_as_shipping": "Billing address same as shipping",
-	"checkout.billing_address":         "Billing address",
-	"checkout.continue_to_delivery":    "Continue to Delivery",
-	"checkout.contact_required_error":  "Full name and email are required.",
-	"checkout.shipping_required_error": "A complete shipping address with a country is required.",
-	"checkout.billing_required_error":  "A complete billing address with a country is required.",
+	"checkout.billing_address":          "Billing address",
+	"checkout.continue_to_delivery":     "Continue to Delivery",
+	"checkout.contact_required_error":   "Full name and email are required.",
+	"checkout.shipping_required_error":  "A complete shipping address with a country is required.",
+	"checkout.billing_required_error":   "A complete billing address with a country is required.",
 
 	// Checkout — delivery step
-	"checkout.delivery_method":      "Delivery Method",
-	"checkout.free":                 "Free",
-	"checkout.choose_locker":        "Choose a locker",
+	"checkout.delivery_method":        "Delivery Method",
+	"checkout.free":                   "Free",
+	"checkout.choose_locker":          "Choose a locker",
 	"checkout.enter_city_for_lockers": "Enter a shipping city to see nearby lockers.",
-	"checkout.loading_lockers":      "Loading lockers…",
-	"checkout.no_lockers_found":     "No lockers found for this city.",
-	"checkout.select_locker":        "Select a locker",
-	"checkout.load_lockers_error":   "Could not load lockers for this city.",
-	"checkout.continue_to_payment":  "Continue to Payment",
+	"checkout.loading_lockers":        "Loading lockers…",
+	"checkout.no_lockers_found":       "No lockers found for this city.",
+	"checkout.select_locker":          "Select a locker",
+	"checkout.load_lockers_error":     "Could not load lockers for this city.",
+	"checkout.continue_to_payment":    "Continue to Payment",
 
 	// Checkout — payment step
-	"checkout.payment_method":       "Payment Method",
-	"checkout.cash_on_delivery":     "Cash on Delivery",
+	"checkout.payment_method":        "Payment Method",
+	"checkout.cash_on_delivery":      "Cash on Delivery",
 	"checkout.cash_on_delivery_desc": "Pay in cash when your courier delivers the order.",
-	"checkout.card_on_easybox":      "Card on EasyBox Pickup",
-	"checkout.card_on_easybox_desc": "Pay by card at the locker when you collect your order.",
-	"checkout.card_online":          "Pay by Card Online",
-	"checkout.card_online_desc":     "Pay securely now with your card.",
-	"checkout.card_number":          "Card number",
-	"checkout.card_mock_hint":       "Mock payment — any number works, except one ending in 0000.",
-	"checkout.cvv":                  "CVV",
-	"checkout.review_order":         "Review Order",
-	"checkout.processing_payment":   "Processing payment…",
-	"checkout.pay":                  "Pay",
-	"checkout.payment_failed_error": "Payment could not be processed. Please check your card details and try again.",
-	"checkout.place_order_error":    "Could not place your order. Please try again.",
+	"checkout.card_on_easybox":       "Card on EasyBox Pickup",
+	"checkout.card_on_easybox_desc":  "Pay by card at the locker when you collect your order.",
+	"checkout.card_online":           "Pay by Card Online",
+	"checkout.card_online_desc":      "Pay securely now with your card.",
+	"checkout.card_number":           "Card number",
+	"checkout.card_mock_hint":        "Mock payment — any number works, except one ending in 0000.",
+	"checkout.cvv":                   "CVV",
+	"checkout.review_order":          "Review Order",
+	"checkout.processing_payment":    "Processing payment…",
+	"checkout.pay":                   "Pay",
+	"checkout.payment_failed_error":  "Payment could not be processed. Please check your card details and try again.",
+	"checkout.place_order_error":     "Could not place your order. Please try again.",
 
 	// Checkout — review & summary
-	"checkout.review_complete":   "Review & Complete",
-	"checkout.order_summary":     "Order Summary",
-	"checkout.delivery_label":    "Delivery",
-	"checkout.payment_label":     "Payment",
-	"checkout.subtotal":          "Subtotal",
-	"checkout.discount_label":    "Discount",
-	"checkout.delivery_fee":      "Delivery fee",
-	"checkout.total":             "Total",
-	"checkout.placing_order":     "Placing order…",
-	"checkout.complete_order":    "Complete Order",
+	"checkout.review_complete": "Review & Complete",
+	"checkout.order_summary":   "Order Summary",
+	"checkout.delivery_label":  "Delivery",
+	"checkout.payment_label":   "Payment",
+	"checkout.subtotal":        "Subtotal",
+	"checkout.discount_label":  "Discount",
+	"checkout.delivery_fee":    "Delivery fee",
+	"checkout.total":           "Total",
+	"checkout.placing_order":   "Placing order…",
+	"checkout.complete_order":  "Complete Order",
 
 	// Checkout — confirmation
-	"checkout.order_placed":          "Order Placed",
+	"checkout.order_placed":           "Order Placed",
 	"checkout.order_confirmed_prefix": "Thank you! Your order",
 	"checkout.order_confirmed_suffix": "has been",
-	"checkout.order_paid_placed":     "paid and placed",
-	"checkout.order_placed_fallback": "placed",
+	"checkout.order_paid_placed":      "paid and placed",
+	"checkout.order_placed_fallback":  "placed",
 
 	// Checkout — discount code
 	"checkout.discount_code":    "Discount code",

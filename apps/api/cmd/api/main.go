@@ -33,7 +33,7 @@ func main() {
 	router := app.NewRouter(log, corsOrigins(), registrars...)
 	srv := app.NewServer(bootstrapped.Config.HTTP.Addr, router)
 
-	go fulfillmentService.Run(ctx, 15*time.Minute)
+	go fulfillmentService.Run(ctx, bootstrapped.Config.Fulfillment.PollInterval)
 
 	go func() {
 		log.Info("starting api server", slog.String("addr", bootstrapped.Config.HTTP.Addr))

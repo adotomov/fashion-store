@@ -53,6 +53,14 @@ resource "google_cloud_run_v2_service" "api" {
         value = "json"
       }
       env {
+        name  = "SPEEDY_MODE"
+        value = var.speedy_mode
+      }
+      env {
+        name  = "FULFILLMENT_POLL_INTERVAL"
+        value = var.fulfillment_poll_interval
+      }
+      env {
         name = "CORS_ALLOWED_ORIGINS"
         # Includes both the eventual custom domain and the Cloud Run *.run.app
         # URL, since the frontend is reachable at the latter until the Cloud

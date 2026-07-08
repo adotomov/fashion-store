@@ -14,10 +14,14 @@ import (
 
 type Handler struct {
 	service *application.Service
+	// speedyDevMode is true when the API is wired to the fake Speedy client
+	// (SPEEDY_MODE=fake). Surfaced to the admin UI so it's obvious the
+	// integration is simulated, not talking to the real carrier.
+	speedyDevMode bool
 }
 
-func NewHandler(service *application.Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *application.Service, speedyDevMode bool) *Handler {
+	return &Handler{service: service, speedyDevMode: speedyDevMode}
 }
 
 func (h *Handler) RegisterRoutes(r chi.Router, requireAdmin func(http.Handler) http.Handler) {
@@ -43,12 +47,14 @@ func (h *Handler) adminListProviders(w http.ResponseWriter, r *http.Request) {
 
 	resp := make([]providerResponse, 0, len(knownProviders))
 	for _, p := range knownProviders {
-		settings, ok := byProvider[p.Code]
-		if ok {
-			resp = append(resp, toProviderResponse(p.Code, p.Name, &settings))
+		var pr providerResponse
+		if settings, ok := byProvider[p.Code]; ok {
+			pr = toProviderResponse(p.Code, p.Name, &settings)
 		} else {
-			resp = append(resp, toProviderResponse(p.Code, p.Name, nil))
+			pr = toProviderResponse(p.Code, p.Name, nil)
 		}
+		pr.DevMode = h.speedyDevMode && p.Code == domain.ProviderSpeedy
+		resp = append(resp, pr)
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
@@ -84,7 +90,9 @@ func (h *Handler) adminSaveProvider(w http.ResponseWriter, r *http.Request) {
 			name = p.Name
 		}
 	}
-	httpx.WriteJSON(w, http.StatusOK, toProviderResponse(provider, name, settings))
+	resp := toProviderResponse(provider, name, settings)
+	resp.DevMode = h.speedyDevMode && provider == domain.ProviderSpeedy
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) searchOffices(w http.ResponseWriter, r *http.Request) {

@@ -24,11 +24,14 @@ var maskedConfigKeys = map[string]bool{
 }
 
 type providerResponse struct {
-	Provider  string            `json:"provider"`
-	Name      string            `json:"name"`
-	Enabled   bool              `json:"enabled"`
-	Config    map[string]string `json:"config"`
-	UpdatedAt string            `json:"updated_at,omitempty"`
+	Provider string            `json:"provider"`
+	Name     string            `json:"name"`
+	Enabled  bool              `json:"enabled"`
+	Config   map[string]string `json:"config"`
+	// DevMode is true when this provider is backed by a fake/simulated client
+	// rather than the real carrier API — the admin UI shows a badge for it.
+	DevMode   bool   `json:"dev_mode"`
+	UpdatedAt string `json:"updated_at,omitempty"`
 }
 
 func toProviderResponse(code, name string, settings *domain.ProviderSettings) providerResponse {
