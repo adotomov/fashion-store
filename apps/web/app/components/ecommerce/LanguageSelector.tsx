@@ -19,7 +19,7 @@ export function LanguageSelector() {
       <button
         type="button"
         aria-label="Choose language"
-        className="flex items-center gap-1 rounded-sm p-2.5 text-sm font-medium text-stone-700 hover:bg-stone-50"
+        className="flex items-center gap-1 rounded-sm p-2 text-sm font-medium text-stone-700 hover:bg-stone-50 sm:p-2.5"
         onClick={() => setOpen((o) => !o)}
         onBlur={() => setOpen(false)}
       >

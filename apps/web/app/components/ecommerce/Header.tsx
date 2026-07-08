@@ -56,7 +56,7 @@ export function Header({ className }: HeaderProps) {
       className={cn("relative z-30 border-b border-stone-200 bg-white", className)}
       onMouseLeave={() => setOpenTypeId(null)}
     >
-      <div className="mx-auto flex h-20 max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-2 px-4 sm:h-20 sm:gap-4 sm:px-6 lg:px-8">
         <button
           type="button"
           className="-ml-2 p-2 lg:hidden"
@@ -66,9 +66,11 @@ export function Header({ className }: HeaderProps) {
           <Icon name={menuOpen ? "close" : "menu"} size={22} />
         </button>
 
-        <Link to="/" className="flex items-center gap-2">
-          {logoUrl && <img src={logoUrl} alt={storeName} className="h-8 w-auto object-contain" />}
-          <span className="font-display text-2xl font-medium tracking-wide text-stone-900">{storeName}</span>
+        <Link to="/" className="flex min-w-0 items-center gap-2">
+          {logoUrl && <img src={logoUrl} alt={storeName} className="h-7 w-auto object-contain sm:h-8" />}
+          <span className="truncate font-display text-lg font-medium tracking-wide text-stone-900 sm:text-2xl">
+            {storeName}
+          </span>
         </Link>
 
         <nav className="hidden items-center gap-8 lg:flex">
@@ -96,7 +98,7 @@ export function Header({ className }: HeaderProps) {
           ))}
         </nav>
 
-        <div className="flex items-center gap-1">
+        <div className="flex shrink-0 items-center gap-0.5 sm:gap-1">
           <LanguageSelector />
           <div className="relative">
             {searchOpen ? (
@@ -118,7 +120,7 @@ export function Header({ className }: HeaderProps) {
               <button
                 type="button"
                 aria-label={t("header.search", "Search")}
-                className="rounded-sm p-2.5 hover:bg-stone-50"
+                className="rounded-sm p-2 hover:bg-stone-50 sm:p-2.5"
                 onClick={() => setSearchOpen(true)}
               >
                 <Icon name="search" size={20} />
@@ -132,18 +134,18 @@ export function Header({ className }: HeaderProps) {
               to="/login"
               state={{ from: { pathname: location.pathname, search: location.search } }}
               aria-label={t("header.account", "Account")}
-              className="rounded-sm p-2.5 hover:bg-stone-50"
+              className="rounded-sm p-2 hover:bg-stone-50 sm:p-2.5"
             >
               <Icon name="profile" size={20} />
             </Link>
           )}
           {isAuthenticated && (
-            <Link to="/wishlist" aria-label={t("header.wishlist", "Wishlist")} className="relative rounded-sm p-2.5 hover:bg-stone-50">
+            <Link to="/wishlist" aria-label={t("header.wishlist", "Wishlist")} className="relative rounded-sm p-2 hover:bg-stone-50 sm:p-2.5">
               <Icon name="wishlist" size={20} />
               {wishlistCount > 0 && <CountBadge count={wishlistCount} />}
             </Link>
           )}
-          <Link to="/cart" aria-label={t("header.cart", "Cart")} className="relative rounded-sm p-2.5 hover:bg-stone-50">
+          <Link to="/cart" aria-label={t("header.cart", "Cart")} className="relative rounded-sm p-2 hover:bg-stone-50 sm:p-2.5">
             <Icon name="cart" size={20} />
             {cartCount > 0 && <CountBadge count={cartCount} />}
           </Link>
