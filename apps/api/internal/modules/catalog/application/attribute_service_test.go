@@ -62,11 +62,11 @@ func (f *fakeAttributeRepo) Delete(_ context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (f *fakeAttributeRepo) AddValue(_ context.Context, attributeID uuid.UUID, value string) (*domain.AttributeValue, error) {
+func (f *fakeAttributeRepo) AddValue(_ context.Context, attributeID uuid.UUID, value string, colorHex *string) (*domain.AttributeValue, error) {
 	if _, ok := f.byID[attributeID]; !ok {
 		return nil, domain.ErrAttributeNotFound
 	}
-	v := domain.AttributeValue{ID: uuid.New(), AttributeID: attributeID, Value: value}
+	v := domain.AttributeValue{ID: uuid.New(), AttributeID: attributeID, Value: value, ColorHex: colorHex}
 	f.values[attributeID] = append(f.values[attributeID], v)
 	return &v, nil
 }
@@ -90,10 +90,10 @@ func TestAttributeService_CreateAndAddValues(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if _, err := svc.AddValue(context.Background(), attribute.ID, "S"); err != nil {
+	if _, err := svc.AddValue(context.Background(), attribute.ID, "S", nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if _, err := svc.AddValue(context.Background(), attribute.ID, "M"); err != nil {
+	if _, err := svc.AddValue(context.Background(), attribute.ID, "M", nil); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
@@ -111,5 +111,48 @@ func TestAttributeService_RejectsEmptyName(t *testing.T) {
 
 	if _, err := svc.CreateAttribute(context.Background(), application.CreateAttributeInput{Name: ""}); err == nil {
 		t.Fatal("expected error for empty name")
+	}
+}
+
+func TestAttributeService_ColorValueRequiresValidHex(t *testing.T) {
+	repo := newFakeAttributeRepo()
+	svc := application.NewAttributeService(repo)
+
+	color, err := repo.Create(context.Background(), domain.Attribute{Name: "Color", Type: domain.AttributeTypeColor, IsSystem: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Missing hex on a color attribute is rejected.
+	if _, err := svc.AddValue(context.Background(), color.ID, "Clay", nil); err == nil {
+		t.Fatal("expected error when color hex is missing")
+	}
+	// Malformed hex is rejected.
+	bad := "clay"
+	if _, err := svc.AddValue(context.Background(), color.ID, "Clay", &bad); err == nil {
+		t.Fatal("expected error for malformed hex")
+	}
+	// Valid hex succeeds and is persisted on the value.
+	good := "#B2543C"
+	v, err := svc.AddValue(context.Background(), color.ID, "Clay", &good)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if v.ColorHex == nil || *v.ColorHex != good {
+		t.Errorf("expected color hex %q, got %v", good, v.ColorHex)
+	}
+}
+
+func TestAttributeService_DeleteSystemAttributeBlocked(t *testing.T) {
+	repo := newFakeAttributeRepo()
+	svc := application.NewAttributeService(repo)
+
+	color, err := repo.Create(context.Background(), domain.Attribute{Name: "Color", Type: domain.AttributeTypeColor, IsSystem: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := svc.DeleteAttribute(context.Background(), color.ID); err != domain.ErrSystemAttributeReadOnly {
+		t.Fatalf("expected ErrSystemAttributeReadOnly, got %v", err)
 	}
 }

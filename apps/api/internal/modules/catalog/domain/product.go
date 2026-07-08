@@ -32,6 +32,9 @@ func (s ProductStatus) Valid() bool {
 type AttributeRef struct {
 	ID   uuid.UUID
 	Name string
+	// Type lets the storefront decide how to render an attribute's values —
+	// color swatches for AttributeTypeColor, text pills otherwise.
+	Type AttributeType
 }
 
 type Product struct {

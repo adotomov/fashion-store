@@ -11,9 +11,13 @@ export type FilterOption = {
   count?: number;
 };
 
+// Color filter options may carry an explicit id so the panel can toggle by a
+// stable value id (e.g. an attribute_value_id) rather than the color's name.
+export type FilterColorOption = ColorOption & { id?: string };
+
 export type FilterGroup =
   | { id: string; label: string; type: "checkbox"; options: FilterOption[] }
-  | { id: string; label: string; type: "color"; options: ColorOption[] };
+  | { id: string; label: string; type: "color"; options: FilterColorOption[] };
 
 type FilterPanelProps = {
   groups: FilterGroup[];
@@ -68,14 +72,17 @@ export function FilterPanel({ groups, selected, onToggle, onClear, className }: 
 
             {group.type === "color" && (
               <div className="flex flex-wrap gap-3">
-                {group.options.map((color) => (
-                  <ColorSwatch
-                    key={color.name}
-                    color={color}
-                    selected={selected[group.id]?.includes(color.name) ?? false}
-                    onSelect={() => onToggle(group.id, color.name)}
-                  />
-                ))}
+                {group.options.map((color) => {
+                  const key = color.id ?? color.name;
+                  return (
+                    <ColorSwatch
+                      key={key}
+                      color={color}
+                      selected={selected[group.id]?.includes(key) ?? false}
+                      onSelect={() => onToggle(group.id, key)}
+                    />
+                  );
+                })}
               </div>
             )}
           </div>

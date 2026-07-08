@@ -56,11 +56,11 @@ func TestPostgresProductRepository_FullLifecycle(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = attributeRepo.Delete(ctx, sizeAttr.ID) })
 
-	sizeS, err := attributeRepo.AddValue(ctx, sizeAttr.ID, "S")
+	sizeS, err := attributeRepo.AddValue(ctx, sizeAttr.ID, "S", nil)
 	if err != nil {
 		t.Fatalf("add attribute value: %v", err)
 	}
-	sizeM, err := attributeRepo.AddValue(ctx, sizeAttr.ID, "M")
+	sizeM, err := attributeRepo.AddValue(ctx, sizeAttr.ID, "M", nil)
 	if err != nil {
 		t.Fatalf("add attribute value: %v", err)
 	}
@@ -170,11 +170,11 @@ func TestPostgresProductRepository_AttributeFacetsAndFiltering(t *testing.T) {
 		t.Fatalf("create size attribute: %v", err)
 	}
 	t.Cleanup(func() { _ = attributeRepo.Delete(ctx, sizeAttr.ID) })
-	sizeS, err := attributeRepo.AddValue(ctx, sizeAttr.ID, "S")
+	sizeS, err := attributeRepo.AddValue(ctx, sizeAttr.ID, "S", nil)
 	if err != nil {
 		t.Fatalf("add size S: %v", err)
 	}
-	sizeM, err := attributeRepo.AddValue(ctx, sizeAttr.ID, "M")
+	sizeM, err := attributeRepo.AddValue(ctx, sizeAttr.ID, "M", nil)
 	if err != nil {
 		t.Fatalf("add size M: %v", err)
 	}
@@ -184,11 +184,11 @@ func TestPostgresProductRepository_AttributeFacetsAndFiltering(t *testing.T) {
 		t.Fatalf("create color attribute: %v", err)
 	}
 	t.Cleanup(func() { _ = attributeRepo.Delete(ctx, colorAttr.ID) })
-	colorBlue, err := attributeRepo.AddValue(ctx, colorAttr.ID, "Blue")
+	colorBlue, err := attributeRepo.AddValue(ctx, colorAttr.ID, "Blue", nil)
 	if err != nil {
 		t.Fatalf("add color blue: %v", err)
 	}
-	colorRed, err := attributeRepo.AddValue(ctx, colorAttr.ID, "Red")
+	colorRed, err := attributeRepo.AddValue(ctx, colorAttr.ID, "Red", nil)
 	if err != nil {
 		t.Fatalf("add color red: %v", err)
 	}

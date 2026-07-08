@@ -35,14 +35,26 @@ func (h *AttributeHandler) RegisterRoutes(r chi.Router, requireAdmin func(http.H
 }
 
 type attributeValueResponse struct {
-	ID          string `json:"id"`
-	AttributeID string `json:"attribute_id"`
-	Value       string `json:"value"`
+	ID          string  `json:"id"`
+	AttributeID string  `json:"attribute_id"`
+	Value       string  `json:"value"`
+	ColorHex    *string `json:"color_hex,omitempty"`
+}
+
+func toAttributeValueResponse(v domain.AttributeValue) attributeValueResponse {
+	return attributeValueResponse{
+		ID:          v.ID.String(),
+		AttributeID: v.AttributeID.String(),
+		Value:       v.Value,
+		ColorHex:    v.ColorHex,
+	}
 }
 
 type attributeResponse struct {
 	ID        string                   `json:"id"`
 	Name      string                   `json:"name"`
+	Type      string                   `json:"type"`
+	IsSystem  bool                     `json:"is_system"`
 	Values    []attributeValueResponse `json:"values"`
 	CreatedAt string                   `json:"created_at"`
 	UpdatedAt string                   `json:"updated_at"`
@@ -51,11 +63,13 @@ type attributeResponse struct {
 func toAttributeResponse(a domain.Attribute) attributeResponse {
 	values := make([]attributeValueResponse, 0, len(a.Values))
 	for _, v := range a.Values {
-		values = append(values, attributeValueResponse{ID: v.ID.String(), AttributeID: v.AttributeID.String(), Value: v.Value})
+		values = append(values, toAttributeValueResponse(v))
 	}
 	return attributeResponse{
 		ID:        a.ID.String(),
 		Name:      a.Name,
+		Type:      string(a.Type),
+		IsSystem:  a.IsSystem,
 		Values:    values,
 		CreatedAt: a.CreatedAt.Format(timeFormat),
 		UpdatedAt: a.UpdatedAt.Format(timeFormat),
@@ -141,20 +155,21 @@ func (h *AttributeHandler) addValue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Value string `json:"value"`
+		Value    string  `json:"value"`
+		ColorHex *string `json:"color_hex"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "request body is invalid")
 		return
 	}
 
-	value, err := h.service.AddValue(r.Context(), attributeID, req.Value)
+	value, err := h.service.AddValue(r.Context(), attributeID, req.Value, req.ColorHex)
 	if err != nil {
 		writeCatalogModuleError(w, err)
 		return
 	}
 
-	httpx.WriteJSON(w, http.StatusCreated, attributeValueResponse{ID: value.ID.String(), AttributeID: value.AttributeID.String(), Value: value.Value})
+	httpx.WriteJSON(w, http.StatusCreated, toAttributeValueResponse(*value))
 }
 
 func (h *AttributeHandler) deleteValue(w http.ResponseWriter, r *http.Request) {

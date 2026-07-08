@@ -20,6 +20,7 @@ export type AttributeValueRef = {
   id: string;
   attribute_id: string;
   value: string;
+  color_hex?: string;
 };
 
 // A product references attributes by name only (e.g. [Size, Color]) — no
@@ -27,6 +28,7 @@ export type AttributeValueRef = {
 export type AttributeRef = {
   id: string;
   name: string;
+  type: "text" | "color";
 };
 
 export type ProductVariant = {

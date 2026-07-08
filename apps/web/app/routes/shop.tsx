@@ -185,13 +185,20 @@ export default function Shop() {
       type: "checkbox",
       options: visibleCategories.map((c) => ({ id: c.id, label: c.name })),
     },
-    ...facets.map(
-      (facet): FilterGroup => ({
-        id: facet.attribute_id,
-        label: facet.attribute_name,
-        type: "checkbox",
-        options: facet.values.map((v) => ({ id: v.id, label: v.value })),
-      }),
+    ...facets.map((facet): FilterGroup =>
+      facet.attribute_type === "color"
+        ? {
+            id: facet.attribute_id,
+            label: facet.attribute_name,
+            type: "color",
+            options: facet.values.map((v) => ({ id: v.id, name: v.value, hex: v.color_hex ?? "#e7e5e4" })),
+          }
+        : {
+            id: facet.attribute_id,
+            label: facet.attribute_name,
+            type: "checkbox",
+            options: facet.values.map((v) => ({ id: v.id, label: v.value })),
+          },
     ),
   ];
 

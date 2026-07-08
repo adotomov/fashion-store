@@ -53,7 +53,7 @@ type AttributeRepository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*domain.Attribute, error)
 	UpdateName(ctx context.Context, id uuid.UUID, name string) (*domain.Attribute, error)
 	Delete(ctx context.Context, id uuid.UUID) error
-	AddValue(ctx context.Context, attributeID uuid.UUID, value string) (*domain.AttributeValue, error)
+	AddValue(ctx context.Context, attributeID uuid.UUID, value string, colorHex *string) (*domain.AttributeValue, error)
 	DeleteValue(ctx context.Context, attributeID, valueID uuid.UUID) error
 }
 

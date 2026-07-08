@@ -46,7 +46,7 @@ func toVariantResponse(v domain.ProductVariant) variantResponse {
 	}
 	for _, a := range v.Attributes {
 		resp.AttributeValueIDs = append(resp.AttributeValueIDs, a.ID.String())
-		resp.Attributes = append(resp.Attributes, attributeValueResponse{ID: a.ID.String(), AttributeID: a.AttributeID.String(), Value: a.Value})
+		resp.Attributes = append(resp.Attributes, toAttributeValueResponse(a))
 	}
 	return resp
 }

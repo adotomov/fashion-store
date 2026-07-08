@@ -75,7 +75,7 @@ func TestStorefrontHTTP_ProductsAndFacetsFilters(t *testing.T) {
 		t.Fatalf("create attribute: %v", err)
 	}
 	t.Cleanup(func() { _ = attributeService.DeleteAttribute(ctx, sizeAttr.ID) })
-	sizeS, err := attributeService.AddValue(ctx, sizeAttr.ID, "S")
+	sizeS, err := attributeService.AddValue(ctx, sizeAttr.ID, "S", nil)
 	if err != nil {
 		t.Fatalf("add value S: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestStorefrontHTTP_GetProductBySlugIncludesVariantsAndMedia(t *testing.T) {
 		t.Fatalf("create attribute: %v", err)
 	}
 	t.Cleanup(func() { _ = attributeService.DeleteAttribute(ctx, sizeAttr.ID) })
-	sizeM, err := attributeService.AddValue(ctx, sizeAttr.ID, "M")
+	sizeM, err := attributeService.AddValue(ctx, sizeAttr.ID, "M", nil)
 	if err != nil {
 		t.Fatalf("add value M: %v", err)
 	}

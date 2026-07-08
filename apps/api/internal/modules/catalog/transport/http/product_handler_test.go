@@ -170,7 +170,7 @@ func TestProductHTTP_ListReportsVariantCount(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = attributeService.DeleteAttribute(ctx, attribute.ID) })
 
-	value, err := attributeService.AddValue(ctx, attribute.ID, "S")
+	value, err := attributeService.AddValue(ctx, attribute.ID, "S", nil)
 	if err != nil {
 		t.Fatalf("add attribute value: %v", err)
 	}

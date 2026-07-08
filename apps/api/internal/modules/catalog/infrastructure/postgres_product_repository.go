@@ -252,7 +252,7 @@ func (r *PostgresProductRepository) SetAttributes(ctx context.Context, productID
 
 func (r *PostgresProductRepository) attributeRefsFor(ctx context.Context, productID uuid.UUID) ([]domain.AttributeRef, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT a.id, a.name
+		SELECT a.id, a.name, a.type
 		FROM product_attributes pa
 		JOIN attributes a ON a.id = pa.attribute_id
 		WHERE pa.product_id = $1
@@ -265,7 +265,7 @@ func (r *PostgresProductRepository) attributeRefsFor(ctx context.Context, produc
 	refs := []domain.AttributeRef{}
 	for rows.Next() {
 		var ref domain.AttributeRef
-		if err := rows.Scan(&ref.ID, &ref.Name); err != nil {
+		if err := rows.Scan(&ref.ID, &ref.Name, &ref.Type); err != nil {
 			return nil, err
 		}
 		refs = append(refs, ref)
@@ -385,7 +385,7 @@ func (r *PostgresProductRepository) ProductIDsByAttributeValues(ctx context.Cont
 
 func (r *PostgresProductRepository) AttributeFacets(ctx context.Context, categoryIDs []uuid.UUID, catalogID *uuid.UUID) ([]domain.AttributeFacet, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT DISTINCT a.id, a.name, av.id, av.value
+		SELECT DISTINCT a.id, a.name, a.type, av.id, av.value, av.color_hex
 		FROM variant_attribute_values vav
 		JOIN attribute_values av ON av.id = vav.attribute_value_id
 		JOIN attributes a ON a.id = av.attribute_id
@@ -406,16 +406,18 @@ func (r *PostgresProductRepository) AttributeFacets(ctx context.Context, categor
 	for rows.Next() {
 		var attrID, valueID uuid.UUID
 		var attrName, value string
-		if err := rows.Scan(&attrID, &attrName, &valueID, &value); err != nil {
+		var attrType domain.AttributeType
+		var colorHex *string
+		if err := rows.Scan(&attrID, &attrName, &attrType, &valueID, &value, &colorHex); err != nil {
 			return nil, err
 		}
 		facet, ok := byID[attrID]
 		if !ok {
-			facet = &domain.AttributeFacet{AttributeID: attrID, AttributeName: attrName}
+			facet = &domain.AttributeFacet{AttributeID: attrID, AttributeName: attrName, AttributeType: attrType}
 			byID[attrID] = facet
 			order = append(order, attrID)
 		}
-		facet.Values = append(facet.Values, domain.AttributeFacetValue{ID: valueID, Value: value})
+		facet.Values = append(facet.Values, domain.AttributeFacetValue{ID: valueID, Value: value, ColorHex: colorHex})
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -460,7 +462,7 @@ func (r *PostgresProductRepository) idsFor(ctx context.Context, table, ownerColu
 // table (variant_attribute_values, via variantsFor).
 func (r *PostgresProductRepository) attributeValuesFor(ctx context.Context, table, ownerColumn string, ownerID uuid.UUID) ([]domain.AttributeValue, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT av.id, av.attribute_id, av.value, av.created_at
+		SELECT av.id, av.attribute_id, av.value, av.color_hex, av.created_at
 		FROM `+table+` j
 		JOIN attribute_values av ON av.id = j.attribute_value_id
 		WHERE j.`+ownerColumn+` = $1
@@ -473,7 +475,7 @@ func (r *PostgresProductRepository) attributeValuesFor(ctx context.Context, tabl
 	values := []domain.AttributeValue{}
 	for rows.Next() {
 		var v domain.AttributeValue
-		if err := rows.Scan(&v.ID, &v.AttributeID, &v.Value, &v.CreatedAt); err != nil {
+		if err := rows.Scan(&v.ID, &v.AttributeID, &v.Value, &v.ColorHex, &v.CreatedAt); err != nil {
 			return nil, err
 		}
 		values = append(values, v)

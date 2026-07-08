@@ -22,11 +22,15 @@ func NewPostgresAttributeRepository(db *pgxpool.Pool) *PostgresAttributeReposito
 }
 
 func (r *PostgresAttributeRepository) Create(ctx context.Context, attribute domain.Attribute) (*domain.Attribute, error) {
+	attrType := attribute.Type
+	if attrType == "" {
+		attrType = domain.AttributeTypeText
+	}
 	row := r.db.QueryRow(ctx, `
-		INSERT INTO attributes (name)
-		VALUES ($1)
-		RETURNING id, name, created_at, updated_at`,
-		attribute.Name)
+		INSERT INTO attributes (name, type, is_system)
+		VALUES ($1, $2, $3)
+		RETURNING id, name, type, is_system, created_at, updated_at`,
+		attribute.Name, attrType, attribute.IsSystem)
 
 	a, err := scanAttribute(row)
 	if err != nil {
@@ -41,7 +45,7 @@ func (r *PostgresAttributeRepository) Create(ctx context.Context, attribute doma
 }
 
 func (r *PostgresAttributeRepository) List(ctx context.Context) ([]domain.Attribute, error) {
-	rows, err := r.db.Query(ctx, `SELECT id, name, created_at, updated_at FROM attributes ORDER BY name`)
+	rows, err := r.db.Query(ctx, `SELECT id, name, type, is_system, created_at, updated_at FROM attributes ORDER BY is_system DESC, name`)
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +75,7 @@ func (r *PostgresAttributeRepository) List(ctx context.Context) ([]domain.Attrib
 }
 
 func (r *PostgresAttributeRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain.Attribute, error) {
-	row := r.db.QueryRow(ctx, `SELECT id, name, created_at, updated_at FROM attributes WHERE id = $1`, id)
+	row := r.db.QueryRow(ctx, `SELECT id, name, type, is_system, created_at, updated_at FROM attributes WHERE id = $1`, id)
 
 	a, err := scanAttribute(row)
 	if err != nil {
@@ -91,7 +95,7 @@ func (r *PostgresAttributeRepository) UpdateName(ctx context.Context, id uuid.UU
 	row := r.db.QueryRow(ctx, `
 		UPDATE attributes SET name = $2, updated_at = NOW()
 		WHERE id = $1
-		RETURNING id, name, created_at, updated_at`,
+		RETURNING id, name, type, is_system, created_at, updated_at`,
 		id, name)
 
 	a, err := scanAttribute(row)
@@ -119,12 +123,12 @@ func (r *PostgresAttributeRepository) Delete(ctx context.Context, id uuid.UUID) 
 	return nil
 }
 
-func (r *PostgresAttributeRepository) AddValue(ctx context.Context, attributeID uuid.UUID, value string) (*domain.AttributeValue, error) {
+func (r *PostgresAttributeRepository) AddValue(ctx context.Context, attributeID uuid.UUID, value string, colorHex *string) (*domain.AttributeValue, error) {
 	row := r.db.QueryRow(ctx, `
-		INSERT INTO attribute_values (attribute_id, value)
-		VALUES ($1, $2)
-		RETURNING id, attribute_id, value, created_at`,
-		attributeID, value)
+		INSERT INTO attribute_values (attribute_id, value, color_hex)
+		VALUES ($1, $2, $3)
+		RETURNING id, attribute_id, value, color_hex, created_at`,
+		attributeID, value, colorHex)
 
 	v, err := scanAttributeValue(row)
 	if err != nil {
@@ -150,7 +154,7 @@ func (r *PostgresAttributeRepository) DeleteValue(ctx context.Context, attribute
 
 func (r *PostgresAttributeRepository) valuesFor(ctx context.Context, attributeID uuid.UUID) ([]domain.AttributeValue, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, attribute_id, value, created_at FROM attribute_values
+		SELECT id, attribute_id, value, color_hex, created_at FROM attribute_values
 		WHERE attribute_id = $1 ORDER BY value`, attributeID)
 	if err != nil {
 		return nil, err
@@ -170,7 +174,7 @@ func (r *PostgresAttributeRepository) valuesFor(ctx context.Context, attributeID
 
 func scanAttribute(row pgx.Row) (*domain.Attribute, error) {
 	var a domain.Attribute
-	err := row.Scan(&a.ID, &a.Name, &a.CreatedAt, &a.UpdatedAt)
+	err := row.Scan(&a.ID, &a.Name, &a.Type, &a.IsSystem, &a.CreatedAt, &a.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrAttributeNotFound
 	}
@@ -182,7 +186,7 @@ func scanAttribute(row pgx.Row) (*domain.Attribute, error) {
 
 func scanAttributeValue(row pgx.Row) (*domain.AttributeValue, error) {
 	var v domain.AttributeValue
-	err := row.Scan(&v.ID, &v.AttributeID, &v.Value, &v.CreatedAt)
+	err := row.Scan(&v.ID, &v.AttributeID, &v.Value, &v.ColorHex, &v.CreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrAttributeValueNotFound
 	}

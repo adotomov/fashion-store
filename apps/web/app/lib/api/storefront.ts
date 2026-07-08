@@ -106,12 +106,14 @@ export type StorefrontMedia = {
 export type StorefrontAttributeRef = {
   id: string;
   name: string;
+  type: "text" | "color";
 };
 
 export type StorefrontVariantAttributeValue = {
   id: string;
   attribute_id: string;
   value: string;
+  color_hex?: string;
 };
 
 export type StorefrontVariant = {
@@ -157,7 +159,8 @@ export async function getStorefrontProduct(slug: string, locale?: string): Promi
 export type AttributeFacet = {
   attribute_id: string;
   attribute_name: string;
-  values: { id: string; value: string }[];
+  attribute_type: "text" | "color";
+  values: { id: string; value: string; color_hex?: string }[];
 };
 
 export function listFacets(

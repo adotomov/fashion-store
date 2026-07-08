@@ -57,6 +57,11 @@ func toMoneyResponse(m money.Money) moneyResponse {
 type attributeRefResponse struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+func toAttributeRefResponse(a domain.AttributeRef) attributeRefResponse {
+	return attributeRefResponse{ID: a.ID.String(), Name: a.Name, Type: string(a.Type)}
 }
 
 type productResponse struct {
@@ -102,7 +107,7 @@ func toProductResponse(p domain.Product) productResponse {
 		resp.CatalogIDs = append(resp.CatalogIDs, id.String())
 	}
 	for _, a := range p.Attributes {
-		resp.Attributes = append(resp.Attributes, attributeRefResponse{ID: a.ID.String(), Name: a.Name})
+		resp.Attributes = append(resp.Attributes, toAttributeRefResponse(a))
 	}
 	for _, v := range p.Variants {
 		resp.Variants = append(resp.Variants, toVariantResponse(v))

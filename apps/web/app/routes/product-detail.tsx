@@ -7,6 +7,7 @@ import { Header } from "../components/ecommerce/Header";
 import { ProductImageGallery } from "../components/ecommerce/ProductImageGallery";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
+import { ColorSwatch } from "../components/ui/ColorSwatch";
 import { Icon } from "../components/ui/Icon";
 import { Price } from "../components/ui/Price";
 import { Heading, Text } from "../components/ui/Text";
@@ -85,12 +86,12 @@ export default function ProductDetail() {
   // The values available for one attribute, drawn from every variant — used
   // to render that attribute's selectable pills.
   function valuesForAttribute(attributeId: string) {
-    const seen = new Map<string, string>();
+    const seen = new Map<string, { value: string; color_hex?: string }>();
     for (const variant of product!.variants) {
       const match = variant.attributes.find((a) => a.attribute_id === attributeId);
-      if (match) seen.set(match.id, match.value);
+      if (match) seen.set(match.id, { value: match.value, color_hex: match.color_hex });
     }
-    return Array.from(seen, ([id, value]) => ({ id, value }));
+    return Array.from(seen, ([id, v]) => ({ id, value: v.value, color_hex: v.color_hex }));
   }
 
   // Finds the variant matching the current selection, with one attribute
@@ -174,38 +175,65 @@ export default function ProductDetail() {
 
           {product.description && <Text tone="muted">{product.description}</Text>}
 
-          {product.attributes.map((attribute) => (
-            <div key={attribute.id}>
-              <Text size="sm" className="mb-2 font-medium">
-                {attribute.name}
-              </Text>
-              <div className="flex flex-wrap gap-2">
-                {valuesForAttribute(attribute.id).map((value) => {
-                  const isSelected = selectedValues[attribute.id] === value.id;
-                  const outOfStock = isValueOutOfStock(attribute.id, value.id);
-                  return (
-                    <button
-                      key={value.id}
-                      type="button"
-                      aria-pressed={isSelected}
-                      disabled={outOfStock}
-                      onClick={() => setSelectedValues((prev) => ({ ...prev, [attribute.id]: value.id }))}
-                      className={cn(
-                        "h-11 min-w-11 rounded-sm border px-3 text-sm font-medium transition-colors",
-                        outOfStock
-                          ? "cursor-not-allowed border-stone-200 text-stone-400"
-                          : isSelected
-                            ? "border-stone-900 bg-stone-900 text-white"
-                            : "border-stone-300 text-stone-900 hover:border-stone-900",
-                      )}
-                    >
-                      {value.value}
-                    </button>
-                  );
-                })}
+          {product.attributes.map((attribute) => {
+            const values = valuesForAttribute(attribute.id);
+            const isColor = attribute.type === "color";
+            const selectedName = isColor
+              ? values.find((v) => v.id === selectedValues[attribute.id])?.value
+              : undefined;
+            return (
+              <div key={attribute.id}>
+                <Text size="sm" className="mb-2 font-medium">
+                  {attribute.name}
+                  {selectedName ? `: ${selectedName}` : ""}
+                </Text>
+                <div className={cn("flex flex-wrap", isColor ? "gap-3" : "gap-2")}>
+                  {values.map((value) => {
+                    const isSelected = selectedValues[attribute.id] === value.id;
+                    const outOfStock = isValueOutOfStock(attribute.id, value.id);
+
+                    if (isColor) {
+                      return (
+                        <div
+                          key={value.id}
+                          className={cn(outOfStock && "pointer-events-none opacity-30")}
+                          title={outOfStock ? `${value.value} — out of stock` : value.value}
+                        >
+                          <ColorSwatch
+                            color={{ name: value.value, hex: value.color_hex ?? "#e7e5e4" }}
+                            selected={isSelected}
+                            onSelect={() =>
+                              setSelectedValues((prev) => ({ ...prev, [attribute.id]: value.id }))
+                            }
+                          />
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <button
+                        key={value.id}
+                        type="button"
+                        aria-pressed={isSelected}
+                        disabled={outOfStock}
+                        onClick={() => setSelectedValues((prev) => ({ ...prev, [attribute.id]: value.id }))}
+                        className={cn(
+                          "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium transition-colors",
+                          outOfStock
+                            ? "cursor-not-allowed bg-stone-50 text-stone-300 line-through"
+                            : isSelected
+                              ? "bg-stone-900 text-white"
+                              : "bg-stone-100 text-stone-700 hover:bg-stone-200",
+                        )}
+                      >
+                        {value.value}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
 
           <div className="flex gap-3">
             <Button

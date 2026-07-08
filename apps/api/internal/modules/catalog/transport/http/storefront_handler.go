@@ -215,17 +215,17 @@ func (h *StorefrontHandler) nav(w http.ResponseWriter, r *http.Request) {
 }
 
 type storefrontProductResponse struct {
-	ID             string                    `json:"id"`
-	Name           string                    `json:"name"`
-	Slug           string                    `json:"slug"`
-	Description    string                    `json:"description"`
-	BasePrice      moneyResponse             `json:"base_price"`
-	CompareAtPrice *moneyResponse            `json:"compare_at_price,omitempty"`
+	ID             string         `json:"id"`
+	Name           string         `json:"name"`
+	Slug           string         `json:"slug"`
+	Description    string         `json:"description"`
+	BasePrice      moneyResponse  `json:"base_price"`
+	CompareAtPrice *moneyResponse `json:"compare_at_price,omitempty"`
 	// PromotionPrice is the effective discounted price when an active promotion
 	// applies to this product. The frontend shows BasePrice struck through and
 	// PromotionPrice as the actual selling price.
-	PromotionPrice *moneyResponse `json:"promotion_price,omitempty"`
-	PromotionLabel *string        `json:"promotion_label,omitempty"`
+	PromotionPrice *moneyResponse            `json:"promotion_price,omitempty"`
+	PromotionLabel *string                   `json:"promotion_label,omitempty"`
 	ImageURL       *string                   `json:"image_url,omitempty"`
 	Media          []storefrontMediaResponse `json:"media,omitempty"`
 	Attributes     []attributeRefResponse    `json:"attributes,omitempty"`
@@ -269,7 +269,7 @@ func toStorefrontProductResponse(p domain.Product) storefrontProductResponse {
 		})
 	}
 	for _, a := range p.Attributes {
-		resp.Attributes = append(resp.Attributes, attributeRefResponse{ID: a.ID.String(), Name: a.Name})
+		resp.Attributes = append(resp.Attributes, toAttributeRefResponse(a))
 	}
 	for _, v := range p.Variants {
 		resp.Variants = append(resp.Variants, toVariantResponse(v))
@@ -521,13 +521,15 @@ func intersectOrSet(existing, next map[uuid.UUID]bool) map[uuid.UUID]bool {
 }
 
 type facetValueResponse struct {
-	ID    string `json:"id"`
-	Value string `json:"value"`
+	ID       string  `json:"id"`
+	Value    string  `json:"value"`
+	ColorHex *string `json:"color_hex,omitempty"`
 }
 
 type facetResponse struct {
 	AttributeID   string               `json:"attribute_id"`
 	AttributeName string               `json:"attribute_name"`
+	AttributeType string               `json:"attribute_type"`
 	Values        []facetValueResponse `json:"values"`
 }
 
@@ -578,11 +580,12 @@ func (h *StorefrontHandler) facets(w http.ResponseWriter, r *http.Request) {
 			if t, ok := valueTranslations[v.ID]["value"]; ok {
 				value = t
 			}
-			values = append(values, facetValueResponse{ID: v.ID.String(), Value: value})
+			values = append(values, facetValueResponse{ID: v.ID.String(), Value: value, ColorHex: v.ColorHex})
 		}
 		resp = append(resp, facetResponse{
 			AttributeID:   f.AttributeID.String(),
 			AttributeName: attributeName,
+			AttributeType: string(f.AttributeType),
 			Values:        values,
 		})
 	}
