@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useBlocker, useParams } from "react-router";
 
 import { useAdminPermissions } from "../../features/admin/AdminPermissionsContext";
 
@@ -31,6 +31,34 @@ import {
 
 export const handle = { title: "Product" };
 
+// Serialized snapshot of the staged form fields, used to detect unsaved
+// edits. Arrays are sorted so reordering an assignment doesn't read as a
+// change. Variants/media aren't included — they save immediately via their
+// own actions and never sit in the staged-but-unsaved state.
+type FormValues = {
+  name: string;
+  description: string;
+  nksCode: string;
+  status: ProductStatus;
+  priceAmount: string;
+  categoryIds: string[];
+  catalogIds: string[];
+  attributeIds: string[];
+};
+
+function formSnapshot(v: FormValues): string {
+  return JSON.stringify({
+    name: v.name,
+    description: v.description,
+    nksCode: v.nksCode,
+    status: v.status,
+    priceAmount: v.priceAmount,
+    categoryIds: [...v.categoryIds].sort(),
+    catalogIds: [...v.catalogIds].sort(),
+    attributeIds: [...v.attributeIds].sort(),
+  });
+}
+
 export default function ProductDetail() {
   const { isReadOnly } = useAdminPermissions();
   const { id } = useParams<{ id: string }>();
@@ -41,7 +69,10 @@ export default function ProductDetail() {
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-  const [showInventoryWarning, setShowInventoryWarning] = useState(false);
+  const [nameError, setNameError] = useState<string | null>(null);
+  // Snapshot of the last-saved form state; compared against the live fields
+  // below to decide whether there are unsaved changes to warn about.
+  const [baseline, setBaseline] = useState<string | null>(null);
 
   // Staged form state — none of this hits the API until "Save Changes" is
   // clicked. Variants/media stay self-contained with their own immediate
@@ -71,6 +102,18 @@ export default function ProductDetail() {
       setSelectedCategoryIds(loaded.category_ids ?? []);
       setSelectedCatalogIds(loaded.catalog_ids ?? []);
       setSelectedAttributeIds((loaded.attributes ?? []).map((a) => a.id));
+      setBaseline(
+        formSnapshot({
+          name: loaded.name,
+          description: loaded.description,
+          nksCode: loaded.nks_code ?? "",
+          status: loaded.status,
+          priceAmount: (loaded.base_price.amount / 100).toFixed(2),
+          categoryIds: loaded.category_ids ?? [],
+          catalogIds: loaded.catalog_ids ?? [],
+          attributeIds: (loaded.attributes ?? []).map((a) => a.id),
+        }),
+      );
     } catch {
       setError("Could not load product.");
     }
@@ -100,6 +143,7 @@ export default function ProductDetail() {
     if (!id) return;
     setIsSaving(true);
     setError(null);
+    setNameError(null);
     setSaved(false);
     try {
       await Promise.all([
@@ -128,11 +172,64 @@ export default function ProductDetail() {
   // attribute when only 2-3 matter here.
   const relevantAttributes = attributes.filter((attribute) => selectedAttributeIds.includes(attribute.id));
 
-  const variantsMissingInventory = (product?.variants ?? []).filter((v) => !v.inventory_item_id);
+  const variants = product?.variants ?? [];
+  const variantsMissingInventory = variants.filter((v) => !v.inventory_item_id);
+
+  // A product may only go Active once it's fully set up. Attributes and
+  // categories reflect the *staged* selections (what the product will be
+  // after Save); variants/SKUs reflect server state since those persist
+  // immediately.
+  const activationRequirements = [
+    { met: Number(priceAmount) > 0, label: "Base price greater than 0" },
+    { met: selectedAttributeIds.length > 0, label: "At least one attribute assigned" },
+    { met: selectedCategoryIds.length > 0, label: "Assigned to at least one category" },
+    { met: variants.length > 0, label: "At least one variant created" },
+    { met: variants.length > 0 && variantsMissingInventory.length === 0, label: "SKU assigned to every variant" },
+  ];
+  const canActivate = activationRequirements.every((r) => r.met);
+
+  // Unsaved-changes tracking. baseline is null until the product first loads;
+  // once set, any divergence in the staged fields means there's work to save.
+  const isDirty =
+    baseline !== null &&
+    baseline !==
+      formSnapshot({
+        name,
+        description,
+        nksCode,
+        status,
+        priceAmount,
+        categoryIds: selectedCategoryIds,
+        catalogIds: selectedCatalogIds,
+        attributeIds: selectedAttributeIds,
+      });
+
+  // Block in-app navigation (sidebar, back arrow, tab switches) while there
+  // are unsaved edits; the modal below lets the user confirm or cancel.
+  const blocker = useBlocker(
+    ({ currentLocation, nextLocation }) => isDirty && currentLocation.pathname !== nextLocation.pathname,
+  );
+
+  // Native browser guard for full page unloads (refresh, tab close, external
+  // links) — useBlocker only covers client-side routing.
+  useEffect(() => {
+    if (!isDirty) return;
+    function handleBeforeUnload(e: BeforeUnloadEvent) {
+      e.preventDefault();
+      e.returnValue = "";
+    }
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [isDirty]);
 
   function handleSaveClick() {
-    if (status === "active" && variantsMissingInventory.length > 0) {
-      setShowInventoryWarning(true);
+    if (!name.trim()) {
+      setNameError("Name is required.");
+      setError("Please fix the errors below before saving.");
+      return;
+    }
+    if (status === "active" && !canActivate) {
+      setError("This product can't be activated until all activation requirements are met.");
       return;
     }
     handleSave();
@@ -170,11 +267,15 @@ export default function ProductDetail() {
         </div>
 
         <div className="flex items-center gap-3">
-          {saved && (
+          {isDirty ? (
+            <Text size="sm" tone="muted">
+              Unsaved changes
+            </Text>
+          ) : saved ? (
             <Text size="sm" tone="muted">
               Saved
             </Text>
-          )}
+          ) : null}
           <Button variant="primary" onClick={handleSaveClick} disabled={isSaving || isReadOnly}>
             {isSaving ? "Saving…" : "Save Changes"}
           </Button>
@@ -191,8 +292,15 @@ export default function ProductDetail() {
         <Eyebrow>Basics</Eyebrow>
         <Card className="mt-3 p-6">
           <div className="flex flex-col gap-4">
-            <FormField label="Name" htmlFor="name">
-              <Input id="name" value={name} onChange={(e) => setName(e.target.value)} />
+            <FormField label="Name" htmlFor="name" error={nameError ?? undefined}>
+              <Input
+                id="name"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  if (nameError) setNameError(null);
+                }}
+              />
             </FormField>
             <FormField label="Description" htmlFor="description">
               <Textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} />
@@ -212,7 +320,9 @@ export default function ProductDetail() {
               <FormField label="Status" htmlFor="status">
                 <Select id="status" value={status} onChange={(e) => setStatus(e.target.value as ProductStatus)}>
                   <option value="draft">Draft</option>
-                  <option value="active">Active</option>
+                  <option value="active" disabled={!canActivate && status !== "active"}>
+                    Active
+                  </option>
                   <option value="archived">Archived</option>
                 </Select>
               </FormField>
@@ -226,6 +336,47 @@ export default function ProductDetail() {
                 />
               </FormField>
             </div>
+
+            {status !== "active" && !canActivate && (
+              <div className="rounded-sm border border-stone-200 bg-stone-50 p-4">
+                <Text size="xs" className="font-medium text-stone-700">
+                  Complete these before activating:
+                </Text>
+                <ul className="mt-2 flex flex-col gap-1.5">
+                  {activationRequirements.map((req) => (
+                    <li key={req.label} className="flex items-center gap-2">
+                      <Icon
+                        name={req.met ? "check" : "close"}
+                        size={14}
+                        className={req.met ? "text-sage-600" : "text-stone-400"}
+                      />
+                      <Text size="xs" className={req.met ? "text-stone-500 line-through" : "text-stone-700"}>
+                        {req.label}
+                      </Text>
+                    </li>
+                  ))}
+                </ul>
+                {variants.length > 0 && variantsMissingInventory.length > 0 && (
+                  <ul className="mt-3 flex flex-col gap-2 border-t border-stone-200 pt-3">
+                    {variantsMissingInventory.map((variant) => (
+                      <li key={variant.id} className="flex items-center justify-between gap-3">
+                        <Text size="xs" tone="muted">
+                          {variantDisplayLabel(variant)}
+                        </Text>
+                        <a
+                          href={`/admin/inventory?assignVariantId=${variant.id}&productName=${encodeURIComponent(product.name)}&variantLabel=${encodeURIComponent(variantDisplayLabel(variant))}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="shrink-0 text-xs font-medium text-clay-600 hover:underline"
+                        >
+                          Assign SKU
+                        </a>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
         </Card>
       </section>
@@ -302,48 +453,19 @@ export default function ProductDetail() {
       </section>
 
       <Modal
-        open={showInventoryWarning}
-        onClose={() => setShowInventoryWarning(false)}
-        title="Missing inventory"
+        open={blocker.state === "blocked"}
+        onClose={() => blocker.reset?.()}
+        title="Unsaved changes"
       >
-        <div className="flex flex-col gap-4">
-          <Text size="sm" tone="muted">
-            {variantsMissingInventory.length === 1
-              ? "1 variant has no SKU assigned yet."
-              : `${variantsMissingInventory.length} variants have no SKU assigned yet.`}{" "}
-            Customers won't be able to tell these are out of stock until inventory is tracked.
-          </Text>
-          <ul className="flex flex-col gap-2">
-            {variantsMissingInventory.map((variant) => (
-              <li
-                key={variant.id}
-                className="flex items-center justify-between rounded-sm border border-stone-200 px-3 py-2"
-              >
-                <Text size="sm">{variantDisplayLabel(variant)}</Text>
-                <a
-                  href={`/admin/inventory?assignVariantId=${variant.id}&productName=${encodeURIComponent(product.name)}&variantLabel=${encodeURIComponent(variantDisplayLabel(variant))}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm font-medium text-clay-600 hover:underline"
-                >
-                  Assign SKU
-                </a>
-              </li>
-            ))}
-          </ul>
-        </div>
+        <Text size="sm" tone="muted">
+          You have unsaved changes on this product. If you leave now, your changes will be lost.
+        </Text>
         <div className="mt-6 flex justify-end gap-3">
-          <Button variant="outline" onClick={() => setShowInventoryWarning(false)}>
-            Cancel
+          <Button variant="outline" onClick={() => blocker.reset?.()}>
+            Stay on page
           </Button>
-          <Button
-            variant="primary"
-            onClick={() => {
-              setShowInventoryWarning(false);
-              handleSave();
-            }}
-          >
-            Activate Anyway
+          <Button variant="primary" onClick={() => blocker.proceed?.()}>
+            Leave without saving
           </Button>
         </div>
       </Modal>
