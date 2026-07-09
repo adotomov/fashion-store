@@ -18,15 +18,17 @@ type UpdateCatalogInput struct {
 }
 
 type CreateCategoryInput struct {
-	Name          string
-	ParentID      *uuid.UUID
-	ProductTypeID uuid.UUID
+	Name               string
+	ParentID           *uuid.UUID
+	ProductTypeID      uuid.UUID
+	InternalIdentifier string
 }
 
 type UpdateCategoryInput struct {
-	Name          *string
-	ParentID      *uuid.UUID
-	ProductTypeID *uuid.UUID
+	Name               *string
+	ParentID           *uuid.UUID
+	ProductTypeID      *uuid.UUID
+	InternalIdentifier *string
 }
 
 type CreateProductTypeInput struct {
@@ -53,7 +55,8 @@ type UpdateProductInput struct {
 	BasePrice           *money.Money
 	CompareAtPrice      *money.Money
 	ClearCompareAtPrice bool
-	NKSCode             *string
+	TaxGroupID          *uuid.UUID
+	ClearTaxGroupID     bool
 }
 
 // TopProduct is one row of the admin dashboard's "best sellers" ranking —

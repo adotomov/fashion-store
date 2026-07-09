@@ -17,13 +17,13 @@ import (
 )
 
 type Service struct {
-	repo       Repository
-	orders     OrderReader
-	catalogNKS ProductNKSReader
+	repo    Repository
+	orders  OrderReader
+	catalog ProductInvoiceReader
 }
 
-func NewService(repo Repository, orders OrderReader, catalogNKS ProductNKSReader) *Service {
-	return &Service{repo: repo, orders: orders, catalogNKS: catalogNKS}
+func NewService(repo Repository, orders OrderReader, catalog ProductInvoiceReader) *Service {
+	return &Service{repo: repo, orders: orders, catalog: catalog}
 }
 
 // GenerateForOrder creates a фактура invoice for the given order. It is
@@ -176,6 +176,33 @@ func (s *Service) DeleteCourier(ctx context.Context, id uuid.UUID) error {
 	return s.repo.DeleteCourier(ctx, id)
 }
 
+func (s *Service) ListTaxGroups(ctx context.Context) ([]domain.TaxGroup, error) {
+	return s.repo.ListTaxGroups(ctx)
+}
+
+func (s *Service) CreateTaxGroup(ctx context.Context, group domain.TaxGroup) (*domain.TaxGroup, error) {
+	if !validTaxGroup(group) {
+		return nil, domain.ErrInvalidTaxGroup
+	}
+	group.ID = uuid.New()
+	return s.repo.CreateTaxGroup(ctx, group)
+}
+
+func (s *Service) UpdateTaxGroup(ctx context.Context, id uuid.UUID, group domain.TaxGroup) (*domain.TaxGroup, error) {
+	if !validTaxGroup(group) {
+		return nil, domain.ErrInvalidTaxGroup
+	}
+	return s.repo.UpdateTaxGroup(ctx, id, group)
+}
+
+func (s *Service) DeleteTaxGroup(ctx context.Context, id uuid.UUID) error {
+	return s.repo.DeleteTaxGroup(ctx, id)
+}
+
+func validTaxGroup(g domain.TaxGroup) bool {
+	return domain.ValidTaxGroupIdentifier(g.Identifier) && g.VATRate >= 0 && g.VATRate <= 100
+}
+
 // ExportCSV returns a CSV byte slice for invoices in the given date range.
 func (s *Service) ExportCSV(ctx context.Context, from, to time.Time, actor string) ([]byte, error) {
 	invoices, err := s.repo.List(ctx, ListFilter{From: &from, To: &to, Limit: 10000})
@@ -222,19 +249,30 @@ func (s *Service) LogPDFView(ctx context.Context, inv *domain.Invoice, actor str
 	_ = s.repo.LogAuditEvent(ctx, inv.InvoiceNumber, "invoice.pdf_viewed", actor, nil)
 }
 
-// buildLineItems computes per-line VAT breakdown for all order items using
-// 20%-inclusive pricing: excl = floor(incl * 100 / 120), vat = incl - excl.
+// defaultVATRate is used for lines whose product has no tax group assigned
+// (and for the delivery fee) — it matches the historical hardcoded 20% split.
+const defaultVATRate = 20.0
+
+// buildLineItems computes per-line VAT breakdown for all order items. Each
+// line's rate comes from its product's tax group (falling back to 20% when
+// none is assigned): excl = floor(incl * 100 / (100 + rate)), vat = incl - excl.
 func (s *Service) buildLineItems(ctx context.Context, order *ordersdomain.Order) (
 	items []domain.InvoiceLineItem, grandInclMinor, grandExclMinor, grandVATMinor int64,
 ) {
+	rates := s.taxRatesByGroupID(ctx)
+
 	for i, oi := range order.Items {
-		nksCode := ""
+		rate := defaultVATRate
 		if oi.ProductID != nil {
-			nksCode, _ = s.catalogNKS.GetNKSCode(ctx, *oi.ProductID)
+			if groupID, err := s.catalog.GetTaxGroupID(ctx, *oi.ProductID); err == nil && groupID != nil {
+				if r, ok := rates[*groupID]; ok {
+					rate = r
+				}
+			}
 		}
 
 		unitIncl := oi.UnitPrice.AmountMinor
-		unitExcl := unitIncl * 100 / 120
+		unitExcl := vatExclusive(unitIncl, rate)
 		vatUnit := unitIncl - unitExcl
 
 		qty := int64(oi.Quantity)
@@ -250,7 +288,6 @@ func (s *Service) buildLineItems(ctx context.Context, order *ordersdomain.Order)
 			ID:                uuid.New(),
 			ProductName:       oi.ProductName,
 			VariantLabel:      oi.VariantLabel,
-			NKSCode:           nksCode,
 			Quantity:          oi.Quantity,
 			UnitPriceInclVAT:  money.Money{AmountMinor: unitIncl, Currency: oi.UnitPrice.Currency},
 			UnitPriceExclVAT:  money.Money{AmountMinor: unitExcl, Currency: oi.UnitPrice.Currency},
@@ -258,14 +295,15 @@ func (s *Service) buildLineItems(ctx context.Context, order *ordersdomain.Order)
 			LineTotalInclVAT:  money.Money{AmountMinor: lineIncl, Currency: oi.UnitPrice.Currency},
 			LineTotalExclVAT:  money.Money{AmountMinor: lineExcl, Currency: oi.UnitPrice.Currency},
 			LineVATAmount:     money.Money{AmountMinor: lineVAT, Currency: oi.UnitPrice.Currency},
+			VATRate:           rate,
 			SortOrder:         i,
 		})
 	}
 
-	// Add delivery fee to grand totals (also VAT-inclusive)
+	// Add delivery fee to grand totals (also VAT-inclusive, at the default rate)
 	if order.DeliveryFee.AmountMinor > 0 {
 		df := order.DeliveryFee.AmountMinor
-		dfExcl := df * 100 / 120
+		dfExcl := vatExclusive(df, defaultVATRate)
 		grandInclMinor += df
 		grandExclMinor += dfExcl
 		grandVATMinor += df - dfExcl
@@ -274,13 +312,39 @@ func (s *Service) buildLineItems(ctx context.Context, order *ordersdomain.Order)
 	// Subtract discount from incl total; split proportionally for excl/VAT
 	if order.DiscountAmount != nil && order.DiscountAmount.AmountMinor > 0 {
 		disc := order.DiscountAmount.AmountMinor
-		discExcl := disc * 100 / 120
+		discExcl := vatExclusive(disc, defaultVATRate)
 		grandInclMinor -= disc
 		grandExclMinor -= discExcl
 		grandVATMinor -= disc - discExcl
 	}
 
 	return items, grandInclMinor, grandExclMinor, grandVATMinor
+}
+
+// vatExclusive strips VAT from a VAT-inclusive minor amount at the given rate:
+// excl = floor(incl * 100 / (100 + rate)). A rate of 20 yields incl*100/120,
+// identical to the previous hardcoded behavior.
+func vatExclusive(inclMinor int64, rate float64) int64 {
+	denom := int64(100 + rate)
+	if denom <= 0 {
+		return inclMinor
+	}
+	return inclMinor * 100 / denom
+}
+
+// taxRatesByGroupID loads all tax groups once into a rate lookup for the
+// duration of a single invoice build. Errors are swallowed to the default
+// rate — a missing group simply means lines fall back to 20%.
+func (s *Service) taxRatesByGroupID(ctx context.Context) map[uuid.UUID]float64 {
+	rates := map[uuid.UUID]float64{}
+	groups, err := s.repo.ListTaxGroups(ctx)
+	if err != nil {
+		return rates
+	}
+	for _, g := range groups {
+		rates[g.ID] = g.VATRate
+	}
+	return rates
 }
 
 func formatSettingsAddress(s domain.InvoiceSettings) string {

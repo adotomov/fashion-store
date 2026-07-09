@@ -420,13 +420,13 @@ func (a *invoicingOrderReaderAdapter) FindByID(ctx context.Context, id uuid.UUID
 	return a.orders.FindByID(ctx, id)
 }
 
-// invoicingNKSReaderAdapter satisfies invoicingapplication.ProductNKSReader.
-type invoicingNKSReaderAdapter struct {
+// invoicingProductReaderAdapter satisfies invoicingapplication.ProductInvoiceReader.
+type invoicingProductReaderAdapter struct {
 	catalog *catalogapplication.ProductService
 }
 
-func (a *invoicingNKSReaderAdapter) GetNKSCode(ctx context.Context, productID uuid.UUID) (string, error) {
-	return a.catalog.GetNKSCode(ctx, productID)
+func (a *invoicingProductReaderAdapter) GetTaxGroupID(ctx context.Context, productID uuid.UUID) (*uuid.UUID, error) {
+	return a.catalog.GetTaxGroupID(ctx, productID)
 }
 
 // invoiceGatewayAdapter satisfies both checkoutapplication.InvoiceGateway and
@@ -529,8 +529,8 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 
 	invoicingRepo := invoicinginfra.NewPostgresRepository(a.DB)
 	invoicingOrderReader := &invoicingOrderReaderAdapter{orders: ordersService}
-	invoicingNKSReader := &invoicingNKSReaderAdapter{catalog: productService}
-	invoicingService := invoicingapplication.NewService(invoicingRepo, invoicingOrderReader, invoicingNKSReader)
+	invoicingProductReader := &invoicingProductReaderAdapter{catalog: productService}
+	invoicingService := invoicingapplication.NewService(invoicingRepo, invoicingOrderReader, invoicingProductReader)
 	deferredInvoices.inner = &invoiceGatewayAdapter{invoicing: invoicingService}
 	invoicingModule := invoicinghttp.NewModule(invoicinghttp.NewHandler(invoicingService), requireAdmin)
 

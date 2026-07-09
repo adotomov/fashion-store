@@ -72,7 +72,7 @@ type productResponse struct {
 	Status         string                 `json:"status"`
 	BasePrice      moneyResponse          `json:"base_price"`
 	CompareAtPrice *moneyResponse         `json:"compare_at_price,omitempty"`
-	NKSCode        string                 `json:"nks_code"`
+	TaxGroupID     *string                `json:"tax_group_id,omitempty"`
 	CategoryIDs    []string               `json:"category_ids,omitempty"`
 	CatalogIDs     []string               `json:"catalog_ids,omitempty"`
 	Attributes     []attributeRefResponse `json:"attributes,omitempty"`
@@ -91,7 +91,6 @@ func toProductResponse(p domain.Product) productResponse {
 		Description:  p.Description,
 		Status:       string(p.Status),
 		BasePrice:    toMoneyResponse(p.BasePrice),
-		NKSCode:      p.NKSCode,
 		VariantCount: p.VariantCount,
 		CreatedAt:    p.CreatedAt.Format(timeFormat),
 		UpdatedAt:    p.UpdatedAt.Format(timeFormat),
@@ -99,6 +98,10 @@ func toProductResponse(p domain.Product) productResponse {
 	if p.CompareAtPrice != nil {
 		compareAtPrice := toMoneyResponse(*p.CompareAtPrice)
 		resp.CompareAtPrice = &compareAtPrice
+	}
+	if p.TaxGroupID != nil {
+		s := p.TaxGroupID.String()
+		resp.TaxGroupID = &s
 	}
 	for _, id := range p.CategoryIDs {
 		resp.CategoryIDs = append(resp.CategoryIDs, id.String())
@@ -173,7 +176,9 @@ type updateProductRequest struct {
 	BasePrice           *moneyResponse `json:"base_price,omitempty"`
 	CompareAtPrice      *moneyResponse `json:"compare_at_price,omitempty"`
 	ClearCompareAtPrice bool           `json:"clear_compare_at_price,omitempty"`
-	NKSCode             *string        `json:"nks_code,omitempty"`
+	// TaxGroupID: a UUID string sets the group; an empty string clears it;
+	// omitted (nil) leaves it unchanged.
+	TaxGroupID *string `json:"tax_group_id,omitempty"`
 }
 
 func (h *ProductHandler) update(w http.ResponseWriter, r *http.Request) {
@@ -189,7 +194,7 @@ func (h *ProductHandler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := application.UpdateProductInput{Name: req.Name, Description: req.Description, NKSCode: req.NKSCode}
+	input := application.UpdateProductInput{Name: req.Name, Description: req.Description}
 	if req.Status != nil {
 		status := domain.ProductStatus(*req.Status)
 		input.Status = &status
@@ -201,6 +206,18 @@ func (h *ProductHandler) update(w http.ResponseWriter, r *http.Request) {
 		input.ClearCompareAtPrice = true
 	} else if req.CompareAtPrice != nil {
 		input.CompareAtPrice = &money.Money{AmountMinor: req.CompareAtPrice.AmountMinor, Currency: req.CompareAtPrice.Currency}
+	}
+	if req.TaxGroupID != nil {
+		if *req.TaxGroupID == "" {
+			input.ClearTaxGroupID = true
+		} else {
+			taxGroupID, err := uuid.Parse(*req.TaxGroupID)
+			if err != nil {
+				httpx.WriteError(w, http.StatusBadRequest, "invalid_tax_group_id", "tax_group_id is invalid")
+				return
+			}
+			input.TaxGroupID = &taxGroupID
+		}
 	}
 
 	product, err := h.service.UpdateProduct(r.Context(), id, input)

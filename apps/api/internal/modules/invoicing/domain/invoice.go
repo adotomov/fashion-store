@@ -39,12 +39,21 @@ type Courier struct {
 	CreatedAt  time.Time
 }
 
+// TaxGroup is a Bulgarian VAT fiscal group (identifiers А–Ж). Products
+// reference one; its rate drives per-line VAT on generated invoices.
+type TaxGroup struct {
+	ID         uuid.UUID
+	Identifier string
+	VATRate    float64
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
+}
+
 type InvoiceLineItem struct {
 	ID                    uuid.UUID
 	InvoiceID             uuid.UUID
 	ProductName           string
 	VariantLabel          string
-	NKSCode               string
 	Quantity              int
 	UnitPriceInclVAT      money.Money
 	UnitPriceExclVAT      money.Money
@@ -52,7 +61,10 @@ type InvoiceLineItem struct {
 	LineTotalInclVAT      money.Money
 	LineTotalExclVAT      money.Money
 	LineVATAmount         money.Money
-	SortOrder             int
+	// VATRate is the percentage rate used for this line's VAT split, taken
+	// from the product's tax group at issuance time (snapshotted).
+	VATRate   float64
+	SortOrder int
 }
 
 type Invoice struct {

@@ -9,6 +9,9 @@ export type Category = {
   slug: string;
   parent_id?: string;
   product_type_id: string;
+  // Internal identifier (e.g. "DR-01") used as the fixed prefix for variant
+  // SKUs of products in this category. Empty string means none assigned.
+  internal_identifier: string;
   // Present once a thumbnail has been uploaded — a relative, admin-gated
   // proxy path (see uploadCategoryThumbnail/loadCategoryThumbnailBlobUrl),
   // not a plain external URL.
@@ -21,16 +24,21 @@ export function listCategories(): Promise<Category[]> {
   return apiFetch<Category[]>("/api/v1/admin/categories");
 }
 
-export function createCategory(name: string, productTypeId: string, parentId?: string): Promise<Category> {
+export function createCategory(
+  name: string,
+  productTypeId: string,
+  parentId?: string,
+  internalIdentifier?: string,
+): Promise<Category> {
   return apiFetch<Category>("/api/v1/admin/categories", {
     method: "POST",
-    body: { name, parent_id: parentId, product_type_id: productTypeId },
+    body: { name, parent_id: parentId, product_type_id: productTypeId, internal_identifier: internalIdentifier },
   });
 }
 
 export function updateCategory(
   id: string,
-  input: Partial<{ name: string; parent_id: string | null; product_type_id: string }>,
+  input: Partial<{ name: string; parent_id: string | null; product_type_id: string; internal_identifier: string }>,
 ): Promise<Category> {
   return apiFetch<Category>(`/api/v1/admin/categories/${id}`, { method: "PATCH", body: input });
 }

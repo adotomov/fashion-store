@@ -22,6 +22,7 @@ import {
   listMovements,
 } from "../../lib/api/inventory";
 import { getProduct, listProducts, type ProductVariant } from "../../lib/api/products";
+import { listCategories } from "../../lib/api/categories";
 import { cn } from "../../lib/utils/cn";
 
 export const handle = { title: "Inventory" };
@@ -43,7 +44,9 @@ export default function AdminInventory() {
   const [error, setError] = useState<string | null>(null);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [variantOptions, setVariantOptions] = useState<{ id: string; label: string }[]>([]);
+  const [variantOptions, setVariantOptions] = useState<
+    { id: string; label: string; categoryIdentifier: string }[]
+  >([]);
   const [isLoadingVariants, setIsLoadingVariants] = useState(false);
   const [selectedVariantId, setSelectedVariantId] = useState("");
   // Set when arriving via a deep link from the product editor (an "Assign
@@ -51,6 +54,10 @@ export default function AdminInventory() {
   // that one instead of making the admin re-find it in the dropdown.
   const [lockedVariantLabel, setLockedVariantLabel] = useState<string | null>(null);
   const [newSku, setNewSku] = useState("");
+  // When set, SKUs are composed as `${skuPrefix}-${newSku}` and newSku holds
+  // only the free-text suffix (max 8 chars). Empty = plain free-form SKU
+  // (fallback for variants whose product has no category identifier).
+  const [skuPrefix, setSkuPrefix] = useState("");
   const [newInitialQuantity, setNewInitialQuantity] = useState("0");
   const [createError, setCreateError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -90,6 +97,7 @@ export default function AdminInventory() {
     setSelectedVariantId(assignVariantId);
     setLockedVariantLabel(productName ? `${productName} — ${variantLabelParam || "Default"}` : variantLabelParam);
     setNewSku("");
+    setSkuPrefix(searchParams.get("categoryIdentifier") ?? "");
     setNewInitialQuantity("0");
     setCreateError(null);
     setIsCreateOpen(true);
@@ -100,6 +108,7 @@ export default function AdminInventory() {
         next.delete("assignVariantId");
         next.delete("productName");
         next.delete("variantLabel");
+        next.delete("categoryIdentifier");
         return next;
       },
       { replace: true },
@@ -116,19 +125,23 @@ export default function AdminInventory() {
     setSelectedVariantId("");
     setLockedVariantLabel(null);
     setNewSku("");
+    setSkuPrefix("");
     setNewInitialQuantity("0");
     setCreateError(null);
     setIsCreateOpen(true);
     setIsLoadingVariants(true);
     try {
-      const products = await listProducts();
+      const [products, categories] = await Promise.all([listProducts(), listCategories()]);
+      const identifierByCategoryId = new Map(categories.map((c) => [c.id, c.internal_identifier]));
       const detailed = await Promise.all(products.map((p) => getProduct(p.id)));
-      const options = detailed.flatMap((product) =>
-        (product.variants ?? []).map((variant) => ({
+      const options = detailed.flatMap((product) => {
+        const categoryIdentifier = identifierByCategoryId.get(product.category_ids?.[0] ?? "") ?? "";
+        return (product.variants ?? []).map((variant) => ({
           id: variant.id,
           label: `${product.name} — ${variantLabel(variant)}`,
-        })),
-      );
+          categoryIdentifier,
+        }));
+      });
       setVariantOptions(options);
     } catch {
       setCreateError("Could not load variants.");
@@ -142,14 +155,20 @@ export default function AdminInventory() {
       setCreateError("Choose a variant.");
       return;
     }
-    if (!newSku.trim()) {
-      setCreateError("SKU is required.");
+    const suffix = newSku.trim();
+    if (!suffix) {
+      setCreateError(skuPrefix ? "SKU suffix is required." : "SKU is required.");
       return;
     }
+    if (skuPrefix && suffix.length > 8) {
+      setCreateError("SKU suffix can be at most 8 characters.");
+      return;
+    }
+    const composedSku = skuPrefix ? `${skuPrefix}-${suffix}` : suffix;
     setIsSaving(true);
     setCreateError(null);
     try {
-      await createInventoryItem(selectedVariantId, newSku.trim(), Number(newInitialQuantity) || 0);
+      await createInventoryItem(selectedVariantId, composedSku, Number(newInitialQuantity) || 0);
       setIsCreateOpen(false);
       setLockedVariantLabel(null);
       await refresh();
@@ -288,7 +307,12 @@ export default function AdminInventory() {
               <Select
                 id="variant"
                 value={selectedVariantId}
-                onChange={(e) => setSelectedVariantId(e.target.value)}
+                onChange={(e) => {
+                  setSelectedVariantId(e.target.value);
+                  const opt = variantOptions.find((o) => o.id === e.target.value);
+                  setSkuPrefix(opt?.categoryIdentifier ?? "");
+                  setNewSku("");
+                }}
                 disabled={isLoadingVariants}
               >
                 <option value="">{isLoadingVariants ? "Loading…" : "Select a variant"}</option>
@@ -300,8 +324,28 @@ export default function AdminInventory() {
               </Select>
             )}
           </FormField>
-          <FormField label="SKU" htmlFor="sku">
-            <Input id="sku" value={newSku} onChange={(e) => setNewSku(e.target.value)} placeholder="DRESS-S-BLK" />
+          <FormField
+            label="SKU"
+            htmlFor="sku"
+            hint={skuPrefix ? `Final SKU: ${skuPrefix}-${newSku.trim() || "…"}` : undefined}
+          >
+            {skuPrefix ? (
+              <div className="flex items-stretch">
+                <span className="inline-flex items-center rounded-l-sm border border-r-0 border-stone-300 bg-stone-50 px-3 font-mono text-sm text-stone-600">
+                  {skuPrefix}-
+                </span>
+                <Input
+                  id="sku"
+                  className="rounded-l-none"
+                  value={newSku}
+                  onChange={(e) => setNewSku(e.target.value)}
+                  maxLength={8}
+                  placeholder="ABC-RD"
+                />
+              </div>
+            ) : (
+              <Input id="sku" value={newSku} onChange={(e) => setNewSku(e.target.value)} placeholder="DRESS-S-BLK" />
+            )}
           </FormField>
           <FormField label="Initial quantity" htmlFor="initial-quantity">
             <Input

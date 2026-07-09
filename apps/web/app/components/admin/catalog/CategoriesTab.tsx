@@ -33,6 +33,7 @@ export function CategoriesTab() {
   const [newName, setNewName] = useState("");
   const [newParentId, setNewParentId] = useState("");
   const [newProductTypeId, setNewProductTypeId] = useState("");
+  const [newInternalIdentifier, setNewInternalIdentifier] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -79,6 +80,7 @@ export function CategoriesTab() {
     setNewName("");
     setNewParentId("");
     setNewProductTypeId("");
+    setNewInternalIdentifier("");
     setSaveError(null);
     setThumbnailError(null);
     setIsModalOpen(true);
@@ -89,6 +91,7 @@ export function CategoriesTab() {
     setNewName(category.name);
     setNewParentId(category.parent_id ?? "");
     setNewProductTypeId(category.product_type_id);
+    setNewInternalIdentifier(category.internal_identifier ?? "");
     setSaveError(null);
     setThumbnailError(null);
     setIsModalOpen(true);
@@ -111,9 +114,15 @@ export function CategoriesTab() {
           name: newName.trim(),
           parent_id: newParentId || null,
           product_type_id: newProductTypeId,
+          internal_identifier: newInternalIdentifier.trim(),
         });
       } else {
-        await createCategory(newName.trim(), newProductTypeId, newParentId || undefined);
+        await createCategory(
+          newName.trim(),
+          newProductTypeId,
+          newParentId || undefined,
+          newInternalIdentifier.trim() || undefined,
+        );
       }
       setIsModalOpen(false);
       await refresh();
@@ -204,6 +213,7 @@ export function CategoriesTab() {
             <thead className="border-b border-stone-200 bg-stone-50 text-xs uppercase tracking-wide text-stone-500">
               <tr>
                 <th className="px-4 py-3 font-medium">Name</th>
+                <th className="px-4 py-3 font-medium">Identifier</th>
                 <th className="px-4 py-3 font-medium">Slug</th>
                 <th className="px-4 py-3 font-medium">Type</th>
                 <th className="px-4 py-3 font-medium">Parent</th>
@@ -214,6 +224,9 @@ export function CategoriesTab() {
               {categories.map((category) => (
                 <tr key={category.id} className="border-b border-stone-100 last:border-0">
                   <td className="px-4 py-3 font-medium text-stone-900">{category.name}</td>
+                  <td className="px-4 py-3 font-mono text-xs text-stone-600">
+                    {category.internal_identifier || <span className="text-stone-400">—</span>}
+                  </td>
                   <td className="px-4 py-3 font-mono text-xs text-stone-500">{category.slug}</td>
                   <td className="px-4 py-3 text-stone-600">{productTypeName(category)}</td>
                   <td className="px-4 py-3 text-stone-600">{parentName(category)}</td>
@@ -262,6 +275,18 @@ export function CategoriesTab() {
               onChange={(e) => setNewName(e.target.value)}
               placeholder="Dresses"
               autoFocus
+            />
+          </FormField>
+          <FormField
+            label="Internal identifier"
+            htmlFor="category-identifier"
+            hint="Optional — used as the SKU prefix for this category's products (e.g. DR-01)"
+          >
+            <Input
+              id="category-identifier"
+              value={newInternalIdentifier}
+              onChange={(e) => setNewInternalIdentifier(e.target.value)}
+              placeholder="DR-01"
             />
           </FormField>
           <FormField label="Product type" htmlFor="category-product-type">

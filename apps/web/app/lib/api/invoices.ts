@@ -20,7 +20,6 @@ export type InvoiceListItem = {
 export type LineItem = {
   product_name: string;
   variant_label: string;
-  nks_code: string;
   quantity: number;
   unit_price_incl_vat: number;
   unit_price_excl_vat: number;

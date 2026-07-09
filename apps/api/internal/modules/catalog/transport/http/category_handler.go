@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -39,20 +40,22 @@ func (h *CategoryHandler) RegisterRoutes(r chi.Router, requireAdmin func(http.Ha
 }
 
 type categoryRequest struct {
-	Name          string  `json:"name"`
-	ParentID      *string `json:"parent_id,omitempty"`
-	ProductTypeID string  `json:"product_type_id"`
+	Name               string  `json:"name"`
+	ParentID           *string `json:"parent_id,omitempty"`
+	ProductTypeID      string  `json:"product_type_id"`
+	InternalIdentifier string  `json:"internal_identifier"`
 }
 
 type categoryResponse struct {
-	ID            string  `json:"id"`
-	Name          string  `json:"name"`
-	Slug          string  `json:"slug"`
-	ParentID      *string `json:"parent_id,omitempty"`
-	ProductTypeID string  `json:"product_type_id"`
-	ImageURL      *string `json:"image_url,omitempty"`
-	CreatedAt     string  `json:"created_at"`
-	UpdatedAt     string  `json:"updated_at"`
+	ID                 string  `json:"id"`
+	Name               string  `json:"name"`
+	Slug               string  `json:"slug"`
+	ParentID           *string `json:"parent_id,omitempty"`
+	ProductTypeID      string  `json:"product_type_id"`
+	InternalIdentifier string  `json:"internal_identifier"`
+	ImageURL           *string `json:"image_url,omitempty"`
+	CreatedAt          string  `json:"created_at"`
+	UpdatedAt          string  `json:"updated_at"`
 }
 
 func toCategoryResponse(c domain.Category) categoryResponse {
@@ -62,13 +65,14 @@ func toCategoryResponse(c domain.Category) categoryResponse {
 		parentID = &s
 	}
 	resp := categoryResponse{
-		ID:            c.ID.String(),
-		Name:          c.Name,
-		Slug:          c.Slug,
-		ParentID:      parentID,
-		ProductTypeID: c.ProductTypeID.String(),
-		CreatedAt:     c.CreatedAt.Format(timeFormat),
-		UpdatedAt:     c.UpdatedAt.Format(timeFormat),
+		ID:                 c.ID.String(),
+		Name:               c.Name,
+		Slug:               c.Slug,
+		ParentID:           parentID,
+		ProductTypeID:      c.ProductTypeID.String(),
+		InternalIdentifier: c.InternalIdentifier,
+		CreatedAt:          c.CreatedAt.Format(timeFormat),
+		UpdatedAt:          c.UpdatedAt.Format(timeFormat),
 	}
 	if c.HasThumbnail() {
 		url := "/api/v1/admin/categories/" + c.ID.String() + "/thumbnail/file"
@@ -108,9 +112,10 @@ func (h *CategoryHandler) create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	category, err := h.service.CreateCategory(r.Context(), application.CreateCategoryInput{
-		Name:          req.Name,
-		ParentID:      parentID,
-		ProductTypeID: productTypeID,
+		Name:               req.Name,
+		ParentID:           parentID,
+		ProductTypeID:      productTypeID,
+		InternalIdentifier: strings.TrimSpace(req.InternalIdentifier),
 	})
 	if err != nil {
 		writeCatalogModuleError(w, err)
@@ -142,9 +147,10 @@ func (h *CategoryHandler) update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		Name          *string `json:"name,omitempty"`
-		ParentID      *string `json:"parent_id,omitempty"`
-		ProductTypeID *string `json:"product_type_id,omitempty"`
+		Name               *string `json:"name,omitempty"`
+		ParentID           *string `json:"parent_id,omitempty"`
+		ProductTypeID      *string `json:"product_type_id,omitempty"`
+		InternalIdentifier *string `json:"internal_identifier,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "request body is invalid")
@@ -160,6 +166,10 @@ func (h *CategoryHandler) update(w http.ResponseWriter, r *http.Request) {
 	input := application.UpdateCategoryInput{Name: req.Name}
 	if req.ParentID != nil {
 		input.ParentID = parentID
+	}
+	if req.InternalIdentifier != nil {
+		trimmed := strings.TrimSpace(*req.InternalIdentifier)
+		input.InternalIdentifier = &trimmed
 	}
 	if req.ProductTypeID != nil {
 		productTypeID, err := uuid.Parse(*req.ProductTypeID)
@@ -294,6 +304,8 @@ func writeCatalogModuleError(w http.ResponseWriter, err error) {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_status", "status is invalid")
 	case errors.Is(err, application.ErrSlugConflict):
 		httpx.WriteError(w, http.StatusConflict, "slug_conflict", "could not allocate a unique slug")
+	case errors.Is(err, domain.ErrCategoryIdentifierConflict):
+		httpx.WriteError(w, http.StatusConflict, "identifier_conflict", err.Error())
 	case errors.As(err, new(domain.ValidationError)):
 		httpx.WriteError(w, http.StatusBadRequest, "validation_failed", err.Error())
 	default:

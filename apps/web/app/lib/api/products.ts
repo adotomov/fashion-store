@@ -63,7 +63,8 @@ export type Product = {
   description: string;
   status: ProductStatus;
   base_price: Money;
-  nks_code?: string;
+  // VAT tax group id (managed under Invoices & Taxes → Tax). Absent = none.
+  tax_group_id?: string;
   category_ids?: string[];
   catalog_ids?: string[];
   attributes?: AttributeRef[];
@@ -104,7 +105,14 @@ export async function createProduct(name: string): Promise<Product> {
 
 export async function updateProduct(
   id: string,
-  input: Partial<{ name: string; description: string; nks_code: string; status: ProductStatus; base_price: Money }>,
+  input: Partial<{
+    name: string;
+    description: string;
+    status: ProductStatus;
+    base_price: Money;
+    // "" clears the tax group, a UUID sets it, omitted leaves it unchanged.
+    tax_group_id: string;
+  }>,
 ): Promise<Product> {
   const body: Record<string, unknown> = { ...input };
   if (input.base_price) {

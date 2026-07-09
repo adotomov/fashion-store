@@ -74,7 +74,7 @@ func (r *PostgresProductRepository) Create(ctx context.Context, product domain.P
 		INSERT INTO products (name, slug, description, status, base_price_amount, base_price_currency)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, name, slug, COALESCE(description, ''), status, base_price_amount, base_price_currency,
-			compare_at_price_amount, compare_at_price_currency, COALESCE(nks_code, ''), created_at, updated_at`,
+			compare_at_price_amount, compare_at_price_currency, created_at, updated_at, tax_group_id`,
 		product.Name, product.Slug, product.Description, product.Status,
 		product.BasePrice.AmountMinor, product.BasePrice.Currency)
 
@@ -92,7 +92,7 @@ func (r *PostgresProductRepository) Create(ctx context.Context, product domain.P
 func (r *PostgresProductRepository) List(ctx context.Context) ([]domain.Product, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT p.id, p.name, p.slug, COALESCE(p.description, ''), p.status, p.base_price_amount, p.base_price_currency,
-		       p.compare_at_price_amount, p.compare_at_price_currency, COALESCE(p.nks_code, ''), p.created_at, p.updated_at, COUNT(v.id),
+		       p.compare_at_price_amount, p.compare_at_price_currency, p.created_at, p.updated_at, COUNT(v.id),
 		       (SELECT m.id FROM product_media m WHERE m.product_id = p.id ORDER BY m.position LIMIT 1),
 		       (SELECT m.bucket FROM product_media m WHERE m.product_id = p.id ORDER BY m.position LIMIT 1),
 		       (SELECT m.object_key FROM product_media m WHERE m.product_id = p.id ORDER BY m.position LIMIT 1),
@@ -122,7 +122,7 @@ func (r *PostgresProductRepository) List(ctx context.Context) ([]domain.Product,
 		var mediaID *uuid.UUID
 		var mediaBucket, mediaObjectKey, mediaContentType *string
 		if err := rows.Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Status, &amount, &currency,
-			&compareAmount, &compareCurrency, &p.NKSCode, &p.CreatedAt, &p.UpdatedAt, &p.VariantCount,
+			&compareAmount, &compareCurrency, &p.CreatedAt, &p.UpdatedAt, &p.VariantCount,
 			&mediaID, &mediaBucket, &mediaObjectKey, &mediaContentType, &p.InStock); err != nil {
 			return nil, err
 		}
@@ -147,7 +147,7 @@ func (r *PostgresProductRepository) List(ctx context.Context) ([]domain.Product,
 func (r *PostgresProductRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain.Product, error) {
 	row := r.db.QueryRow(ctx, `
 		SELECT id, name, slug, COALESCE(description, ''), status, base_price_amount, base_price_currency,
-			compare_at_price_amount, compare_at_price_currency, COALESCE(nks_code, ''), created_at, updated_at
+			compare_at_price_amount, compare_at_price_currency, created_at, updated_at, tax_group_id
 		FROM products WHERE id = $1`, id)
 
 	product, err := scanProduct(row)
@@ -160,7 +160,7 @@ func (r *PostgresProductRepository) FindByID(ctx context.Context, id uuid.UUID) 
 func (r *PostgresProductRepository) FindBySlug(ctx context.Context, slug string) (*domain.Product, error) {
 	row := r.db.QueryRow(ctx, `
 		SELECT id, name, slug, COALESCE(description, ''), status, base_price_amount, base_price_currency,
-			compare_at_price_amount, compare_at_price_currency, COALESCE(nks_code, ''), created_at, updated_at
+			compare_at_price_amount, compare_at_price_currency, created_at, updated_at, tax_group_id
 		FROM products WHERE slug = $1`, slug)
 
 	product, err := scanProduct(row)
@@ -217,12 +217,13 @@ func (r *PostgresProductRepository) Update(ctx context.Context, product domain.P
 		UPDATE products SET name = $2, description = $3, status = $4,
 			base_price_amount = $5, base_price_currency = $6,
 			compare_at_price_amount = $7, compare_at_price_currency = $8,
-			nks_code = NULLIF($9, ''), updated_at = NOW()
+			tax_group_id = $9, updated_at = NOW()
 		WHERE id = $1
 		RETURNING id, name, slug, COALESCE(description, ''), status, base_price_amount, base_price_currency,
-			compare_at_price_amount, compare_at_price_currency, COALESCE(nks_code, ''), created_at, updated_at`,
+			compare_at_price_amount, compare_at_price_currency, created_at, updated_at, tax_group_id`,
 		product.ID, product.Name, product.Description, product.Status,
-		product.BasePrice.AmountMinor, product.BasePrice.Currency, compareAmount, compareCurrency, product.NKSCode)
+		product.BasePrice.AmountMinor, product.BasePrice.Currency, compareAmount, compareCurrency,
+		product.TaxGroupID)
 
 	return scanProduct(row)
 }
@@ -490,7 +491,7 @@ func scanProduct(row pgx.Row) (*domain.Product, error) {
 	var compareAmount *int64
 	var compareCurrency *string
 	err := row.Scan(&p.ID, &p.Name, &p.Slug, &p.Description, &p.Status, &amount, &currency,
-		&compareAmount, &compareCurrency, &p.NKSCode, &p.CreatedAt, &p.UpdatedAt)
+		&compareAmount, &compareCurrency, &p.CreatedAt, &p.UpdatedAt, &p.TaxGroupID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrProductNotFound
 	}
@@ -504,11 +505,11 @@ func scanProduct(row pgx.Row) (*domain.Product, error) {
 	return &p, nil
 }
 
-func (r *PostgresProductRepository) GetNKSCode(ctx context.Context, productID uuid.UUID) (string, error) {
-	var code string
-	err := r.db.QueryRow(ctx, `SELECT COALESCE(nks_code, '') FROM products WHERE id = $1`, productID).Scan(&code)
+func (r *PostgresProductRepository) GetTaxGroupID(ctx context.Context, productID uuid.UUID) (*uuid.UUID, error) {
+	var id *uuid.UUID
+	err := r.db.QueryRow(ctx, `SELECT tax_group_id FROM products WHERE id = $1`, productID).Scan(&id)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", nil
+		return nil, nil
 	}
-	return code, err
+	return id, err
 }

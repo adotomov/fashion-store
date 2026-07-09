@@ -26,12 +26,21 @@ import {
   saveInvoiceSettings,
   updateCourier,
 } from "../../lib/api/invoices";
+import {
+  type TaxGroup,
+  TAX_GROUP_IDENTIFIERS,
+  createTaxGroup,
+  deleteTaxGroup,
+  listTaxGroups,
+  updateTaxGroup,
+} from "../../lib/api/tax-groups";
 
 export const handle = { title: "Invoices" };
 
 const TABS = [
   { id: "invoices", label: "Invoices" },
   { id: "settings", label: "Settings" },
+  { id: "tax", label: "Tax" },
 ];
 
 const PAGE_SIZE = 20;
@@ -475,6 +484,167 @@ function SettingsTab() {
   );
 }
 
+function TaxGroupsTab() {
+  const { isReadOnly } = useAdminPermissions();
+  const [groups, setGroups] = useState<TaxGroup[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [modal, setModal] = useState<null | "new" | TaxGroup>(null);
+  const [form, setForm] = useState<{ identifier: string; vat_rate: string }>({ identifier: "Б", vat_rate: "20" });
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+
+  async function refresh() {
+    try {
+      setGroups(await listTaxGroups());
+    } catch {
+      setError("Could not load tax groups.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  function openNew() {
+    setForm({ identifier: "Б", vat_rate: "20" });
+    setSaveError(null);
+    setModal("new");
+  }
+
+  function openEdit(g: TaxGroup) {
+    setForm({ identifier: g.identifier, vat_rate: String(g.vat_rate) });
+    setSaveError(null);
+    setModal(g);
+  }
+
+  async function handleSave() {
+    const rate = Number(form.vat_rate);
+    if (Number.isNaN(rate) || rate < 0 || rate > 100) {
+      setSaveError("VAT rate must be between 0 and 100.");
+      return;
+    }
+    setIsSaving(true);
+    setSaveError(null);
+    try {
+      if (modal === "new") {
+        await createTaxGroup(form.identifier, rate);
+      } else if (modal) {
+        await updateTaxGroup(modal.id, form.identifier, rate);
+      }
+      setModal(null);
+      await refresh();
+    } catch {
+      setSaveError("Could not save. The identifier may already be in use.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    if (!window.confirm("Delete this tax group? Products using it will fall back to the default 20% rate.")) return;
+    try {
+      await deleteTaxGroup(id);
+      await refresh();
+    } catch {
+      setError("Could not delete tax group.");
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-6">
+      <section>
+        <div className="flex items-center justify-between">
+          <Eyebrow>Tax groups</Eyebrow>
+          <Button variant="secondary" size="sm" onClick={openNew} disabled={isReadOnly}>+ Add tax group</Button>
+        </div>
+        <Text tone="muted" size="sm" className="mt-1">
+          VAT groups (А–Ж) assigned to products. Each product's group sets the VAT rate applied per line on its invoices.
+        </Text>
+
+        {error && (
+          <Text tone="danger" size="sm" className="mt-2">
+            {error}
+          </Text>
+        )}
+
+        <Card className="mt-3">
+          {loading ? (
+            <div className="p-6">
+              <Text tone="muted">Loading…</Text>
+            </div>
+          ) : groups.length === 0 ? (
+            <div className="p-6">
+              <Text tone="muted">No tax groups yet.</Text>
+            </div>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-left text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">
+                  <th className="px-4 py-3">Identifier</th>
+                  <th className="px-4 py-3">VAT rate</th>
+                  <th className="px-4 py-3" />
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {groups.map((g) => (
+                  <tr key={g.id} className="hover:bg-[var(--color-surface-hover)]">
+                    <td className="px-4 py-3 font-medium">{g.identifier}</td>
+                    <td className="px-4 py-3">{g.vat_rate}%</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center justify-end gap-2">
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(g)} disabled={isReadOnly}>Edit</Button>
+                        <Button variant="ghost" size="sm" onClick={() => handleDelete(g.id)} disabled={isReadOnly}>Delete</Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Card>
+      </section>
+
+      {modal !== null && (
+        <Modal open title={modal === "new" ? "New tax group" : "Edit tax group"} onClose={() => setModal(null)}>
+          <div className="flex flex-col gap-4">
+            <FormField label="Identifier" htmlFor="tg-identifier" hint="Bulgarian VAT group letter" error={saveError ?? undefined}>
+              <Select
+                id="tg-identifier"
+                value={form.identifier}
+                onChange={(e) => setForm({ ...form, identifier: e.target.value })}
+              >
+                {TAX_GROUP_IDENTIFIERS.map((id) => (
+                  <option key={id} value={id}>
+                    {id}
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+            <FormField label="VAT rate (%)" htmlFor="tg-rate">
+              <Input
+                id="tg-rate"
+                type="number"
+                value={form.vat_rate}
+                onChange={(e) => setForm({ ...form, vat_rate: e.target.value })}
+              />
+            </FormField>
+            <div className="flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setModal(null)}>Cancel</Button>
+              <Button variant="primary" onClick={handleSave} disabled={isSaving || isReadOnly}>
+                {isSaving ? "Saving…" : "Save"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
 export default function AdminInvoices() {
   const [activeTab, setActiveTab] = useState("invoices");
   return (
@@ -482,6 +652,7 @@ export default function AdminInvoices() {
       <Tabs tabs={TABS} activeTab={activeTab} onChange={setActiveTab}>
         {activeTab === "invoices" && <InvoicesTab />}
         {activeTab === "settings" && <SettingsTab />}
+        {activeTab === "tax" && <TaxGroupsTab />}
       </Tabs>
     </div>
   );

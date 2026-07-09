@@ -16,6 +16,9 @@ var (
 	ErrVariantNotFound         = errors.New("product variant not found")
 	ErrMediaNotFound           = errors.New("product media not found")
 	ErrThumbnailNotFound       = errors.New("category thumbnail not found")
+	// ErrCategoryIdentifierConflict signals the internal_identifier is already
+	// used by another category (partial unique index violation).
+	ErrCategoryIdentifierConflict = errors.New("internal identifier is already in use by another category")
 )
 
 type ValidationError string

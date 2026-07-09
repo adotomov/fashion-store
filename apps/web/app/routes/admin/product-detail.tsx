@@ -28,6 +28,7 @@ import {
   setProductCategories,
   updateProduct,
 } from "../../lib/api/products";
+import { type TaxGroup, listTaxGroups } from "../../lib/api/tax-groups";
 
 export const handle = { title: "Product" };
 
@@ -38,10 +39,10 @@ export const handle = { title: "Product" };
 type FormValues = {
   name: string;
   description: string;
-  nksCode: string;
   status: ProductStatus;
   priceAmount: string;
-  categoryIds: string[];
+  categoryId: string;
+  taxGroupId: string;
   catalogIds: string[];
   attributeIds: string[];
 };
@@ -50,10 +51,10 @@ function formSnapshot(v: FormValues): string {
   return JSON.stringify({
     name: v.name,
     description: v.description,
-    nksCode: v.nksCode,
     status: v.status,
     priceAmount: v.priceAmount,
-    categoryIds: [...v.categoryIds].sort(),
+    categoryId: v.categoryId,
+    taxGroupId: v.taxGroupId,
     catalogIds: [...v.catalogIds].sort(),
     attributeIds: [...v.attributeIds].sort(),
   });
@@ -66,6 +67,7 @@ export default function ProductDetail() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [catalogs, setCatalogs] = useState<Catalog[]>([]);
   const [attributes, setAttributes] = useState<Attribute[]>([]);
+  const [taxGroups, setTaxGroups] = useState<TaxGroup[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -79,10 +81,10 @@ export default function ProductDetail() {
   // actions, since they're distinct sub-resource operations, not form fields.
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [nksCode, setNksCode] = useState("");
   const [status, setStatus] = useState<ProductStatus>("draft");
   const [priceAmount, setPriceAmount] = useState("0");
-  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  const [selectedTaxGroupId, setSelectedTaxGroupId] = useState("");
   const [selectedCatalogIds, setSelectedCatalogIds] = useState<string[]>([]);
   const [selectedAttributeIds, setSelectedAttributeIds] = useState<string[]>([]);
 
@@ -96,20 +98,20 @@ export default function ProductDetail() {
       setProduct(loaded);
       setName(loaded.name);
       setDescription(loaded.description);
-      setNksCode(loaded.nks_code ?? "");
       setStatus(loaded.status);
       setPriceAmount((loaded.base_price.amount / 100).toFixed(2));
-      setSelectedCategoryIds(loaded.category_ids ?? []);
+      setSelectedCategoryId(loaded.category_ids?.[0] ?? "");
+      setSelectedTaxGroupId(loaded.tax_group_id ?? "");
       setSelectedCatalogIds(loaded.catalog_ids ?? []);
       setSelectedAttributeIds((loaded.attributes ?? []).map((a) => a.id));
       setBaseline(
         formSnapshot({
           name: loaded.name,
           description: loaded.description,
-          nksCode: loaded.nks_code ?? "",
           status: loaded.status,
           priceAmount: (loaded.base_price.amount / 100).toFixed(2),
-          categoryIds: loaded.category_ids ?? [],
+          categoryId: loaded.category_ids?.[0] ?? "",
+          taxGroupId: loaded.tax_group_id ?? "",
           catalogIds: loaded.catalog_ids ?? [],
           attributeIds: (loaded.attributes ?? []).map((a) => a.id),
         }),
@@ -136,6 +138,7 @@ export default function ProductDetail() {
     listCategories().then(setCategories).catch(() => {});
     listCatalogs().then(setCatalogs).catch(() => {});
     listAttributes().then(setAttributes).catch(() => {});
+    listTaxGroups().then(setTaxGroups).catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -150,11 +153,11 @@ export default function ProductDetail() {
         updateProduct(id, {
           name,
           description,
-          nks_code: nksCode,
           status,
           base_price: { amount: Math.round(Number(priceAmount) * 100), currency: product?.base_price.currency ?? "EUR" },
+          tax_group_id: selectedTaxGroupId,
         }),
-        setProductCategories(id, selectedCategoryIds),
+        setProductCategories(id, selectedCategoryId ? [selectedCategoryId] : []),
         setProductCatalogs(id, selectedCatalogIds),
         setProductAttributes(id, selectedAttributeIds),
       ]);
@@ -175,6 +178,11 @@ export default function ProductDetail() {
   const variants = product?.variants ?? [];
   const variantsMissingInventory = variants.filter((v) => !v.inventory_item_id);
 
+  // The selected category's identifier prefixes variant SKUs; passed to the
+  // inventory "Assign SKU" screen so it can pre-fill the read-only prefix.
+  const selectedCategoryIdentifier =
+    categories.find((c) => c.id === selectedCategoryId)?.internal_identifier ?? "";
+
   // A product may only go Active once it's fully set up. Attributes and
   // categories reflect the *staged* selections (what the product will be
   // after Save); variants/SKUs reflect server state since those persist
@@ -182,7 +190,8 @@ export default function ProductDetail() {
   const activationRequirements = [
     { met: Number(priceAmount) > 0, label: "Base price greater than 0" },
     { met: selectedAttributeIds.length > 0, label: "At least one attribute assigned" },
-    { met: selectedCategoryIds.length > 0, label: "Assigned to at least one category" },
+    { met: selectedCategoryId !== "", label: "Assigned to a category" },
+    { met: selectedTaxGroupId !== "", label: "Tax group assigned" },
     { met: variants.length > 0, label: "At least one variant created" },
     { met: variants.length > 0 && variantsMissingInventory.length === 0, label: "SKU assigned to every variant" },
   ];
@@ -196,10 +205,10 @@ export default function ProductDetail() {
       formSnapshot({
         name,
         description,
-        nksCode,
         status,
         priceAmount,
-        categoryIds: selectedCategoryIds,
+        categoryId: selectedCategoryId,
+        taxGroupId: selectedTaxGroupId,
         catalogIds: selectedCatalogIds,
         attributeIds: selectedAttributeIds,
       });
@@ -305,9 +314,6 @@ export default function ProductDetail() {
             <FormField label="Description" htmlFor="description">
               <Textarea id="description" value={description} onChange={(e) => setDescription(e.target.value)} />
             </FormField>
-            <FormField label="НКС код (НАП)" htmlFor="nks-code" hint="Номенклатурен код на стоката — незадължително">
-              <Input id="nks-code" value={nksCode} onChange={(e) => setNksCode(e.target.value)} placeholder="напр. 62.03.32" />
-            </FormField>
             <TranslationFields
               entityType="product"
               entityId={product.id}
@@ -337,6 +343,25 @@ export default function ProductDetail() {
               </FormField>
             </div>
 
+            <FormField
+              label="Tax group"
+              htmlFor="tax-group"
+              hint="VAT group used on invoices. Manage under Invoices & Taxes → Tax."
+            >
+              <Select
+                id="tax-group"
+                value={selectedTaxGroupId}
+                onChange={(e) => setSelectedTaxGroupId(e.target.value)}
+              >
+                <option value="">No tax group</option>
+                {taxGroups.map((g) => (
+                  <option key={g.id} value={g.id}>
+                    {g.identifier} — {g.vat_rate}% VAT
+                  </option>
+                ))}
+              </Select>
+            </FormField>
+
             {status !== "active" && !canActivate && (
               <div className="rounded-sm border border-stone-200 bg-stone-50 p-4">
                 <Text size="xs" className="font-medium text-stone-700">
@@ -364,7 +389,7 @@ export default function ProductDetail() {
                           {variantDisplayLabel(variant)}
                         </Text>
                         <a
-                          href={`/admin/inventory?assignVariantId=${variant.id}&productName=${encodeURIComponent(product.name)}&variantLabel=${encodeURIComponent(variantDisplayLabel(variant))}`}
+                          href={`/admin/inventory?assignVariantId=${variant.id}&productName=${encodeURIComponent(product.name)}&variantLabel=${encodeURIComponent(variantDisplayLabel(variant))}&categoryIdentifier=${encodeURIComponent(selectedCategoryIdentifier)}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="shrink-0 text-xs font-medium text-clay-600 hover:underline"
@@ -382,16 +407,27 @@ export default function ProductDetail() {
       </section>
 
       <section>
-        <Eyebrow>Categories</Eyebrow>
+        <Eyebrow>Category</Eyebrow>
         <Card className="mt-3 p-6">
-          <AssignmentSelector
-            options={categories.map((c) => ({ id: c.id, label: c.name }))}
-            selectedIds={selectedCategoryIds}
-            onAdd={(catId) => setSelectedCategoryIds((prev) => [...prev, catId])}
-            onRemove={(catId) => setSelectedCategoryIds((prev) => prev.filter((x) => x !== catId))}
-            placeholder="Choose a category…"
-            emptyMessage="No categories assigned yet."
-          />
+          <FormField
+            label="Category"
+            htmlFor="category"
+            hint={
+              selectedCategoryIdentifier
+                ? `Variant SKUs are prefixed with this category's identifier: ${selectedCategoryIdentifier}`
+                : "A product belongs to a single category. Its identifier prefixes variant SKUs."
+            }
+          >
+            <Select id="category" value={selectedCategoryId} onChange={(e) => setSelectedCategoryId(e.target.value)}>
+              <option value="">No category</option>
+              {categories.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                  {c.internal_identifier ? ` (${c.internal_identifier})` : ""}
+                </option>
+              ))}
+            </Select>
+          </FormField>
         </Card>
       </section>
 

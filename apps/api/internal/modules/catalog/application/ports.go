@@ -106,6 +106,6 @@ type ProductRepository interface {
 
 	Stats(ctx context.Context) (CatalogStats, error)
 
-	// GetNKSCode returns the NRA commodity code for a product, or "" if not set.
-	GetNKSCode(ctx context.Context, productID uuid.UUID) (string, error)
+	// GetTaxGroupID returns the product's assigned VAT tax group, or nil.
+	GetTaxGroupID(ctx context.Context, productID uuid.UUID) (*uuid.UUID, error)
 }

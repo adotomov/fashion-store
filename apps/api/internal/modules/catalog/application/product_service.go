@@ -99,8 +99,10 @@ func (s *ProductService) UpdateProduct(ctx context.Context, id uuid.UUID, input 
 	} else if input.CompareAtPrice != nil {
 		product.CompareAtPrice = input.CompareAtPrice
 	}
-	if input.NKSCode != nil {
-		product.NKSCode = *input.NKSCode
+	if input.ClearTaxGroupID {
+		product.TaxGroupID = nil
+	} else if input.TaxGroupID != nil {
+		product.TaxGroupID = input.TaxGroupID
 	}
 
 	return s.repo.Update(ctx, *product)
@@ -110,8 +112,10 @@ func (s *ProductService) DeleteProduct(ctx context.Context, id uuid.UUID) error 
 	return s.repo.Delete(ctx, id)
 }
 
-func (s *ProductService) GetNKSCode(ctx context.Context, productID uuid.UUID) (string, error) {
-	return s.repo.GetNKSCode(ctx, productID)
+// GetTaxGroupID returns the product's assigned VAT tax group, or nil if none.
+// Consumed by the invoicing module (ProductInvoiceReader) at generation time.
+func (s *ProductService) GetTaxGroupID(ctx context.Context, productID uuid.UUID) (*uuid.UUID, error) {
+	return s.repo.GetTaxGroupID(ctx, productID)
 }
 
 func (s *ProductService) SetCategories(ctx context.Context, productID uuid.UUID, categoryIDs []uuid.UUID) error {

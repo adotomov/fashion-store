@@ -41,6 +41,10 @@ func (h *Handler) RegisterRoutes(r chi.Router, requireAdmin func(http.Handler) h
 		r.Post("/admin/invoice-couriers", h.createCourier)
 		r.Put("/admin/invoice-couriers/{id}", h.updateCourier)
 		r.Delete("/admin/invoice-couriers/{id}", h.deleteCourier)
+		r.Get("/admin/tax-groups", h.listTaxGroups)
+		r.Post("/admin/tax-groups", h.createTaxGroup)
+		r.Put("/admin/tax-groups/{id}", h.updateTaxGroup)
+		r.Delete("/admin/tax-groups/{id}", h.deleteTaxGroup)
 	})
 }
 
@@ -314,6 +318,81 @@ func (h *Handler) deleteCourier(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// ── Tax group endpoints ───────────────────────────────────────────────────────
+
+func (h *Handler) listTaxGroups(w http.ResponseWriter, r *http.Request) {
+	groups, err := h.service.ListTaxGroups(r.Context())
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "load_failed", err.Error())
+		return
+	}
+	resp := make([]taxGroupResponse, 0, len(groups))
+	for _, g := range groups {
+		resp = append(resp, toTaxGroupResponse(g))
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+func (h *Handler) createTaxGroup(w http.ResponseWriter, r *http.Request) {
+	var req taxGroupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "request body is invalid")
+		return
+	}
+	group, err := h.service.CreateTaxGroup(r.Context(), domain.TaxGroup{
+		Identifier: req.Identifier,
+		VATRate:    req.VATRate,
+	})
+	if errors.Is(err, domain.ErrInvalidTaxGroup) {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "invalid_tax_group", err.Error())
+		return
+	}
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "create_failed", err.Error())
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, toTaxGroupResponse(*group))
+}
+
+func (h *Handler) updateTaxGroup(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "invalid tax group id")
+		return
+	}
+	var req taxGroupRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "request body is invalid")
+		return
+	}
+	group, err := h.service.UpdateTaxGroup(r.Context(), id, domain.TaxGroup{
+		Identifier: req.Identifier,
+		VATRate:    req.VATRate,
+	})
+	if errors.Is(err, domain.ErrInvalidTaxGroup) {
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "invalid_tax_group", err.Error())
+		return
+	}
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "update_failed", err.Error())
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toTaxGroupResponse(*group))
+}
+
+func (h *Handler) deleteTaxGroup(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "invalid tax group id")
+		return
+	}
+	if err := h.service.DeleteTaxGroup(r.Context(), id); err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "delete_failed", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ── Request/response types ────────────────────────────────────────────────────
 
 type invoiceListItem struct {
@@ -354,7 +433,6 @@ type invoiceDetailResponse struct {
 type lineItemResponse struct {
 	ProductName          string  `json:"product_name"`
 	VariantLabel         string  `json:"variant_label"`
-	NKSCode              string  `json:"nks_code"`
 	Quantity             int     `json:"quantity"`
 	UnitPriceInclVAT     float64 `json:"unit_price_incl_vat"`
 	UnitPriceExclVAT     float64 `json:"unit_price_excl_vat"`
@@ -362,6 +440,7 @@ type lineItemResponse struct {
 	LineTotalInclVAT     float64 `json:"line_total_incl_vat"`
 	LineTotalExclVAT     float64 `json:"line_total_excl_vat"`
 	LineVATAmount        float64 `json:"line_vat_amount"`
+	VATRate              float64 `json:"vat_rate"`
 }
 
 type invoiceSettingsRequest struct {
@@ -406,6 +485,17 @@ type courierResponse struct {
 	Identifier string `json:"identifier"`
 	IsActive   bool   `json:"is_active"`
 	SortOrder  int    `json:"sort_order"`
+}
+
+type taxGroupRequest struct {
+	Identifier string  `json:"identifier"`
+	VATRate    float64 `json:"vat_rate"`
+}
+
+type taxGroupResponse struct {
+	ID         string  `json:"id"`
+	Identifier string  `json:"identifier"`
+	VATRate    float64 `json:"vat_rate"`
 }
 
 // ── Converters ────────────────────────────────────────────────────────────────
@@ -456,7 +546,6 @@ func toDetailResponse(inv domain.Invoice) invoiceDetailResponse {
 		resp.LineItems = append(resp.LineItems, lineItemResponse{
 			ProductName:      item.ProductName,
 			VariantLabel:     item.VariantLabel,
-			NKSCode:          item.NKSCode,
 			Quantity:         item.Quantity,
 			UnitPriceInclVAT: float64(item.UnitPriceInclVAT.AmountMinor) / 100,
 			UnitPriceExclVAT: float64(item.UnitPriceExclVAT.AmountMinor) / 100,
@@ -464,6 +553,7 @@ func toDetailResponse(inv domain.Invoice) invoiceDetailResponse {
 			LineTotalInclVAT: float64(item.LineTotalInclVAT.AmountMinor) / 100,
 			LineTotalExclVAT: float64(item.LineTotalExclVAT.AmountMinor) / 100,
 			LineVATAmount:    float64(item.LineVATAmount.AmountMinor) / 100,
+			VATRate:          item.VATRate,
 		})
 	}
 	return resp
@@ -493,6 +583,14 @@ func toCourierResponse(c domain.Courier) courierResponse {
 		Identifier: c.Identifier,
 		IsActive:   c.IsActive,
 		SortOrder:  c.SortOrder,
+	}
+}
+
+func toTaxGroupResponse(g domain.TaxGroup) taxGroupResponse {
+	return taxGroupResponse{
+		ID:         g.ID.String(),
+		Identifier: g.Identifier,
+		VATRate:    g.VATRate,
 	}
 }
 
@@ -628,7 +726,6 @@ const invoiceHTMLTemplate = `<!DOCTYPE html>
     <tr>
       <th>#</th>
       <th>Наименование</th>
-      <th>НКС код</th>
       <th>Кол.</th>
       <th>Ед. цена без ДДС</th>
       <th>ДДС/ед.</th>
@@ -640,7 +737,6 @@ const invoiceHTMLTemplate = `<!DOCTYPE html>
     <tr>
       <td>{{ add1 $i }}</td>
       <td>{{ $item.ProductName }}{{ if $item.VariantLabel }} — {{ $item.VariantLabel }}{{ end }}</td>
-      <td>{{ $item.NKSCode }}</td>
       <td class="num">{{ $item.Quantity }}</td>
       <td class="num">{{ formatMoney $item.UnitPriceExclVAT.AmountMinor }}</td>
       <td class="num">{{ formatMoney $item.VATPerUnit.AmountMinor }}</td>
@@ -651,7 +747,6 @@ const invoiceHTMLTemplate = `<!DOCTYPE html>
     <tr>
       <td></td>
       <td>Доставка</td>
-      <td></td>
       <td class="num">1</td>
       <td class="num">{{ formatMoney (delivExcl .DeliveryFee.AmountMinor) }}</td>
       <td class="num">{{ formatMoney (delivVAT .DeliveryFee.AmountMinor) }}</td>

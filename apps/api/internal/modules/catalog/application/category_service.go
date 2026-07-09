@@ -39,10 +39,11 @@ func (s *CategoryService) CreateCategory(ctx context.Context, input CreateCatego
 		}
 
 		category, err := s.repo.Create(ctx, domain.Category{
-			Name:          input.Name,
-			Slug:          slug,
-			ParentID:      input.ParentID,
-			ProductTypeID: input.ProductTypeID,
+			Name:               input.Name,
+			Slug:               slug,
+			ParentID:           input.ParentID,
+			ProductTypeID:      input.ProductTypeID,
+			InternalIdentifier: input.InternalIdentifier,
 		})
 		if err == nil {
 			return category, nil
@@ -84,6 +85,9 @@ func (s *CategoryService) UpdateCategory(ctx context.Context, id uuid.UUID, inpu
 			return nil, domain.ValidationError("product_type_id is required")
 		}
 		category.ProductTypeID = *input.ProductTypeID
+	}
+	if input.InternalIdentifier != nil {
+		category.InternalIdentifier = *input.InternalIdentifier
 	}
 
 	return s.repo.Update(ctx, *category)

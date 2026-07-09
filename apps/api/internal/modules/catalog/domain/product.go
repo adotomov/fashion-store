@@ -49,7 +49,10 @@ type Product struct {
 	CompareAtPrice *money.Money
 	CategoryIDs    []uuid.UUID
 	CatalogIDs     []uuid.UUID
-	Attributes     []AttributeRef
+	// TaxGroupID references the VAT tax group (owned by the invoicing module)
+	// that drives per-line VAT on invoices. nil means none assigned yet.
+	TaxGroupID *uuid.UUID
+	Attributes []AttributeRef
 	// VariantCount is always populated (cheap to compute). Variants itself
 	// is only populated by FindByID — List skips loading full variant data
 	// for performance, since the admin table only needs the count.
@@ -60,9 +63,6 @@ type Product struct {
 	// product has no media yet.
 	PrimaryMedia *ProductMedia
 	Media        []ProductMedia
-	// NKSCode is the Bulgarian NRA commodity code (Номенклатурен код на стоката),
-	// required on invoices. Optional — empty string means not configured.
-	NKSCode string
 	// InStock is true when the product has no variants yet (inventory isn't
 	// tracked until a variant exists) or at least one variant has available
 	// stock. Computed from the inventory module's data, not persisted here.

@@ -80,19 +80,19 @@ func (r *PostgresRepository) CreateInvoice(ctx context.Context, inv domain.Invoi
 	for _, item := range inv.LineItems {
 		itemRow := tx.QueryRow(ctx, `
 			INSERT INTO invoice_line_items (
-				invoice_id, product_name, variant_label, nks_code, quantity,
+				invoice_id, product_name, variant_label, quantity,
 				unit_price_incl_vat_minor, unit_price_excl_vat_minor, vat_per_unit_minor,
 				line_total_incl_vat_minor, line_total_excl_vat_minor, line_vat_amount_minor,
-				sort_order
+				vat_rate, sort_order
 			) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-			RETURNING id, invoice_id, product_name, variant_label, nks_code, quantity,
+			RETURNING id, invoice_id, product_name, variant_label, quantity,
 				unit_price_incl_vat_minor, unit_price_excl_vat_minor, vat_per_unit_minor,
 				line_total_incl_vat_minor, line_total_excl_vat_minor, line_vat_amount_minor,
-				sort_order, created_at`,
-			created.ID, item.ProductName, item.VariantLabel, item.NKSCode, item.Quantity,
+				vat_rate, sort_order, created_at`,
+			created.ID, item.ProductName, item.VariantLabel, item.Quantity,
 			item.UnitPriceInclVAT.AmountMinor, item.UnitPriceExclVAT.AmountMinor, item.VATPerUnit.AmountMinor,
 			item.LineTotalInclVAT.AmountMinor, item.LineTotalExclVAT.AmountMinor, item.LineVATAmount.AmountMinor,
-			item.SortOrder,
+			item.VATRate, item.SortOrder,
 		)
 		scannedItem, err := scanLineItem(itemRow, created.TotalInclVAT.Currency)
 		if err != nil {
@@ -178,10 +178,10 @@ func (r *PostgresRepository) List(ctx context.Context, filter application.ListFi
 
 func (r *PostgresRepository) attachLineItems(ctx context.Context, inv *domain.Invoice) error {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, invoice_id, product_name, variant_label, nks_code, quantity,
+		SELECT id, invoice_id, product_name, variant_label, quantity,
 			unit_price_incl_vat_minor, unit_price_excl_vat_minor, vat_per_unit_minor,
 			line_total_incl_vat_minor, line_total_excl_vat_minor, line_vat_amount_minor,
-			sort_order, created_at
+			vat_rate, sort_order, created_at
 		FROM invoice_line_items WHERE invoice_id = $1 ORDER BY sort_order`, inv.ID)
 	if err != nil {
 		return err
@@ -291,6 +291,58 @@ func (r *PostgresRepository) DeleteCourier(ctx context.Context, id uuid.UUID) er
 	return err
 }
 
+// ── Tax groups ───────────────────────────────────────────────────────────────
+
+func (r *PostgresRepository) ListTaxGroups(ctx context.Context) ([]domain.TaxGroup, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, identifier, vat_rate, created_at, updated_at
+		FROM tax_groups ORDER BY identifier`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var groups []domain.TaxGroup
+	for rows.Next() {
+		var g domain.TaxGroup
+		if err := rows.Scan(&g.ID, &g.Identifier, &g.VATRate, &g.CreatedAt, &g.UpdatedAt); err != nil {
+			return nil, err
+		}
+		groups = append(groups, g)
+	}
+	return groups, rows.Err()
+}
+
+func (r *PostgresRepository) CreateTaxGroup(ctx context.Context, g domain.TaxGroup) (*domain.TaxGroup, error) {
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO tax_groups (id, identifier, vat_rate)
+		VALUES ($1,$2,$3)
+		RETURNING id, identifier, vat_rate, created_at, updated_at`,
+		g.ID, g.Identifier, g.VATRate,
+	).Scan(&g.ID, &g.Identifier, &g.VATRate, &g.CreatedAt, &g.UpdatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &g, nil
+}
+
+func (r *PostgresRepository) UpdateTaxGroup(ctx context.Context, id uuid.UUID, g domain.TaxGroup) (*domain.TaxGroup, error) {
+	err := r.db.QueryRow(ctx, `
+		UPDATE tax_groups SET identifier=$2, vat_rate=$3, updated_at=NOW()
+		WHERE id=$1
+		RETURNING id, identifier, vat_rate, created_at, updated_at`,
+		id, g.Identifier, g.VATRate,
+	).Scan(&g.ID, &g.Identifier, &g.VATRate, &g.CreatedAt, &g.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrInvoiceNotFound
+	}
+	return &g, err
+}
+
+func (r *PostgresRepository) DeleteTaxGroup(ctx context.Context, id uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `DELETE FROM tax_groups WHERE id = $1`, id)
+	return err
+}
+
 // ── Audit log ────────────────────────────────────────────────────────────────
 
 func (r *PostgresRepository) LogAuditEvent(ctx context.Context, invoiceNumber, eventType, actor string, metadata map[string]any) error {
@@ -348,10 +400,10 @@ func scanLineItem(row pgx.Row, currency string) (*domain.InvoiceLineItem, error)
 	var createdAt interface{}
 	err := row.Scan(
 		&item.ID, &item.InvoiceID,
-		&item.ProductName, &item.VariantLabel, &item.NKSCode, &item.Quantity,
+		&item.ProductName, &item.VariantLabel, &item.Quantity,
 		&item.UnitPriceInclVAT.AmountMinor, &item.UnitPriceExclVAT.AmountMinor, &item.VATPerUnit.AmountMinor,
 		&item.LineTotalInclVAT.AmountMinor, &item.LineTotalExclVAT.AmountMinor, &item.LineVATAmount.AmountMinor,
-		&item.SortOrder, &createdAt,
+		&item.VATRate, &item.SortOrder, &createdAt,
 	)
 	if err != nil {
 		return nil, err

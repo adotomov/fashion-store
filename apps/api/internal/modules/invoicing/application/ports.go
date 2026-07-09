@@ -20,6 +20,10 @@ type Repository interface {
 	CreateCourier(ctx context.Context, courier domain.Courier) (*domain.Courier, error)
 	UpdateCourier(ctx context.Context, id uuid.UUID, courier domain.Courier) (*domain.Courier, error)
 	DeleteCourier(ctx context.Context, id uuid.UUID) error
+	ListTaxGroups(ctx context.Context) ([]domain.TaxGroup, error)
+	CreateTaxGroup(ctx context.Context, group domain.TaxGroup) (*domain.TaxGroup, error)
+	UpdateTaxGroup(ctx context.Context, id uuid.UUID, group domain.TaxGroup) (*domain.TaxGroup, error)
+	DeleteTaxGroup(ctx context.Context, id uuid.UUID) error
 	LogAuditEvent(ctx context.Context, invoiceNumber, eventType, actor string, metadata map[string]any) error
 }
 
@@ -27,6 +31,9 @@ type OrderReader interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*ordersdomain.Order, error)
 }
 
-type ProductNKSReader interface {
-	GetNKSCode(ctx context.Context, productID uuid.UUID) (string, error)
+// ProductInvoiceReader exposes the product facts the invoice generator needs
+// from the catalog module: the assigned tax group (nil when the product has
+// none, in which case the default rate applies).
+type ProductInvoiceReader interface {
+	GetTaxGroupID(ctx context.Context, productID uuid.UUID) (*uuid.UUID, error)
 }
