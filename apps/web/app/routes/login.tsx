@@ -21,8 +21,11 @@ export default function Login() {
   return (
     <div className="grid min-h-screen lg:grid-cols-2">
       <div className="relative hidden lg:block">
+        {/* Fixed fashion editorial (a neutral-toned clothing rail) chosen to
+            fit the store's warm stone/clay palette — the previous picsum seed
+            returned an unrelated landscape. */}
         <img
-          src="https://picsum.photos/seed/maison-login/1200/1600"
+          src="https://images.unsplash.com/photo-1490481651871-ab68de25d43d?w=1200&h=1600&fit=crop&q=80"
           alt=""
           className="absolute inset-0 h-full w-full object-cover"
         />
