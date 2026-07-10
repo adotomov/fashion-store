@@ -8,15 +8,17 @@ import { Icon } from "../components/ui/Icon";
 import { Price } from "../components/ui/Price";
 import { Heading, Text } from "../components/ui/Text";
 import { useLanguage } from "../features/i18n/LanguageContext";
+import { useStoreBranding } from "../features/store-settings/StoreSettingsContext";
 import { useCart } from "../features/cart/CartContext";
 import type { CartItem } from "../lib/api/cart";
 import { resolveImageUrl } from "../lib/api/storefront";
-import { formatMoney } from "../lib/money/money";
+import { formatMoneyDual } from "../lib/money/money";
 
 export const handle = { title: "Cart" };
 
 export default function CartPage() {
   const { t } = useLanguage();
+  const { storeLocale } = useStoreBranding();
   const { cart, isLoading } = useCart();
   const items = cart?.items ?? [];
 
@@ -57,7 +59,7 @@ export default function CartPage() {
                     {t("cart.subtotal", "Subtotal")}
                   </Text>
                   <Text size="sm" className="font-medium">
-                    {formatMoney(cart!.subtotal)}
+                    {formatMoneyDual(cart!.subtotal, storeLocale)}
                   </Text>
                 </div>
                 <Link to="/checkout" className={buttonStyles({ variant: "primary", size: "lg", className: "mt-6 w-full" })}>

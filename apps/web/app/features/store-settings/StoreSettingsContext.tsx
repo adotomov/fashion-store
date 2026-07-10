@@ -7,6 +7,10 @@ const DEFAULT_STORE_NAME = "MAISON";
 type StoreBranding = {
   storeName: string;
   logoUrl: string | null;
+  // The store's configured BCP-47 locale (e.g. "bg-BG"), set under Settings →
+  // Identity. Drives store-wide, locale-dependent formatting such as the
+  // Bulgarian dual-currency (EUR + BGN) price display.
+  storeLocale: string;
   // Re-fetches the public store-settings endpoint — called after the admin
   // Store Settings page saves a change, so the rest of the already-loaded
   // app (header, footer, admin sidebar) picks it up without a full reload.
@@ -16,18 +20,21 @@ type StoreBranding = {
 const StoreSettingsContext = createContext<StoreBranding>({
   storeName: DEFAULT_STORE_NAME,
   logoUrl: null,
+  storeLocale: "",
   refresh: () => {},
 });
 
 export function StoreSettingsProvider({ children }: { children: ReactNode }) {
   const [storeName, setStoreName] = useState(DEFAULT_STORE_NAME);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [storeLocale, setStoreLocale] = useState("");
 
   function refresh() {
     getStoreSettings()
       .then((settings) => {
         setStoreName(settings.store_name || DEFAULT_STORE_NAME);
         setLogoUrl(settings.logo_url ? resolveImageUrl(settings.logo_url) : null);
+        setStoreLocale(settings.locale ?? "");
       })
       .catch(() => {});
   }
@@ -37,7 +44,9 @@ export function StoreSettingsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <StoreSettingsContext.Provider value={{ storeName, logoUrl, refresh }}>{children}</StoreSettingsContext.Provider>
+    <StoreSettingsContext.Provider value={{ storeName, logoUrl, storeLocale, refresh }}>
+      {children}
+    </StoreSettingsContext.Provider>
   );
 }
 
