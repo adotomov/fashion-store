@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import { FormField } from "../ui/FormField";
 import { Input } from "../ui/Input";
+import { Textarea } from "../ui/Textarea";
 import { type Language, listLanguages } from "../../lib/api/languages";
 import { type TranslatableEntityType, getTranslations, setTranslations } from "../../lib/api/translations";
 
@@ -10,7 +11,9 @@ type TranslationFieldsProps = {
   // Undefined while the entity hasn't been created yet — translations can
   // only be set once the entity (and its ID) exists.
   entityId?: string;
-  fields: { key: string; label: string }[];
+  // `multiline` renders the field as a resizable Textarea (for longer copy
+  // like descriptions) instead of a single-line Input.
+  fields: { key: string; label: string; multiline?: boolean }[];
 };
 
 // Renders one input per (non-default language) x field, only once the
@@ -67,12 +70,21 @@ export function TranslationFields({ entityType, entityId, fields }: TranslationF
           <p className="text-xs font-medium uppercase tracking-wide text-stone-500">{lang.name}</p>
           {fields.map((field) => (
             <FormField key={field.key} label={field.label} htmlFor={`translation-${entityType}-${lang.code}-${field.key}`}>
-              <Input
-                id={`translation-${entityType}-${lang.code}-${field.key}`}
-                value={values[lang.code]?.[field.key] ?? ""}
-                onChange={(e) => handleInput(lang.code, field.key, e.target.value)}
-                onBlur={(e) => handleBlur(lang.code, field.key, e.target.value)}
-              />
+              {field.multiline ? (
+                <Textarea
+                  id={`translation-${entityType}-${lang.code}-${field.key}`}
+                  value={values[lang.code]?.[field.key] ?? ""}
+                  onChange={(e) => handleInput(lang.code, field.key, e.target.value)}
+                  onBlur={(e) => handleBlur(lang.code, field.key, e.target.value)}
+                />
+              ) : (
+                <Input
+                  id={`translation-${entityType}-${lang.code}-${field.key}`}
+                  value={values[lang.code]?.[field.key] ?? ""}
+                  onChange={(e) => handleInput(lang.code, field.key, e.target.value)}
+                  onBlur={(e) => handleBlur(lang.code, field.key, e.target.value)}
+                />
+              )}
             </FormField>
           ))}
         </div>

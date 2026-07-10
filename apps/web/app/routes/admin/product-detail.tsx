@@ -319,7 +319,7 @@ export default function ProductDetail() {
               entityId={product.id}
               fields={[
                 { key: "name", label: "Name" },
-                { key: "description", label: "Description" },
+                { key: "description", label: "Description", multiline: true },
               ]}
             />
             <div className="grid grid-cols-2 gap-4">
