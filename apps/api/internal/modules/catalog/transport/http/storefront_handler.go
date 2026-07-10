@@ -606,7 +606,8 @@ func (h *StorefrontHandler) getProduct(w http.ResponseWriter, r *http.Request) {
 	}
 
 	resp := toStorefrontProductResponse(*product)
-	fields, err := h.translations.Get(r.Context(), entityTypeProduct, product.ID, localeOf(r))
+	locale := localeOf(r)
+	fields, err := h.translations.Get(r.Context(), entityTypeProduct, product.ID, locale)
 	if err != nil {
 		writeCatalogModuleError(w, err)
 		return
@@ -616,6 +617,36 @@ func (h *StorefrontHandler) getProduct(w http.ResponseWriter, r *http.Request) {
 	}
 	if v, ok := fields["description"]; ok {
 		resp.Description = v
+	}
+
+	// Overlay attribute name + value translations onto the product's attribute
+	// groups and its variants' attribute values, so the detail page (variant
+	// swatches, size labels) is localized the same way the filter facets are.
+	attrTranslations, err := h.translations.ListByEntityType(r.Context(), entityTypeAttribute, locale)
+	if err != nil {
+		writeCatalogModuleError(w, err)
+		return
+	}
+	valueTranslations, err := h.translations.ListByEntityType(r.Context(), entityTypeAttrValue, locale)
+	if err != nil {
+		writeCatalogModuleError(w, err)
+		return
+	}
+	for i := range resp.Attributes {
+		if id, err := uuid.Parse(resp.Attributes[i].ID); err == nil {
+			if v, ok := attrTranslations[id]["name"]; ok {
+				resp.Attributes[i].Name = v
+			}
+		}
+	}
+	for i := range resp.Variants {
+		for j := range resp.Variants[i].Attributes {
+			if id, err := uuid.Parse(resp.Variants[i].Attributes[j].ID); err == nil {
+				if v, ok := valueTranslations[id]["value"]; ok {
+					resp.Variants[i].Attributes[j].Value = v
+				}
+			}
+		}
 	}
 	if h.promotions != nil {
 		if promos, _ := h.promotions.GetEffectivePrices(r.Context(), map[uuid.UUID]money.Money{product.ID: product.BasePrice}); promos != nil {

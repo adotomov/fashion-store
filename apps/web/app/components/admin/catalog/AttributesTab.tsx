@@ -21,6 +21,8 @@ import {
   deleteAttributeValue,
   listAttributes,
 } from "../../../lib/api/attributes";
+import { type Language, listLanguages } from "../../../lib/api/languages";
+import { getTranslations, setTranslations } from "../../../lib/api/translations";
 
 const subTabs = [
   { id: "default", label: "Default" },
@@ -228,6 +230,79 @@ export function AttributesTab() {
   );
 }
 
+// Per-value translation inputs (e.g. translate each Color: "Clay" → "Глина").
+// Grouped by language, one row per attribute value. Saves on blur, mirroring
+// the TranslationFields idiom. Renders nothing until the store has a second
+// language or the attribute has values.
+function AttributeValueTranslations({ attribute }: { attribute: Attribute }) {
+  const [languages, setLanguages] = useState<Language[]>([]);
+  // valueId -> locale -> translated string
+  const [values, setValues] = useState<Record<string, Record<string, string>>>({});
+
+  useEffect(() => {
+    listLanguages()
+      .then((langs) => setLanguages(langs.filter((l) => !l.is_default)))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (languages.length === 0 || attribute.values.length === 0) return;
+    let cancelled = false;
+    Promise.all(
+      attribute.values.flatMap((val) =>
+        languages.map((lang) =>
+          getTranslations("attribute_value", val.id, lang.code).then(
+            (fields) => [val.id, lang.code, fields.value ?? ""] as const,
+          ),
+        ),
+      ),
+    )
+      .then((entries) => {
+        if (cancelled) return;
+        const next: Record<string, Record<string, string>> = {};
+        for (const [valueId, locale, str] of entries) {
+          next[valueId] = { ...(next[valueId] ?? {}), [locale]: str };
+        }
+        setValues(next);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [attribute.values, languages]);
+
+  if (languages.length === 0 || attribute.values.length === 0) return null;
+
+  function handleInput(valueId: string, locale: string, value: string) {
+    setValues((prev) => ({ ...prev, [valueId]: { ...prev[valueId], [locale]: value } }));
+  }
+
+  async function handleBlur(valueId: string, locale: string, value: string) {
+    await setTranslations("attribute_value", valueId, locale, { value });
+  }
+
+  return (
+    <div className="mt-3 flex flex-col gap-4 rounded-sm border border-stone-200 bg-stone-50 p-4">
+      {languages.map((lang) => (
+        <div key={lang.code} className="flex flex-col gap-2">
+          <p className="text-xs font-medium uppercase tracking-wide text-stone-500">{lang.name} — values</p>
+          {attribute.values.map((val) => (
+            <FormField key={val.id} label={val.value} htmlFor={`attrval-${val.id}-${lang.code}`}>
+              <Input
+                id={`attrval-${val.id}-${lang.code}`}
+                value={values[val.id]?.[lang.code] ?? ""}
+                onChange={(e) => handleInput(val.id, lang.code, e.target.value)}
+                onBlur={(e) => handleBlur(val.id, lang.code, e.target.value)}
+                className="h-9 text-sm"
+              />
+            </FormField>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type TextAttributeCardProps = {
   attribute: Attribute;
   isReadOnly: boolean;
@@ -308,6 +383,7 @@ function TextAttributeCard({
 
       <div className="mt-3">
         <TranslationFields entityType="attribute" entityId={attribute.id} fields={[{ key: "name", label: "Name" }]} />
+        <AttributeValueTranslations attribute={attribute} />
       </div>
     </Card>
   );
@@ -407,6 +483,7 @@ function ColorAttributeCard({ attribute, isReadOnly, onAddColor, onDeleteValue }
 
       <div className="mt-3">
         <TranslationFields entityType="attribute" entityId={attribute.id} fields={[{ key: "name", label: "Name" }]} />
+        <AttributeValueTranslations attribute={attribute} />
       </div>
     </Card>
   );
