@@ -199,6 +199,8 @@ export type StorefrontStoreSettings = {
   contact_email?: string;
   contact_phone?: string;
   company_description?: string;
+  facebook_url?: string;
+  instagram_url?: string;
   logo_url?: string;
 };
 
@@ -222,7 +224,7 @@ export function listStorefrontAddresses(): Promise<StorefrontAddress[]> {
   return apiFetch<StorefrontAddress[]>("/api/v1/storefront/store-settings/addresses", { auth: false });
 }
 
-export type DocumentType = "terms" | "privacy";
+export type DocumentType = "terms" | "privacy" | "faq" | "shipping";
 
 // File-serving GET, not JSON — callers point an <a href> or fetch directly
 // at the resolved URL.

@@ -58,6 +58,8 @@ type storeSettingsResponse struct {
 	ContactEmail       *string `json:"contact_email,omitempty"`
 	ContactPhone       *string `json:"contact_phone,omitempty"`
 	CompanyDescription *string `json:"company_description,omitempty"`
+	FacebookURL        *string `json:"facebook_url,omitempty"`
+	InstagramURL       *string `json:"instagram_url,omitempty"`
 	LogoURL            *string `json:"logo_url,omitempty"`
 	UpdatedAt          string  `json:"updated_at"`
 }
@@ -74,6 +76,8 @@ func toStoreSettingsResponse(s domain.StoreSettings, basePath string) storeSetti
 		ContactEmail:       s.ContactEmail,
 		ContactPhone:       s.ContactPhone,
 		CompanyDescription: s.CompanyDescription,
+		FacebookURL:        s.FacebookURL,
+		InstagramURL:       s.InstagramURL,
 		UpdatedAt:          s.UpdatedAt.Format(timeFormat),
 	}
 	if s.HasLogo() {
@@ -100,6 +104,8 @@ type updateStoreSettingsRequest struct {
 	ContactEmail       *string `json:"contact_email,omitempty"`
 	ContactPhone       *string `json:"contact_phone,omitempty"`
 	CompanyDescription *string `json:"company_description,omitempty"`
+	FacebookURL        *string `json:"facebook_url,omitempty"`
+	InstagramURL       *string `json:"instagram_url,omitempty"`
 }
 
 func (h *StoreSettingsHandler) update(w http.ResponseWriter, r *http.Request) {
@@ -117,6 +123,8 @@ func (h *StoreSettingsHandler) update(w http.ResponseWriter, r *http.Request) {
 		ContactEmail:       req.ContactEmail,
 		ContactPhone:       req.ContactPhone,
 		CompanyDescription: req.CompanyDescription,
+		FacebookURL:        req.FacebookURL,
+		InstagramURL:       req.InstagramURL,
 	})
 	if err != nil {
 		writeAdminModuleError(w, err)
@@ -456,7 +464,7 @@ func writeAdminModuleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, domain.ErrDocumentNotFound):
 		httpx.WriteError(w, http.StatusNotFound, "document_not_found", "document not found")
 	case errors.Is(err, domain.ErrInvalidDocumentType):
-		httpx.WriteError(w, http.StatusBadRequest, "invalid_document_type", "document type must be 'terms' or 'privacy'")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_document_type", "document type must be 'terms', 'privacy', 'faq' or 'shipping'")
 	case errors.Is(err, domain.ErrAddressNotFound):
 		httpx.WriteError(w, http.StatusNotFound, "address_not_found", "store address not found")
 	case errors.Is(err, domain.ErrHeroBackgroundNotFound):

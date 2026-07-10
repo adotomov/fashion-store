@@ -13,7 +13,7 @@ type FooterColumn = {
 };
 
 export function Footer() {
-  const { storeName, logoUrl } = useStoreBranding();
+  const { storeName, logoUrl, facebookUrl, instagramUrl } = useStoreBranding();
   const { locale, t } = useLanguage();
   const [navTypes, setNavTypes] = useState<NavType[]>([]);
 
@@ -66,14 +66,32 @@ export function Footer() {
             <Text size="sm" tone="muted" className="mt-3 max-w-xs">
               Clothing, jewelry, bags, and accessories, thoughtfully made and delivered with care.
             </Text>
-            <div className="mt-4 flex items-center gap-3 text-stone-500">
-              <a href="#" aria-label="Instagram" className="hover:text-stone-900">
-                <Icon name="instagram" size={20} />
-              </a>
-              <a href="#" aria-label="Facebook" className="hover:text-stone-900">
-                <Icon name="facebook" size={20} />
-              </a>
-            </div>
+            {(instagramUrl || facebookUrl) && (
+              <div className="mt-4 flex items-center gap-3 text-stone-500">
+                {instagramUrl && (
+                  <a
+                    href={instagramUrl}
+                    aria-label="Instagram"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-stone-900"
+                  >
+                    <Icon name="instagram" size={20} />
+                  </a>
+                )}
+                {facebookUrl && (
+                  <a
+                    href={facebookUrl}
+                    aria-label="Facebook"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="hover:text-stone-900"
+                  >
+                    <Icon name="facebook" size={20} />
+                  </a>
+                )}
+              </div>
+            )}
           </div>
 
           {columns.map((column) => (

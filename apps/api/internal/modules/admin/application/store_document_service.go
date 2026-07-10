@@ -25,7 +25,7 @@ func (s *StoreDocumentService) List(ctx context.Context, docType domain.Document
 }
 
 func (s *StoreDocumentService) Upload(ctx context.Context, docType domain.DocumentType, locale, filename, contentType string, content io.Reader) (*domain.StoreDocument, error) {
-	if docType != domain.DocumentTypeTerms && docType != domain.DocumentTypePrivacy {
+	if !docType.IsValid() {
 		return nil, domain.ErrInvalidDocumentType
 	}
 	if err := s.storage.EnsureBucket(ctx, s.bucket); err != nil {
@@ -71,7 +71,7 @@ func (s *StoreDocumentService) Open(ctx context.Context, docType domain.Document
 // SaveContent persists inline Markdown text for the given (type, locale),
 // removing any GCS file that was previously uploaded for that locale.
 func (s *StoreDocumentService) SaveContent(ctx context.Context, docType domain.DocumentType, locale, content string) (*domain.StoreDocument, error) {
-	if docType != domain.DocumentTypeTerms && docType != domain.DocumentTypePrivacy {
+	if !docType.IsValid() {
 		return nil, domain.ErrInvalidDocumentType
 	}
 	if existing, _ := s.repo.Get(ctx, docType, locale); existing != nil && existing.ObjectKey != "" {

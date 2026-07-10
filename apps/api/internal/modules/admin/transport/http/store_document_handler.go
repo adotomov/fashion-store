@@ -42,14 +42,11 @@ func (h *StoreDocumentHandler) RegisterStorefrontRoutes(r chi.Router) {
 }
 
 func parseDocumentType(r *http.Request) (domain.DocumentType, error) {
-	switch chi.URLParam(r, "type") {
-	case string(domain.DocumentTypeTerms):
-		return domain.DocumentTypeTerms, nil
-	case string(domain.DocumentTypePrivacy):
-		return domain.DocumentTypePrivacy, nil
-	default:
+	dt := domain.DocumentType(chi.URLParam(r, "type"))
+	if !dt.IsValid() {
 		return "", domain.ErrInvalidDocumentType
 	}
+	return dt, nil
 }
 
 func localeFromQuery(r *http.Request) string {

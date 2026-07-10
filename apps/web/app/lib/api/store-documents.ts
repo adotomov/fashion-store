@@ -3,7 +3,7 @@ import { getToken } from "../auth/session";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
 
-export type DocumentType = "terms" | "privacy";
+export type DocumentType = "terms" | "privacy" | "faq" | "shipping";
 
 export type StoreDocument = {
   locale: string;

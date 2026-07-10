@@ -11,6 +11,10 @@ type StoreBranding = {
   // Identity. Drives store-wide, locale-dependent formatting such as the
   // Bulgarian dual-currency (EUR + BGN) price display.
   storeLocale: string;
+  // Social profile URLs shown in the footer — empty string means "not set",
+  // in which case the footer hides that icon.
+  facebookUrl: string;
+  instagramUrl: string;
   // Re-fetches the public store-settings endpoint — called after the admin
   // Store Settings page saves a change, so the rest of the already-loaded
   // app (header, footer, admin sidebar) picks it up without a full reload.
@@ -21,6 +25,8 @@ const StoreSettingsContext = createContext<StoreBranding>({
   storeName: DEFAULT_STORE_NAME,
   logoUrl: null,
   storeLocale: "",
+  facebookUrl: "",
+  instagramUrl: "",
   refresh: () => {},
 });
 
@@ -28,6 +34,8 @@ export function StoreSettingsProvider({ children }: { children: ReactNode }) {
   const [storeName, setStoreName] = useState(DEFAULT_STORE_NAME);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [storeLocale, setStoreLocale] = useState("");
+  const [facebookUrl, setFacebookUrl] = useState("");
+  const [instagramUrl, setInstagramUrl] = useState("");
 
   function refresh() {
     getStoreSettings()
@@ -35,6 +43,8 @@ export function StoreSettingsProvider({ children }: { children: ReactNode }) {
         setStoreName(settings.store_name || DEFAULT_STORE_NAME);
         setLogoUrl(settings.logo_url ? resolveImageUrl(settings.logo_url) : null);
         setStoreLocale(settings.locale ?? "");
+        setFacebookUrl(settings.facebook_url ?? "");
+        setInstagramUrl(settings.instagram_url ?? "");
       })
       .catch(() => {});
   }
@@ -44,7 +54,7 @@ export function StoreSettingsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <StoreSettingsContext.Provider value={{ storeName, logoUrl, storeLocale, refresh }}>
+    <StoreSettingsContext.Provider value={{ storeName, logoUrl, storeLocale, facebookUrl, instagramUrl, refresh }}>
       {children}
     </StoreSettingsContext.Provider>
   );

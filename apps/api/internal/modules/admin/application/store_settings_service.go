@@ -64,6 +64,12 @@ func (s *StoreSettingsService) UpdateSettings(ctx context.Context, input UpdateS
 	if input.CompanyDescription != nil {
 		settings.CompanyDescription = input.CompanyDescription
 	}
+	if input.FacebookURL != nil {
+		settings.FacebookURL = input.FacebookURL
+	}
+	if input.InstagramURL != nil {
+		settings.InstagramURL = input.InstagramURL
+	}
 
 	return s.repo.Update(ctx, *settings)
 }

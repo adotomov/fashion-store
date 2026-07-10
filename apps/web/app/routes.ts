@@ -13,6 +13,10 @@ export default [
     route("terms", "routes/legal/terms.tsx"),
     route("privacy", "routes/legal/privacy.tsx"),
   ]),
+  ...prefix("help", [
+    route("faq", "routes/help/faq.tsx"),
+    route("shipping", "routes/help/shipping.tsx"),
+  ]),
   ...prefix("account", [
     layout("routes/account/layout.tsx", [
       index("routes/account/personal-info.tsx"),

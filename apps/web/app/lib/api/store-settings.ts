@@ -11,6 +11,8 @@ export type StoreSettings = {
   contact_email?: string;
   contact_phone?: string;
   company_description?: string;
+  facebook_url?: string;
+  instagram_url?: string;
   // Relative, admin-gated proxy path — never a plain external URL.
   logo_url?: string;
   updated_at: string;
@@ -29,6 +31,8 @@ export function updateStoreSettings(
     contact_email: string;
     contact_phone: string;
     company_description: string;
+    facebook_url: string;
+    instagram_url: string;
   }>,
 ): Promise<StoreSettings> {
   return apiFetch<StoreSettings>("/api/v1/admin/store-settings", { method: "PATCH", body: input });

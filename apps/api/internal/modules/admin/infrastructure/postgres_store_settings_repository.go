@@ -19,7 +19,7 @@ func NewPostgresStoreSettingsRepository(db *pgxpool.Pool) *PostgresStoreSettings
 }
 
 const storeSettingsColumns = `id, store_name, legal_entity_name, locale, currency,
-	contact_email, contact_phone, company_description,
+	contact_email, contact_phone, company_description, facebook_url, instagram_url,
 	logo_bucket, logo_object_key, logo_content_type, logo_size_bytes,
 	created_at, updated_at`
 
@@ -35,12 +35,14 @@ func (r *PostgresStoreSettingsRepository) Update(ctx context.Context, settings d
 		UPDATE store_settings SET
 			store_name = $2, legal_entity_name = $3, locale = $4, currency = $5,
 			contact_email = $6, contact_phone = $7, company_description = $8,
-			logo_bucket = $9, logo_object_key = $10, logo_content_type = $11, logo_size_bytes = $12,
+			facebook_url = $9, instagram_url = $10,
+			logo_bucket = $11, logo_object_key = $12, logo_content_type = $13, logo_size_bytes = $14,
 			updated_at = NOW()
 		WHERE id = $1
 		RETURNING `+storeSettingsColumns,
 		settings.ID, settings.StoreName, settings.LegalEntityName, settings.Locale, settings.Currency,
 		settings.ContactEmail, settings.ContactPhone, settings.CompanyDescription,
+		settings.FacebookURL, settings.InstagramURL,
 		settings.LogoBucket, settings.LogoObjectKey, settings.LogoContentType, settings.LogoSizeBytes)
 
 	return scanStoreSettings(row)
@@ -50,7 +52,7 @@ func scanStoreSettings(row pgx.Row) (*domain.StoreSettings, error) {
 	var s domain.StoreSettings
 	err := row.Scan(
 		&s.ID, &s.StoreName, &s.LegalEntityName, &s.Locale, &s.Currency,
-		&s.ContactEmail, &s.ContactPhone, &s.CompanyDescription,
+		&s.ContactEmail, &s.ContactPhone, &s.CompanyDescription, &s.FacebookURL, &s.InstagramURL,
 		&s.LogoBucket, &s.LogoObjectKey, &s.LogoContentType, &s.LogoSizeBytes,
 		&s.CreatedAt, &s.UpdatedAt,
 	)

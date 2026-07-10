@@ -51,6 +51,8 @@ const TABS = [
   { id: "identity", label: "Identity" },
   { id: "contacts", label: "Contacts" },
   { id: "legal", label: "Legal Documents" },
+  { id: "faq", label: "FAQ" },
+  { id: "shipping", label: "Shipping & Returns" },
   { id: "languages", label: "Store Language" },
 ];
 
@@ -63,6 +65,8 @@ export default function AdminSettings() {
         {activeTab === "identity" && <IdentityTab />}
         {activeTab === "contacts" && <ContactsTab />}
         {activeTab === "legal" && <LegalDocumentsTab />}
+        {activeTab === "faq" && <DocumentEditor type="faq" title="Frequently Asked Questions" />}
+        {activeTab === "shipping" && <DocumentEditor type="shipping" title="Shipping & Returns" />}
         {activeTab === "languages" && <LanguagesTab />}
       </Tabs>
     </div>
@@ -132,6 +136,8 @@ function IdentityTab() {
         locale: settings.locale,
         currency: settings.currency,
         company_description: settings.company_description ?? "",
+        facebook_url: settings.facebook_url ?? "",
+        instagram_url: settings.instagram_url ?? "",
       });
       setSettings(updated);
       setSavedAt(Date.now());
@@ -284,6 +290,20 @@ function IdentityTab() {
                 <option value="BGN">BGN — Bulgarian Lev</option>
                 <option value="GBP">GBP — British Pound</option>
               </Select>
+            </FormField>
+          </div>
+        </Card>
+      </section>
+
+      <section>
+        <Eyebrow>Social Media</Eyebrow>
+        <Card className="mt-3 p-6">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <FormField label="Facebook" htmlFor="facebook-url" hint="Full profile URL — leave blank to hide the icon">
+              <Input id="facebook-url" type="url" placeholder="https://facebook.com/yourpage" {...field("facebook_url")} />
+            </FormField>
+            <FormField label="Instagram" htmlFor="instagram-url" hint="Full profile URL — leave blank to hide the icon">
+              <Input id="instagram-url" type="url" placeholder="https://instagram.com/yourhandle" {...field("instagram_url")} />
             </FormField>
           </div>
         </Card>

@@ -21,6 +21,8 @@ type StoreSettings struct {
 	ContactEmail       *string
 	ContactPhone       *string
 	CompanyDescription *string
+	FacebookURL        *string
+	InstagramURL       *string
 	LogoBucket         *string
 	LogoObjectKey      *string
 	LogoContentType    *string
