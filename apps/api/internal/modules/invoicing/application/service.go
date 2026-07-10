@@ -147,6 +147,10 @@ func (s *Service) List(ctx context.Context, filter ListFilter) ([]domain.Invoice
 	return s.repo.List(ctx, filter)
 }
 
+func (s *Service) Count(ctx context.Context, filter ListFilter) (int, error) {
+	return s.repo.CountInvoices(ctx, filter)
+}
+
 func (s *Service) FindByID(ctx context.Context, id uuid.UUID) (*domain.Invoice, error) {
 	return s.repo.FindByID(ctx, id)
 }

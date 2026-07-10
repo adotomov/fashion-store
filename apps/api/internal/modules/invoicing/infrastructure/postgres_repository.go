@@ -176,6 +176,26 @@ func (r *PostgresRepository) List(ctx context.Context, filter application.ListFi
 	return invoices, nil
 }
 
+// CountInvoices returns the total number of invoices matching the filter,
+// ignoring limit/offset — used to drive pagination in the admin list.
+func (r *PostgresRepository) CountInvoices(ctx context.Context, filter application.ListFilter) (int, error) {
+	query := `SELECT COUNT(*) FROM invoices WHERE
+		($1::timestamptz IS NULL OR created_at >= $1) AND
+		($2::timestamptz IS NULL OR created_at <= $2) AND
+		($3::text IS NULL OR document_type = $3) AND
+		($4::text IS NULL OR payment_method = $4) AND
+		($5::text = '' OR invoice_number ILIKE $5 || '%' OR order_number ILIKE $5 || '%')`
+
+	var count int
+	err := r.db.QueryRow(ctx, query,
+		filter.From, filter.To, filter.DocumentType, filter.PaymentMethod, filter.Search,
+	).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
 func (r *PostgresRepository) attachLineItems(ctx context.Context, inv *domain.Invoice) error {
 	rows, err := r.db.Query(ctx, `
 		SELECT id, invoice_id, product_name, variant_label, quantity,

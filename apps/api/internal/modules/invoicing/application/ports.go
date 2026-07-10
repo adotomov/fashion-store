@@ -14,6 +14,7 @@ type Repository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*domain.Invoice, error)
 	FindByOrderID(ctx context.Context, orderID uuid.UUID) (*domain.Invoice, error)
 	List(ctx context.Context, filter ListFilter) ([]domain.Invoice, error)
+	CountInvoices(ctx context.Context, filter ListFilter) (int, error)
 	GetSettings(ctx context.Context) (domain.InvoiceSettings, error)
 	SaveSettings(ctx context.Context, settings domain.InvoiceSettings) error
 	ListCouriers(ctx context.Context) ([]domain.Courier, error)

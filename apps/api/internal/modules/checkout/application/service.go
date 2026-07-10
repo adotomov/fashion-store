@@ -221,17 +221,19 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 		}
 	}
 
-	// Generate invoice for card_online orders that are immediately paid.
-	// COD/EasyBox invoices are generated when the order reaches "delivered" status.
-	if status == "paid" && s.invoices != nil {
+	_ = s.cart.ClearCart(ctx, owner)
+
+	s.createShipment(ctx, result, deliveryMethod, shippingAddr, contactName, contactPhone, contactEmail, input.DeliveryOfficeID, input.PaymentMethod, total)
+
+	// Generate the invoice for every successfully placed order, regardless of
+	// payment or delivery method. Runs after shipment booking so COD/EasyBox
+	// invoices capture the assigned courier. GenerateForOrder is idempotent, so
+	// the orders module's delivered-status trigger stays a harmless retry.
+	if s.invoices != nil {
 		if err := s.invoices.GenerateForOrder(ctx, result.ID); err != nil {
 			s.logger.Error("failed to generate invoice for order", "error", err, "order_id", result.ID)
 		}
 	}
-
-	_ = s.cart.ClearCart(ctx, owner)
-
-	s.createShipment(ctx, result, deliveryMethod, shippingAddr, contactName, contactPhone, contactEmail, input.DeliveryOfficeID, input.PaymentMethod, total)
 
 	return result, nil
 }

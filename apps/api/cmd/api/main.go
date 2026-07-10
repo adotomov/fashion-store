@@ -10,6 +10,11 @@ import (
 	"syscall"
 	"time"
 
+	// Embeds the IANA timezone database into the binary so time.LoadLocation
+	// (e.g. "Europe/Sofia" for invoice timestamps) works in the minimal Alpine
+	// container image, which ships without tzdata.
+	_ "time/tzdata"
+
 	"github.com/adotomov/fashion-store/apps/api/internal/app"
 )
 

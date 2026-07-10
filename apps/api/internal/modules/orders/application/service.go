@@ -111,7 +111,9 @@ func (s *Service) UpdateFulfillment(ctx context.Context, id uuid.UUID, input Upd
 	if err != nil {
 		return nil, err
 	}
-	// Generate invoice for COD/EasyBox orders upon delivery confirmation.
+	// Fallback: invoices are now generated for every order at placement, but
+	// marking an order delivered re-attempts generation in case the placement
+	// -time run failed (e.g. invoice settings were incomplete then). Idempotent.
 	if input.Status != nil && *input.Status == string(domain.OrderStatusDelivered) && s.invoices != nil {
 		if err := s.invoices.GenerateForOrder(ctx, id); err != nil {
 			s.logger.Error("failed to generate invoice for delivered order", "error", err, "order_id", id)

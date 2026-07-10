@@ -79,11 +79,21 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
 		return
 	}
-	resp := make([]invoiceListItem, 0, len(invoices))
-	for _, inv := range invoices {
-		resp = append(resp, toListItem(inv))
+	total, err := h.service.Count(r.Context(), filter)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "list_failed", err.Error())
+		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, resp)
+	items := make([]invoiceListItem, 0, len(invoices))
+	for _, inv := range invoices {
+		items = append(items, toListItem(inv))
+	}
+	httpx.WriteJSON(w, http.StatusOK, invoiceListResponse{Invoices: items, Total: total})
+}
+
+type invoiceListResponse struct {
+	Invoices []invoiceListItem `json:"invoices"`
+	Total    int               `json:"total"`
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
@@ -615,7 +625,12 @@ func renderInvoiceHTML(inv *domain.Invoice) ([]byte, error) {
 			return fmt.Sprintf("%d.%02d", major, cents)
 		},
 		"sofiaTime": func(t time.Time) string {
-			loc, _ := time.LoadLocation("Europe/Sofia")
+			loc, err := time.LoadLocation("Europe/Sofia")
+			if err != nil || loc == nil {
+				// Fall back to a fixed EET offset rather than passing a nil
+				// Location to Time.In, which panics.
+				loc = time.FixedZone("EET", 2*60*60)
+			}
 			return t.In(loc).Format("02.01.2006 15:04")
 		},
 		"paymentLabel": func(method string) string {

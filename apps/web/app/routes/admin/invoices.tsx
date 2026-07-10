@@ -19,6 +19,7 @@ import {
   createCourier,
   deleteCourier,
   exportInvoicesCSV,
+  fetchInvoiceHTML,
   getInvoiceSettings,
   generateStorno,
   listCouriers,
@@ -49,8 +50,10 @@ function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("bg-BG", { dateStyle: "medium" });
 }
 
-function formatAmount(minor: number, currency: string) {
-  return `${(minor / 100).toFixed(2)} ${currency}`;
+// Invoice amounts arrive from the API already in major units (e.g. 24.50),
+// not minor units — the backend divides by 100 before serializing.
+function formatAmount(amount: number, currency: string) {
+  return `${amount.toFixed(2)} ${currency}`;
 }
 
 function paymentLabel(method: string) {
@@ -91,6 +94,24 @@ function InvoicesTab() {
       setError("Could not load invoices.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  // Open the invoice HTML in a new tab. The window is opened synchronously
+  // (so the browser doesn't treat it as a blocked popup), then filled with the
+  // token-authenticated HTML once it arrives.
+  async function handleView(id: string) {
+    const win = window.open("", "_blank");
+    try {
+      const html = await fetchInvoiceHTML(id);
+      if (win) {
+        win.document.open();
+        win.document.write(html);
+        win.document.close();
+      }
+    } catch {
+      win?.close();
+      setError("Could not open the invoice.");
     }
   }
 
@@ -206,11 +227,7 @@ function InvoicesTab() {
                     <td className="px-4 py-3 text-right font-medium">{formatAmount(inv.total_incl_vat, inv.currency)}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center justify-end gap-2">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => window.open(`${import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080"}/api/v1/admin/invoices/${inv.id}/view`, "_blank")}
-                        >
+                        <Button variant="ghost" size="sm" onClick={() => handleView(inv.id)}>
                           View
                         </Button>
                         {inv.document_type === "фактура" && (

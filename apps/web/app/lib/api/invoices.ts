@@ -123,6 +123,18 @@ export async function exportInvoicesCSV(from: string, to: string): Promise<void>
   URL.revokeObjectURL(url);
 }
 
+// The invoice HTML view endpoint is admin-gated (Bearer token), and a plain
+// window.open to it can't attach the auth header — so fetch the self-contained
+// HTML with the token here and let the caller render it in a new window.
+export async function fetchInvoiceHTML(id: string): Promise<string> {
+  const token = getToken();
+  const res = await fetch(`${API_BASE_URL}/api/v1/admin/invoices/${id}/view`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (!res.ok) throw new Error("Failed to load invoice");
+  return res.text();
+}
+
 export async function getInvoiceSettings(): Promise<InvoiceSettings> {
   return apiFetch("/api/v1/admin/invoice-settings");
 }
