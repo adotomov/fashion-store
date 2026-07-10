@@ -18,6 +18,10 @@ type ProductVariantsSectionProps = {
   productName: string;
   variants: ProductVariant[];
   attributes: Attribute[];
+  // The product's category identifier (e.g. "DR-01"), passed to the "Assign
+  // SKU" screen so it can pre-fill the read-only SKU prefix. Empty when the
+  // product has no category or the category has no identifier.
+  categoryIdentifier: string;
   onChange: () => void;
 };
 
@@ -30,6 +34,7 @@ export function ProductVariantsSection({
   productName,
   variants,
   attributes,
+  categoryIdentifier,
   onChange,
 }: ProductVariantsSectionProps) {
   const { isReadOnly } = useAdminPermissions();
@@ -110,7 +115,7 @@ export function ProductVariantsSection({
                   </Link>
                 ) : (
                   <Link
-                    to={`/admin/inventory?assignVariantId=${variant.id}&productName=${encodeURIComponent(productName)}&variantLabel=${encodeURIComponent(variantDisplayLabel(variant))}`}
+                    to={`/admin/inventory?assignVariantId=${variant.id}&productName=${encodeURIComponent(productName)}&variantLabel=${encodeURIComponent(variantDisplayLabel(variant))}&categoryIdentifier=${encodeURIComponent(categoryIdentifier)}`}
                     className="text-sm font-medium text-clay-600 hover:underline"
                   >
                     Assign SKU

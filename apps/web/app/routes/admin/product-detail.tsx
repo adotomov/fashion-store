@@ -476,6 +476,7 @@ export default function ProductDetail() {
             productName={product.name}
             variants={product.variants ?? []}
             attributes={relevantAttributes}
+            categoryIdentifier={selectedCategoryIdentifier}
             onChange={refreshProductData}
           />
         </Card>

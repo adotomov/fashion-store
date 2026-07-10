@@ -331,7 +331,7 @@ export default function AdminInventory() {
           >
             {skuPrefix ? (
               <div className="flex items-stretch">
-                <span className="inline-flex items-center rounded-l-sm border border-r-0 border-stone-300 bg-stone-50 px-3 font-mono text-sm text-stone-600">
+                <span className="inline-flex shrink-0 items-center whitespace-nowrap rounded-l-sm border border-r-0 border-stone-300 bg-stone-50 px-3 font-mono text-sm text-stone-600">
                   {skuPrefix}-
                 </span>
                 <Input
