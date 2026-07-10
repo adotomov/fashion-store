@@ -106,6 +106,10 @@ export function CategoriesTab() {
       setSaveError("Product type is required");
       return;
     }
+    if (!newInternalIdentifier.trim()) {
+      setSaveError("Internal identifier is required");
+      return;
+    }
     setIsSaving(true);
     setSaveError(null);
     try {
@@ -121,7 +125,7 @@ export function CategoriesTab() {
           newName.trim(),
           newProductTypeId,
           newParentId || undefined,
-          newInternalIdentifier.trim() || undefined,
+          newInternalIdentifier.trim(),
         );
       }
       setIsModalOpen(false);
@@ -280,7 +284,7 @@ export function CategoriesTab() {
           <FormField
             label="Internal identifier"
             htmlFor="category-identifier"
-            hint="Optional — used as the SKU prefix for this category's products (e.g. DR-01)"
+            hint="Required — used as the SKU prefix for this category's products (e.g. DR-01)"
           >
             <Input
               id="category-identifier"
