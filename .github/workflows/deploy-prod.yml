@@ -1,12 +1,16 @@
-name: Deploy dev
+name: Deploy prod
 
+# Every push to main queues a prod deploy that WAITS for manual approval.
+# The approval gate is the `prod` GitHub Environment's required reviewers —
+# configure them in repo Settings -> Environments -> prod (this file only
+# references the environment; it can't define the reviewers).
 on:
   push:
     branches: [main]
     paths:
       - "apps/api/**"
       - "apps/web/**"
-      - ".github/workflows/deploy-dev.yml"
+      - ".github/workflows/deploy-prod.yml"
   workflow_dispatch: {}
 
 permissions:
@@ -14,22 +18,20 @@ permissions:
   id-token: write # required for Workload Identity Federation
 
 env:
-  PROJECT_ID: project-538051b7-1abf-4eab-94c
+  PROJECT_ID: verani-webstore-prod
   REGION: europe-west1
-  REGISTRY: europe-west1-docker.pkg.dev/project-538051b7-1abf-4eab-94c/fashion-store-dev
-  WORKLOAD_IDENTITY_PROVIDER: projects/673528779465/locations/global/workloadIdentityPools/github-actions/providers/github
-  DEPLOYER_SA: fs-deployer-dev@project-538051b7-1abf-4eab-94c.iam.gserviceaccount.com
-  # Points at the custom dev domain (Cloud Run domain mapping for
-  # api.dev.verani.bg). Until the DNS cutover + domain mapping are fully live,
-  # override this per-run via workflow_dispatch or fall back to the raw
-  # api *.run.app URL.
-  VITE_API_BASE_URL: https://api.dev.verani.bg
+  REGISTRY: europe-west1-docker.pkg.dev/verani-webstore-prod/fashion-store-prod
+  WORKLOAD_IDENTITY_PROVIDER: projects/399593875435/locations/global/workloadIdentityPools/github-actions/providers/github
+  DEPLOYER_SA: fs-deployer-prod@verani-webstore-prod.iam.gserviceaccount.com
+  VITE_API_BASE_URL: https://api.verani.bg
+  # Give prod its own OAuth client with https://verani.bg as an authorized JS
+  # origin, then set its client id here.
   VITE_GOOGLE_CLIENT_ID: 673528779465-pajifaekv8l1odrbd8mpbglo351d7r15.apps.googleusercontent.com
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: dev
+    environment: prod # <- approval gate lives on this Environment
     steps:
       - uses: actions/checkout@v4
 

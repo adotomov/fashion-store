@@ -13,6 +13,7 @@ import (
 	"github.com/adotomov/fashion-store/apps/api/internal/modules/auth/domain"
 	"github.com/adotomov/fashion-store/apps/api/internal/shared/authctx"
 	"github.com/adotomov/fashion-store/apps/api/internal/shared/httpx"
+	"github.com/adotomov/fashion-store/apps/api/internal/shared/ratelimit"
 )
 
 type Handler struct {
@@ -25,7 +26,13 @@ func NewHandler(service *application.Service, logger *slog.Logger) *Handler {
 }
 
 func (h *Handler) RegisterRoutes(r chi.Router) {
+	// Brute-force / credential-stuffing protection on the unauthenticated auth
+	// endpoints: ~1 req/s sustained with a burst of 10, keyed per client IP.
+	// Generous enough for a real user retrying a login, strict enough to blunt
+	// automated abuse.
+	limiter := ratelimit.New(1, 10)
 	r.Route("/auth", func(r chi.Router) {
+		r.Use(limiter.Middleware)
 		r.Post("/google", h.loginWithGoogle)
 		r.Post("/refresh", h.refresh)
 		r.Post("/logout", h.logout)

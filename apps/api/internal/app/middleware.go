@@ -92,8 +92,10 @@ func RequestLogging(log *slog.Logger) func(http.Handler) http.Handler {
 	}
 }
 
-// CORS allows cross-origin requests from the frontend during development.
-// For MVP this allows configured origins with standard headers/methods.
+// CORS reflects the request Origin only when it is on the configured
+// allowlist. It fails closed: an empty allowlist allows no cross-origin
+// requests at all (rather than reflecting any origin), so a misconfigured or
+// missing CORS_ALLOWED_ORIGINS can never silently open credentialed access.
 func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 	allowed := make(map[string]struct{}, len(allowedOrigins))
 	for _, o := range allowedOrigins {
@@ -104,7 +106,7 @@ func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
 			if origin != "" {
-				if _, ok := allowed[origin]; ok || len(allowed) == 0 {
+				if _, ok := allowed[origin]; ok {
 					w.Header().Set("Access-Control-Allow-Origin", origin)
 					w.Header().Set("Vary", "Origin")
 					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PATCH, PUT, DELETE, OPTIONS")
@@ -118,6 +120,42 @@ func CORS(allowedOrigins []string) func(http.Handler) http.Handler {
 				return
 			}
 
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// SecurityHeaders sets response headers that harden the API against common
+// web attacks. Because this is a JSON API that never serves scripts, is never
+// framed, and never needs a referrer, the policy is maximally restrictive.
+// HSTS is only emitted when enableHSTS is true (deployed HTTPS environments) —
+// on plain-HTTP local dev it is pointless and browsers ignore it anyway.
+func SecurityHeaders(enableHSTS bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			h := w.Header()
+			h.Set("X-Content-Type-Options", "nosniff")
+			h.Set("X-Frame-Options", "DENY")
+			h.Set("Referrer-Policy", "no-referrer")
+			h.Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+			if enableHSTS {
+				h.Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// MaxBodyBytes caps request body size to guard against memory-exhaustion via
+// oversized payloads. The limit is set above the media-upload cap (10 MiB,
+// enforced per-route in the catalog handlers) so uploads still work while
+// abusive multi-hundred-megabyte requests are rejected with 413.
+func MaxBodyBytes(limit int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Body != nil {
+				r.Body = http.MaxBytesReader(w, r.Body, limit)
+			}
 			next.ServeHTTP(w, r)
 		})
 	}

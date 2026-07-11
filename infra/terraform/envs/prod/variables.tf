@@ -1,7 +1,7 @@
 variable "project_id" {
-  description = "GCP project ID for the dev environment."
+  description = "GCP project ID for the prod environment. Create this project + link billing manually before the first apply (Claude/Terraform never touch billing)."
   type        = string
-  default     = "project-538051b7-1abf-4eab-94c" # verani-webstore-dev
+  default     = "verani-webstore-prod"
 }
 
 variable "region" {
@@ -13,29 +13,23 @@ variable "region" {
 variable "env" {
   description = "Environment name, used in resource naming."
   type        = string
-  default     = "dev"
+  default     = "prod"
 }
 
 variable "domain_root" {
-  description = "Root domain managed in Cloud DNS."
+  description = "Root domain. In prod the storefront is served on the apex."
   type        = string
   default     = "verani.bg"
 }
 
-variable "web_subdomain" {
-  description = "Subdomain the storefront frontend is served on."
-  type        = string
-  default     = "dev"
-}
-
 variable "api_subdomain" {
-  description = "Subdomain the API is served on."
+  description = "Subdomain the API is served on (prefixed to domain_root)."
   type        = string
-  default     = "api.dev"
+  default     = "api"
 }
 
 variable "google_client_id" {
-  description = "Existing Google OAuth client ID used for sign-in (already provisioned in this project)."
+  description = "Google OAuth client ID used for sign-in in prod. Reuses the existing client by default; give prod its own client and add https://verani.bg as an authorized JS origin."
   type        = string
   default     = "673528779465-pajifaekv8l1odrbd8mpbglo351d7r15.apps.googleusercontent.com"
 }
@@ -52,16 +46,10 @@ variable "github_deploy_branch" {
   default     = "main"
 }
 
-variable "create_domain_mappings" {
-  description = "Whether to create Cloud Run domain mappings for dev.verani.bg / api.dev.verani.bg. Requires verani.bg to already be a verified domain on this Google account (Search Console) AND the verani.bg DNS zone (now owned by the prod env) to be resolving. If an apply fails on the mappings, set this back to false, finish domain verification, then re-apply."
-  type        = bool
-  default     = true
-}
-
 variable "db_tier" {
-  description = "Cloud SQL machine tier."
+  description = "Cloud SQL machine tier. Sized up from dev for production load."
   type        = string
-  default     = "db-custom-1-3840"
+  default     = "db-custom-2-7680"
 }
 
 variable "db_name" {
@@ -83,9 +71,9 @@ variable "placeholder_image" {
 }
 
 variable "speedy_mode" {
-  description = "Speedy logistics client mode. \"fake\" uses a local simulated client (no real Speedy API calls, no real shipments) — the default for this dev env. Set to \"real\" once live Speedy credentials are configured for the provider."
+  description = "Speedy logistics client mode. Must be \"real\" in prod — real shipments and tracking."
   type        = string
-  default     = "fake"
+  default     = "real"
 
   validation {
     condition     = contains(["fake", "real"], var.speedy_mode)
@@ -94,7 +82,7 @@ variable "speedy_mode" {
 }
 
 variable "fulfillment_poll_interval" {
-  description = "How often the shipment-tracking poller runs (Go duration string, e.g. \"15m\", \"30s\"). Note: with Cloud Run min instances = 0 the in-process poller only ticks while an instance is warm, so tracking auto-progression is best-effort on Cloud Run."
+  description = "How often the shipment-tracking poller runs (Go duration string). With min_instance_count = 1 in prod the poller stays warm."
   type        = string
   default     = "15m"
 }

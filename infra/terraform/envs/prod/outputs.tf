@@ -1,3 +1,8 @@
+output "lb_ip_address" {
+  description = "Static anycast IP of the external HTTPS Load Balancer — the apex/www/api A records point here."
+  value       = google_compute_global_address.lb.address
+}
+
 output "api_cloud_run_url" {
   value = google_cloud_run_v2_service.api.uri
 }
@@ -18,6 +23,10 @@ output "media_bucket" {
   value = google_storage_bucket.media.name
 }
 
+output "invoices_bucket" {
+  value = google_storage_bucket.invoices.name
+}
+
 output "deployer_service_account_email" {
   value = google_service_account.deployer.email
 }
@@ -27,5 +36,7 @@ output "workload_identity_provider" {
   value       = google_iam_workload_identity_pool_provider.github.name
 }
 
-# The verani.bg Cloud DNS zone (and its name_servers output) now lives in the
-# prod environment — see infra/terraform/envs/prod/outputs.tf.
+output "dns_name_servers" {
+  description = "Nameservers to set at the SuperHosting registrar to delegate verani.bg to Cloud DNS. Do NOT cut over until all records (apex A, www A, api A, dev/api.dev CNAME, MX) are confirmed in this zone."
+  value       = google_dns_managed_zone.root.name_servers
+}

@@ -35,7 +35,9 @@ func main() {
 
 	registrars, fulfillmentService := buildRegistrars(bootstrapped)
 
-	router := app.NewRouter(log, corsOrigins(), registrars...)
+	// Emit HSTS everywhere except local dev (served over plain HTTP).
+	enableHSTS := bootstrapped.Config.App.Env != "local"
+	router := app.NewRouter(log, corsOrigins(), enableHSTS, registrars...)
 	srv := app.NewServer(bootstrapped.Config.HTTP.Addr, router)
 
 	go fulfillmentService.Run(ctx, bootstrapped.Config.Fulfillment.PollInterval)
