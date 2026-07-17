@@ -14,8 +14,11 @@ import { Text } from "../../components/ui/Text";
 import {
   type AdminOrder,
   type AdminOrderStatus,
+  type PaymentTransaction,
   getAdminOrder,
   listAdminOrders,
+  listPaymentTransactions,
+  refundOrder,
   updateOrderFulfillment,
 } from "../../lib/api/admin-orders";
 import { formatMoney } from "../../lib/money/money";
@@ -24,10 +27,35 @@ export const handle = { title: "Orders" };
 
 const statusVariant: Record<AdminOrderStatus, "neutral" | "brand" | "accent" | "success" | "danger"> = {
   pending: "neutral",
+  pending_payment: "neutral",
   paid: "accent",
+  payment_failed: "danger",
   shipped: "brand",
   delivered: "success",
   cancelled: "danger",
+  refunded: "neutral",
+  partially_refunded: "accent",
+};
+
+const statusLabels: Record<string, string> = {
+  pending: "Pending",
+  pending_payment: "Awaiting payment",
+  paid: "Paid",
+  payment_failed: "Payment failed",
+  shipped: "Shipped",
+  delivered: "Delivered",
+  cancelled: "Cancelled",
+  refunded: "Refunded",
+  partially_refunded: "Partially refunded",
+};
+
+const statusOptions = Object.keys(statusLabels) as AdminOrderStatus[];
+
+const transactionLabels: Record<string, string> = {
+  initiated: "Payment initiated",
+  captured: "Payment captured",
+  failed: "Payment failed",
+  refunded: "Refund",
 };
 
 const paymentMethodLabels: Record<string, string> = {
@@ -37,7 +65,7 @@ const paymentMethodLabels: Record<string, string> = {
 };
 
 function formatStatus(status: string): string {
-  return status.charAt(0).toUpperCase() + status.slice(1);
+  return statusLabels[status] ?? status.charAt(0).toUpperCase() + status.slice(1);
 }
 
 function formatDate(value: string): string {
@@ -59,6 +87,58 @@ export default function AdminOrders() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Lazy-loaded payment audit trail, keyed by order id.
+  const [transactions, setTransactions] = useState<Record<string, PaymentTransaction[]>>({});
+
+  const [refundOrderTarget, setRefundOrderTarget] = useState<AdminOrder | null>(null);
+  const [refundAmount, setRefundAmount] = useState("");
+  const [refundReason, setRefundReason] = useState("");
+  const [isRefunding, setIsRefunding] = useState(false);
+  const [refundError, setRefundError] = useState<string | null>(null);
+
+  function refundableMinor(order: AdminOrder): number {
+    if (!order.payment) return 0;
+    return order.payment.captured.amount - order.payment.refunded.amount;
+  }
+
+  async function loadTransactions(orderId: string) {
+    try {
+      const txns = await listPaymentTransactions(orderId);
+      setTransactions((prev) => ({ ...prev, [orderId]: txns }));
+    } catch {
+      // audit log failing to load shouldn't block the row
+    }
+  }
+
+  function openRefundModal(order: AdminOrder) {
+    setRefundOrderTarget(order);
+    setRefundAmount((refundableMinor(order) / 100).toFixed(2));
+    setRefundReason("");
+    setRefundError(null);
+  }
+
+  async function handleRefund() {
+    if (!refundOrderTarget) return;
+    const amountMinor = Math.round(Number(refundAmount) * 100);
+    if (!Number.isFinite(amountMinor) || amountMinor <= 0 || amountMinor > refundableMinor(refundOrderTarget)) {
+      setRefundError("Enter an amount between 0 and the refundable total.");
+      return;
+    }
+    setIsRefunding(true);
+    setRefundError(null);
+    try {
+      await refundOrder(refundOrderTarget.id, amountMinor, refundReason || undefined);
+      const updated = await getAdminOrder(refundOrderTarget.id);
+      setOrders((prev) => prev?.map((o) => (o.id === updated.id ? updated : o)) ?? prev);
+      await loadTransactions(refundOrderTarget.id);
+      setRefundOrderTarget(null);
+    } catch {
+      setRefundError("Could not process the refund. Try again.");
+    } finally {
+      setIsRefunding(false);
+    }
+  }
+
   async function refresh() {
     try {
       setOrders(await listAdminOrders(statusFilter ? { status: statusFilter } : undefined));
@@ -75,12 +155,18 @@ export default function AdminOrders() {
   async function toggleExpand(order: AdminOrder) {
     const isExpanding = expandedId !== order.id;
     setExpandedId(isExpanding ? order.id : null);
-    if (isExpanding && !order.viewed_by_admin_at) {
-      try {
-        const viewed = await getAdminOrder(order.id);
-        setOrders((prev) => prev?.map((o) => (o.id === viewed.id ? viewed : o)) ?? prev);
-      } catch {
-        // viewing-state update failing shouldn't block expanding the row
+    if (isExpanding) {
+      // Load the payment audit trail for card orders on first expand.
+      if (order.payment && transactions[order.id] === undefined) {
+        void loadTransactions(order.id);
+      }
+      if (!order.viewed_by_admin_at) {
+        try {
+          const viewed = await getAdminOrder(order.id);
+          setOrders((prev) => prev?.map((o) => (o.id === viewed.id ? viewed : o)) ?? prev);
+        } catch {
+          // viewing-state update failing shouldn't block expanding the row
+        }
       }
     }
   }
@@ -120,11 +206,11 @@ export default function AdminOrders() {
         <FormField label="Status" htmlFor="status-filter" className="w-48">
           <Select id="status-filter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
             <option value="">All statuses</option>
-            <option value="pending">Pending</option>
-            <option value="paid">Paid</option>
-            <option value="shipped">Shipped</option>
-            <option value="delivered">Delivered</option>
-            <option value="cancelled">Cancelled</option>
+            {statusOptions.map((s) => (
+              <option key={s} value={s}>
+                {statusLabels[s]}
+              </option>
+            ))}
           </Select>
         </FormField>
       </div>
@@ -249,9 +335,26 @@ export default function AdminOrders() {
                               <div className="mt-2 text-sm text-stone-700">
                                 {order.payment ? (
                                   <>
-                                    <div>{order.payment.status === "succeeded" ? "Succeeded" : "Failed"}</div>
+                                    <div className="capitalize">{formatStatus(order.payment.status)}</div>
+                                    <div className="mt-1 text-xs text-stone-500">
+                                      Captured {formatMoney(order.payment.captured)}
+                                      {order.payment.refunded.amount > 0 && (
+                                        <> · Refunded {formatMoney(order.payment.refunded)}</>
+                                      )}
+                                    </div>
                                     {order.payment.provider_reference && (
                                       <div className="text-xs text-stone-400">{order.payment.provider_reference}</div>
+                                    )}
+                                    {refundableMinor(order) > 0 && (
+                                      <Button
+                                        variant="outline"
+                                        size="sm"
+                                        className="mt-3"
+                                        onClick={() => openRefundModal(order)}
+                                        disabled={isReadOnly}
+                                      >
+                                        Refund
+                                      </Button>
                                     )}
                                   </>
                                 ) : (
@@ -268,6 +371,30 @@ export default function AdminOrders() {
                               </div>
                             </div>
                           </div>
+
+                          {order.payment && transactions[order.id] && transactions[order.id].length > 0 && (
+                            <div className="mt-6">
+                              <Text size="xs" tone="muted" className="uppercase tracking-wide">
+                                Payment History
+                              </Text>
+                              <div className="mt-2 overflow-hidden rounded-sm border border-stone-200 bg-white">
+                                <table className="w-full text-left text-xs">
+                                  <tbody>
+                                    {transactions[order.id].map((txn) => (
+                                      <tr key={txn.id} className="border-b border-stone-100 last:border-0">
+                                        <td className="px-3 py-2 text-stone-700">
+                                          {transactionLabels[txn.type] ?? txn.type}
+                                          {txn.status && txn.type !== "captured" ? ` · ${txn.status}` : ""}
+                                        </td>
+                                        <td className="px-3 py-2 text-stone-500">{formatMoney(txn.amount)}</td>
+                                        <td className="px-3 py-2 text-right text-stone-400">{formatDate(txn.created_at)}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )}
@@ -292,11 +419,11 @@ export default function AdminOrders() {
               value={fulfillmentStatus}
               onChange={(e) => setFulfillmentStatus(e.target.value as AdminOrderStatus)}
             >
-              <option value="pending">Pending</option>
-              <option value="paid">Paid</option>
-              <option value="shipped">Shipped</option>
-              <option value="delivered">Delivered</option>
-              <option value="cancelled">Cancelled</option>
+              {statusOptions.map((s) => (
+                <option key={s} value={s}>
+                  {statusLabels[s]}
+                </option>
+              ))}
             </Select>
           </FormField>
           <FormField label="Carrier" htmlFor="fulfillment-carrier" hint="e.g. Speedy, EasyBox">
@@ -315,6 +442,42 @@ export default function AdminOrders() {
           </Button>
           <Button variant="primary" onClick={handleSaveFulfillment} disabled={isSaving || isReadOnly}>
             {isSaving ? "Saving…" : "Save"}
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal open={refundOrderTarget !== null} onClose={() => setRefundOrderTarget(null)} title="Refund Order">
+        {refundOrderTarget && (
+          <div className="flex flex-col gap-4">
+            <Text size="sm" tone="muted">
+              Refundable: {formatMoney({ amount: refundableMinor(refundOrderTarget), currency: refundOrderTarget.total.currency })}
+            </Text>
+            {refundError && (
+              <Text size="sm" tone="danger">
+                {refundError}
+              </Text>
+            )}
+            <FormField label="Amount" htmlFor="refund-amount" hint="In the order currency">
+              <Input
+                id="refund-amount"
+                type="number"
+                min="0"
+                step="0.01"
+                value={refundAmount}
+                onChange={(e) => setRefundAmount(e.target.value)}
+              />
+            </FormField>
+            <FormField label="Reason" htmlFor="refund-reason" hint="Optional">
+              <Input id="refund-reason" value={refundReason} onChange={(e) => setRefundReason(e.target.value)} />
+            </FormField>
+          </div>
+        )}
+        <div className="mt-6 flex justify-end gap-3">
+          <Button variant="outline" onClick={() => setRefundOrderTarget(null)} disabled={isRefunding}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={handleRefund} disabled={isRefunding || isReadOnly}>
+            {isRefunding ? "Refunding…" : "Refund"}
           </Button>
         </div>
       </Modal>

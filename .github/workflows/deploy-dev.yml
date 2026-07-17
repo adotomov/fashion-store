@@ -25,6 +25,8 @@ env:
   # api *.run.app URL.
   VITE_API_BASE_URL: https://api.dev.verani.bg
   VITE_GOOGLE_CLIENT_ID: 673528779465-pajifaekv8l1odrbd8mpbglo351d7r15.apps.googleusercontent.com
+  # Dev talks to the Revolut SANDBOX, so the checkout widget runs in sandbox mode.
+  VITE_REVOLUT_ENV: sandbox
 
 jobs:
   deploy:
@@ -55,6 +57,7 @@ jobs:
           docker build \
             --build-arg VITE_API_BASE_URL="${{ env.VITE_API_BASE_URL }}" \
             --build-arg VITE_GOOGLE_CLIENT_ID="${{ env.VITE_GOOGLE_CLIENT_ID }}" \
+            --build-arg VITE_REVOLUT_ENV="${{ env.VITE_REVOLUT_ENV }}" \
             -t "${{ env.REGISTRY }}/webstore-fe:${{ github.sha }}" apps/web
           docker push "${{ env.REGISTRY }}/webstore-fe:${{ github.sha }}"
 

@@ -1,6 +1,31 @@
 package application
 
-import "github.com/adotomov/fashion-store/apps/api/internal/modules/checkout/domain"
+import (
+	"github.com/google/uuid"
+
+	"github.com/adotomov/fashion-store/apps/api/internal/modules/checkout/domain"
+	"github.com/adotomov/fashion-store/apps/api/internal/shared/money"
+)
+
+// PlaceOrderResult is what PlaceOrder returns: exactly one of Order (a fully
+// placed pay-on-delivery order) or PaymentRequired (an online-card order
+// awaiting widget payment) is set.
+type PlaceOrderResult struct {
+	Order           *OrderResult
+	PaymentRequired *PaymentInitiation
+}
+
+// PaymentInitiation carries what the storefront needs to mount the Revolut
+// widget for an online-card order that isn't paid yet.
+type PaymentInitiation struct {
+	OrderID           uuid.UUID
+	OrderNumber       string
+	RevolutOrderID    string
+	RevolutOrderToken string
+	Amount            money.Money
+	PaymentMethod     string
+	Status            string
+}
 
 type ContactInput struct {
 	FullName string
@@ -37,6 +62,5 @@ type PlaceOrderInput struct {
 	DeliveryMethod   string
 	DeliveryOfficeID string
 	PaymentMethod    string
-	Card             CardInput
 	DiscountCode     string
 }

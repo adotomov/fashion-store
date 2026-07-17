@@ -7,7 +7,16 @@ function fromMoneyDTO(dto: MoneyDTO): Money {
   return { amount: dto.amount_minor, currency: dto.currency };
 }
 
-export type AdminOrderStatus = "pending" | "paid" | "shipped" | "delivered" | "cancelled";
+export type AdminOrderStatus =
+  | "pending"
+  | "pending_payment"
+  | "paid"
+  | "payment_failed"
+  | "shipped"
+  | "delivered"
+  | "cancelled"
+  | "refunded"
+  | "partially_refunded";
 
 export type AdminOrderAddress = {
   recipient_name: string;
@@ -25,6 +34,8 @@ export type AdminOrderPayment = {
   provider_reference?: string;
   status: string;
   amount: Money;
+  captured: Money;
+  refunded: Money;
 };
 
 export type AdminOrderItem = {
@@ -58,7 +69,11 @@ export type AdminOrder = {
 };
 
 type RawOrderItem = Omit<AdminOrderItem, "unit_price"> & { unit_price: MoneyDTO };
-type RawOrderPayment = Omit<AdminOrderPayment, "amount"> & { amount: MoneyDTO };
+type RawOrderPayment = Omit<AdminOrderPayment, "amount" | "captured" | "refunded"> & {
+  amount: MoneyDTO;
+  captured: MoneyDTO;
+  refunded: MoneyDTO;
+};
 type RawAdminOrder = Omit<AdminOrder, "total" | "delivery_fee" | "payment" | "items"> & {
   total: MoneyDTO;
   delivery_fee: MoneyDTO;
@@ -71,7 +86,14 @@ function fromRawOrder(raw: RawAdminOrder): AdminOrder {
     ...raw,
     total: fromMoneyDTO(raw.total),
     delivery_fee: fromMoneyDTO(raw.delivery_fee),
-    payment: raw.payment ? { ...raw.payment, amount: fromMoneyDTO(raw.payment.amount) } : undefined,
+    payment: raw.payment
+      ? {
+          ...raw.payment,
+          amount: fromMoneyDTO(raw.payment.amount),
+          captured: fromMoneyDTO(raw.payment.captured),
+          refunded: fromMoneyDTO(raw.payment.refunded),
+        }
+      : undefined,
     items: raw.items.map((item) => ({ ...item, unit_price: fromMoneyDTO(item.unit_price) })),
   };
 }
@@ -100,6 +122,30 @@ export type UpdateFulfillmentInput = Partial<{
 export async function updateOrderFulfillment(id: string, input: UpdateFulfillmentInput): Promise<AdminOrder> {
   const raw = await apiFetch<RawAdminOrder>(`/api/v1/admin/orders/${id}`, { method: "PATCH", body: input });
   return fromRawOrder(raw);
+}
+
+export async function refundOrder(id: string, amountMinor: number, reason?: string): Promise<void> {
+  await apiFetch(`/api/v1/admin/orders/${id}/refund`, {
+    method: "POST",
+    body: { amount_minor: amountMinor, reason },
+  });
+}
+
+export type PaymentTransaction = {
+  id: string;
+  type: "initiated" | "captured" | "failed" | "refunded";
+  status?: string;
+  provider: string;
+  provider_reference?: string;
+  amount: Money;
+  created_at: string;
+};
+
+type RawPaymentTransaction = Omit<PaymentTransaction, "amount"> & { amount: MoneyDTO };
+
+export async function listPaymentTransactions(id: string): Promise<PaymentTransaction[]> {
+  const raw = await apiFetch<RawPaymentTransaction[]>(`/api/v1/admin/orders/${id}/transactions`);
+  return raw.map((txn) => ({ ...txn, amount: fromMoneyDTO(txn.amount) }));
 }
 
 export async function getUnviewedOrderCount(): Promise<number> {

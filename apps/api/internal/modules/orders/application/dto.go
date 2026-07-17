@@ -19,9 +19,42 @@ type CreateOrderItemInput struct {
 
 type CreateOrderPaymentInput struct {
 	Provider          string
+	ProviderOrderID   string
 	ProviderReference string
 	Status            string
 	Amount            money.Money
+}
+
+// PendingPaymentRef ties a still-unpaid card order to its Revolut order id,
+// for the abandoned-payment sweeper.
+type PendingPaymentRef struct {
+	OrderID         uuid.UUID
+	ProviderOrderID string
+}
+
+// OrderPaymentContext is the minimal payment/refund state a caller needs to
+// decide whether (and how much) an order can be refunded.
+type OrderPaymentContext struct {
+	Status          string // the order's status
+	ProviderOrderID string
+	CapturedMinor   int64
+	RefundedMinor   int64
+	Currency        string
+}
+
+// RecordRefundInput persists one refund against an order. When State is
+// "completed" the repository also advances the payment's refunded total and,
+// if OrderStatus is set, the order's rolled-up status (refunded /
+// partially_refunded) — all in one transaction.
+type RecordRefundInput struct {
+	OrderID          uuid.UUID
+	ProviderRefundID string
+	AmountMinor      int64
+	Currency         string
+	Reason           string
+	State            string // pending | completed | failed
+	CreatedBy        *uuid.UUID
+	OrderStatus      string // new order status when the refund is completed; "" leaves it unchanged
 }
 
 type CreateOrderInput struct {

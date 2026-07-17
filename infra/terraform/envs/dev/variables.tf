@@ -98,3 +98,26 @@ variable "fulfillment_poll_interval" {
   type        = string
   default     = "15m"
 }
+
+variable "revolut_mode" {
+  description = "Revolut Merchant environment: \"sandbox\" or \"prod\". Selects the Merchant API base URL and the checkout widget mode. Dev uses \"sandbox\"."
+  type        = string
+  default     = "sandbox"
+
+  validation {
+    condition     = contains(["sandbox", "prod"], var.revolut_mode)
+    error_message = "revolut_mode must be either \"sandbox\" or \"prod\"."
+  }
+}
+
+variable "revolut_api_version" {
+  description = "Pinned Revolut-Api-Version request header (date form, e.g. \"2024-09-01\"). Bump when the code is validated against a newer Merchant API version."
+  type        = string
+  default     = "2024-09-01"
+}
+
+variable "revolut_enabled" {
+  description = "Inject the Revolut API key + webhook secret into the API service. Keep false until the secret VALUES are populated out-of-band; flip to true to activate card payments."
+  type        = bool
+  default     = false
+}

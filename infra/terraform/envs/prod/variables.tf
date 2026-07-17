@@ -86,3 +86,26 @@ variable "fulfillment_poll_interval" {
   type        = string
   default     = "15m"
 }
+
+variable "revolut_mode" {
+  description = "Revolut Merchant environment. Must be \"prod\" here — the API also fails closed at boot if this isn't \"prod\" when APP_ENV=prod."
+  type        = string
+  default     = "prod"
+
+  validation {
+    condition     = var.revolut_mode == "prod"
+    error_message = "revolut_mode must be \"prod\" in the prod environment."
+  }
+}
+
+variable "revolut_api_version" {
+  description = "Pinned Revolut-Api-Version request header (date form, e.g. \"2024-09-01\"). Bump when the code is validated against a newer Merchant API version."
+  type        = string
+  default     = "2024-09-01"
+}
+
+variable "revolut_enabled" {
+  description = "Inject the Revolut LIVE key + webhook secret into the API service. Keep false until the secret VALUES are populated out-of-band; flip to true to activate card payments in prod."
+  type        = bool
+  default     = false
+}

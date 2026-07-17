@@ -53,13 +53,6 @@ func (a addressRequest) toInput() application.AddressInput {
 	}
 }
 
-type cardRequest struct {
-	Number   string `json:"number"`
-	ExpMonth int    `json:"exp_month"`
-	ExpYear  int    `json:"exp_year"`
-	CVV      string `json:"cvv"`
-}
-
 type placeOrderRequest struct {
 	Contact          contactRequest `json:"contact"`
 	ShippingAddress  addressRequest `json:"shipping_address"`
@@ -67,7 +60,6 @@ type placeOrderRequest struct {
 	DeliveryMethod   string         `json:"delivery_method"`
 	DeliveryOfficeID string         `json:"delivery_office_id,omitempty"`
 	PaymentMethod    string         `json:"payment_method"`
-	Card             cardRequest    `json:"card"`
 	DiscountCode     string         `json:"discount_code,omitempty"`
 }
 
@@ -85,10 +77,44 @@ func (req placeOrderRequest) toInput() application.PlaceOrderInput {
 		DeliveryMethod:   req.DeliveryMethod,
 		DeliveryOfficeID: req.DeliveryOfficeID,
 		PaymentMethod:    req.PaymentMethod,
-		Card: application.CardInput{
-			Number: req.Card.Number, ExpMonth: req.Card.ExpMonth, ExpYear: req.Card.ExpYear, CVV: req.Card.CVV,
-		},
-		DiscountCode: req.DiscountCode,
+		DiscountCode:     req.DiscountCode,
+	}
+}
+
+// refundRequest is the admin refund submission. AmountMinor must be positive
+// and no greater than the order's remaining refundable amount; the admin UI
+// sends captured − already-refunded for a full refund.
+type refundRequest struct {
+	AmountMinor int64  `json:"amount_minor"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+// paymentInitiationResponse is returned for online-card orders: the order is
+// created as pending_payment and the client mounts the Revolut widget with the
+// token, then polls the order until the payment webhook settles it.
+type paymentInitiationResponse struct {
+	OrderID           string        `json:"order_id"`
+	OrderNumber       string        `json:"order_number"`
+	RevolutOrderID    string        `json:"revolut_order_id"`
+	RevolutOrderToken string        `json:"revolut_order_token"`
+	Amount            moneyResponse `json:"amount"`
+	PaymentMethod     string        `json:"payment_method"`
+	Status            string        `json:"status"`
+	// RequiresPayment always true here — lets the client discriminate this
+	// response from a fully placed (pay-on-delivery) order in the same 201.
+	RequiresPayment bool `json:"requires_payment"`
+}
+
+func toPaymentInitiationResponse(p application.PaymentInitiation) paymentInitiationResponse {
+	return paymentInitiationResponse{
+		OrderID:           p.OrderID.String(),
+		OrderNumber:       p.OrderNumber,
+		RevolutOrderID:    p.RevolutOrderID,
+		RevolutOrderToken: p.RevolutOrderToken,
+		Amount:            moneyResponse{AmountMinor: p.Amount.AmountMinor, Currency: p.Amount.Currency},
+		PaymentMethod:     p.PaymentMethod,
+		Status:            p.Status,
+		RequiresPayment:   true,
 	}
 }
 

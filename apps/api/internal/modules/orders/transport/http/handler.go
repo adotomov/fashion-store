@@ -35,8 +35,23 @@ func (h *Handler) RegisterRoutes(r chi.Router, requireAuth, requireAdmin func(ht
 		r.Get("/admin/orders/stats", h.adminOrderStats)
 		r.Get("/admin/orders/unviewed-count", h.adminUnviewedCount)
 		r.Get("/admin/orders/{id}", h.adminGetOrder)
+		r.Get("/admin/orders/{id}/transactions", h.adminOrderTransactions)
 		r.Patch("/admin/orders/{id}", h.adminUpdateFulfillment)
 	})
+}
+
+func (h *Handler) adminOrderTransactions(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "order id is invalid")
+		return
+	}
+	txns, err := h.service.ListPaymentTransactions(r.Context(), id)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toPaymentTransactionResponses(txns))
 }
 
 func (h *Handler) listOrders(w http.ResponseWriter, r *http.Request) {

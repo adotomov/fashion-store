@@ -19,18 +19,24 @@ import (
 const cartTokenHeader = "X-Cart-Token"
 
 type Handler struct {
-	service *application.Service
+	service       *application.Service
+	webhookSecret string
 }
 
-func NewHandler(service *application.Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *application.Service, webhookSecret string) *Handler {
+	return &Handler{service: service, webhookSecret: webhookSecret}
 }
 
-func (h *Handler) RegisterRoutes(r chi.Router, optionalAuth func(http.Handler) http.Handler) {
+func (h *Handler) RegisterRoutes(r chi.Router, optionalAuth, requireAdmin func(http.Handler) http.Handler) {
 	r.Group(func(r chi.Router) {
 		r.Use(optionalAuth)
 		r.Get("/checkout/delivery-methods", h.listDeliveryMethods)
 		r.Post("/checkout", h.placeOrder)
+		r.Get("/checkout/orders/{order_number}/status", h.orderStatus)
+	})
+	r.Group(func(r chi.Router) {
+		r.Use(requireAdmin)
+		r.Post("/admin/orders/{id}/refund", h.refundOrder)
 	})
 }
 
@@ -75,7 +81,70 @@ func (h *Handler) placeOrder(w http.ResponseWriter, r *http.Request) {
 		writeServiceError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusCreated, toOrderResultResponse(result))
+	// Online-card orders come back awaiting widget payment; pay-on-delivery
+	// orders come back fully placed.
+	if result.PaymentRequired != nil {
+		httpx.WriteJSON(w, http.StatusCreated, toPaymentInitiationResponse(*result.PaymentRequired))
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, toOrderResultResponse(*result.Order))
+}
+
+// orderStatus is the public post-payment poll: it returns only the order
+// status (keyed by order number), enough for the confirmation page to reflect
+// the webhook-driven settlement without exposing order details.
+func (h *Handler) orderStatus(w http.ResponseWriter, r *http.Request) {
+	orderNumber := chi.URLParam(r, "order_number")
+	status, err := h.service.PaymentStatus(r.Context(), orderNumber)
+	if err != nil {
+		if errors.Is(err, domain.ErrOrderNotFound) {
+			httpx.WriteError(w, http.StatusNotFound, "order_not_found", "order not found")
+			return
+		}
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "an unexpected error occurred")
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"order_number": orderNumber, "status": status})
+}
+
+func (h *Handler) refundOrder(w http.ResponseWriter, r *http.Request) {
+	orderID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_order_id", "order id is invalid")
+		return
+	}
+
+	var req refundRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "request body is invalid")
+		return
+	}
+
+	var adminID *uuid.UUID
+	if p, ok := authctx.FromContext(r.Context()); ok {
+		adminID = &p.UserID
+	}
+
+	if err := h.service.RefundOrder(r.Context(), orderID, req.AmountMinor, req.Reason, adminID); err != nil {
+		writeRefundError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func writeRefundError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, domain.ErrOrderNotFound):
+		httpx.WriteError(w, http.StatusNotFound, "order_not_found", "order not found")
+	case errors.Is(err, domain.ErrRefundNotAllowed):
+		httpx.WriteError(w, http.StatusConflict, "refund_not_allowed", "this order cannot be refunded")
+	case errors.Is(err, domain.ErrRefundAmountInvalid):
+		httpx.WriteError(w, http.StatusBadRequest, "refund_amount_invalid", "refund amount is invalid")
+	case errors.Is(err, domain.ErrRefundFailed):
+		httpx.WriteError(w, http.StatusBadGateway, "refund_failed", "the refund could not be processed")
+	default:
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "an unexpected error occurred")
+	}
 }
 
 func writeServiceError(w http.ResponseWriter, err error) {
@@ -98,6 +167,8 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		httpx.WriteError(w, http.StatusConflict, "insufficient_stock", "not enough stock available")
 	case errors.Is(err, domain.ErrPaymentFailed):
 		httpx.WriteError(w, http.StatusPaymentRequired, "payment_failed", "payment could not be processed")
+	case errors.Is(err, domain.ErrPaymentInitiation):
+		httpx.WriteError(w, http.StatusBadGateway, "payment_initiation_failed", "could not start card payment, please try again")
 	case errors.As(err, new(domain.ValidationError)):
 		httpx.WriteError(w, http.StatusBadRequest, "validation_failed", err.Error())
 	default:

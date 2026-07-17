@@ -84,6 +84,41 @@ resource "google_cloud_run_v2_service" "api" {
         value = "false"
       }
       env {
+        name  = "REVOLUT_MODE"
+        value = var.revolut_mode
+      }
+      env {
+        name  = "REVOLUT_API_VERSION"
+        value = var.revolut_api_version
+      }
+      # Secret-backed Revolut creds are injected only once revolut_enabled is
+      # true, so the service can be applied before the secret VALUES exist. The
+      # API falls back to the mock gateway while REVOLUT_API_KEY is unset.
+      dynamic "env" {
+        for_each = var.revolut_enabled ? [1] : []
+        content {
+          name = "REVOLUT_API_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.revolut_api_key.secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.revolut_enabled ? [1] : []
+        content {
+          name = "REVOLUT_WEBHOOK_SECRET"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.revolut_webhook_secret.secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+      env {
         name = "DATABASE_URL"
         value_source {
           secret_key_ref {

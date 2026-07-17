@@ -15,6 +15,7 @@ type Config struct {
 	Auth        AuthConfig
 	Storage     StorageConfig
 	Fulfillment FulfillmentConfig
+	Payments    PaymentsConfig
 }
 
 type AppConfig struct {
@@ -65,6 +66,33 @@ type FulfillmentConfig struct {
 	// dev (paired with the fake client's time-based progression) so an order
 	// visibly moves through statuses within minutes rather than hours.
 	PollInterval time.Duration
+}
+
+const (
+	// RevolutModeSandbox targets the Revolut Merchant sandbox environment
+	// (test cards, no real money); RevolutModeProd targets live merchant.
+	RevolutModeSandbox = "sandbox"
+	RevolutModeProd    = "prod"
+)
+
+// PaymentsConfig carries the Revolut Merchant credentials and environment
+// selector. Mode picks sandbox vs live endpoints; APIKey is the server-side
+// Bearer secret; WebhookSecret verifies inbound webhook signatures. When
+// APIKey is empty the checkout module falls back to the mock gateway, so
+// local/devbox runs need no Revolut account.
+type PaymentsConfig struct {
+	RevolutMode          string
+	RevolutAPIKey        string
+	RevolutWebhookSecret string
+	RevolutAPIVersion    string
+}
+
+// RevolutBaseURL returns the Merchant API base URL for the configured mode.
+func (c PaymentsConfig) RevolutBaseURL() string {
+	if c.RevolutMode == RevolutModeProd {
+		return "https://merchant.revolut.com"
+	}
+	return "https://sandbox-merchant.revolut.com"
 }
 
 // LoadConfig loads configuration from environment variables.
@@ -124,6 +152,31 @@ func LoadConfig() (*Config, error) {
 			SpeedyMode:   getEnv("SPEEDY_MODE", "real"),
 			PollInterval: pollInterval,
 		},
+		Payments: PaymentsConfig{
+			RevolutMode:          getEnv("REVOLUT_MODE", RevolutModeSandbox),
+			RevolutAPIKey:        os.Getenv("REVOLUT_API_KEY"),
+			RevolutWebhookSecret: os.Getenv("REVOLUT_WEBHOOK_SECRET"),
+			RevolutAPIVersion:    os.Getenv("REVOLUT_API_VERSION"),
+		},
+	}
+
+	if cfg.Payments.RevolutMode != RevolutModeSandbox && cfg.Payments.RevolutMode != RevolutModeProd {
+		return nil, fmt.Errorf("invalid REVOLUT_MODE %q: must be %q or %q", cfg.Payments.RevolutMode, RevolutModeSandbox, RevolutModeProd)
+	}
+
+	// Fail closed in production: never let a prod deploy come up pointed at the
+	// Revolut sandbox, or without the credentials needed to charge and to
+	// verify webhooks. Mirrors the fail-closed CORS stance for prod.
+	if cfg.App.Env == RevolutModeProd {
+		if cfg.Payments.RevolutMode != RevolutModeProd {
+			return nil, fmt.Errorf("REVOLUT_MODE must be %q when APP_ENV=prod", RevolutModeProd)
+		}
+		if cfg.Payments.RevolutAPIKey == "" {
+			return nil, fmt.Errorf("REVOLUT_API_KEY is required when APP_ENV=prod")
+		}
+		if cfg.Payments.RevolutWebhookSecret == "" {
+			return nil, fmt.Errorf("REVOLUT_WEBHOOK_SECRET is required when APP_ENV=prod")
+		}
 	}
 
 	return cfg, nil

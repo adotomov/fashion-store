@@ -11,16 +11,22 @@ import (
 type OrderStatus string
 
 const (
-	OrderStatusPending   OrderStatus = "pending"
-	OrderStatusPaid      OrderStatus = "paid"
-	OrderStatusShipped   OrderStatus = "shipped"
-	OrderStatusDelivered OrderStatus = "delivered"
-	OrderStatusCancelled OrderStatus = "cancelled"
+	OrderStatusPending           OrderStatus = "pending"
+	OrderStatusPendingPayment    OrderStatus = "pending_payment"
+	OrderStatusPaid              OrderStatus = "paid"
+	OrderStatusPaymentFailed     OrderStatus = "payment_failed"
+	OrderStatusShipped           OrderStatus = "shipped"
+	OrderStatusDelivered         OrderStatus = "delivered"
+	OrderStatusCancelled         OrderStatus = "cancelled"
+	OrderStatusRefunded          OrderStatus = "refunded"
+	OrderStatusPartiallyRefunded OrderStatus = "partially_refunded"
 )
 
 func (s OrderStatus) Valid() bool {
 	switch s {
-	case OrderStatusPending, OrderStatusPaid, OrderStatusShipped, OrderStatusDelivered, OrderStatusCancelled:
+	case OrderStatusPending, OrderStatusPendingPayment, OrderStatusPaid, OrderStatusPaymentFailed,
+		OrderStatusShipped, OrderStatusDelivered, OrderStatusCancelled,
+		OrderStatusRefunded, OrderStatusPartiallyRefunded:
 		return true
 	default:
 		return false
@@ -52,15 +58,44 @@ type OrderAddress struct {
 	CountryCode   string
 }
 
-// OrderPayment records the outcome of a (mocked, Revolut-shaped) charge
-// attempt for card_online orders. Never present for cash_on_delivery or
-// card_on_easybox orders, since those are settled at delivery time.
+// OrderPayment records the state of a Revolut card payment for a card_online
+// order. Never present for cash_on_delivery or card_on_easybox orders, since
+// those are settled at delivery time. ProviderOrderID is the Revolut order id
+// (the webhook lookup key); ProviderReference is the settled payment id.
+// Status moves pending → succeeded (or failed); Captured/Refunded track the
+// running money totals for refunds.
 type OrderPayment struct {
 	ID                uuid.UUID
 	OrderID           uuid.UUID
 	Provider          string
+	ProviderOrderID   string
 	ProviderReference string
-	Status            string // succeeded | failed
+	Status            string // pending | authorised | succeeded | failed | cancelled | refunded | partially_refunded
+	Amount            money.Money
+	CapturedMinor     int64
+	RefundedMinor     int64
+	CreatedAt         time.Time
+}
+
+// Payment transaction types for the append-only payment_transactions ledger.
+const (
+	PaymentTxnInitiated = "initiated" // a Revolut order was opened for the customer
+	PaymentTxnCaptured  = "captured"  // payment completed and funds captured
+	PaymentTxnFailed    = "failed"    // payment failed, cancelled, or abandoned
+	PaymentTxnRefunded  = "refunded"  // a (partial or full) refund was issued
+)
+
+// PaymentTransaction is one immutable entry in the payment audit ledger. Each
+// row records a single payment-lifecycle event and the money involved at that
+// moment; the sequence of a given order's rows is its full payment history.
+type PaymentTransaction struct {
+	ID                uuid.UUID
+	OrderID           uuid.UUID
+	Provider          string
+	ProviderOrderID   string
+	ProviderReference string
+	Type              string
+	Status            string
 	Amount            money.Money
 	CreatedAt         time.Time
 }

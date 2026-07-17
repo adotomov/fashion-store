@@ -60,3 +60,30 @@ resource "google_secret_manager_secret_version" "google_client_id" {
   secret      = google_secret_manager_secret.google_client_id.id
   secret_data = var.google_client_id
 }
+
+# Revolut Merchant credentials (dev = Revolut SANDBOX). The secret containers
+# are managed here, but their VALUES are added out-of-band with
+# `gcloud secrets versions add` — they come from the Revolut dashboard and must
+# never land in Terraform state. The API only reads them once revolut_enabled
+# is flipped true (see cloud_run.tf).
+resource "google_secret_manager_secret" "revolut_api_key" {
+  project   = var.project_id
+  secret_id = "fs-${var.env}-revolut-api-key"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_secret_manager_secret" "revolut_webhook_secret" {
+  project   = var.project_id
+  secret_id = "fs-${var.env}-revolut-webhook-secret"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.apis]
+}

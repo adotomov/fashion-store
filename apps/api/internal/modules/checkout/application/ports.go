@@ -66,6 +66,7 @@ type OrderAddress struct {
 
 type OrderPaymentRecord struct {
 	Provider          string
+	ProviderOrderID   string
 	ProviderReference string
 	Status            string
 	Amount            money.Money
@@ -128,7 +129,7 @@ type OrderResult struct {
 	Items          []OrderResultItem
 }
 
-// OrderGateway persists the placed order via the orders module.
+// OrderGateway persists and settles the placed order via the orders module.
 type OrderGateway interface {
 	CreateOrder(ctx context.Context, input CreateOrderInput) (OrderResult, error)
 
@@ -136,6 +137,78 @@ type OrderGateway interface {
 	// shipment has been created for the order — best-effort, called after
 	// CreateOrder, never blocks the checkout response on its own.
 	SetShipmentInfo(ctx context.Context, orderID uuid.UUID, carrier, trackingNumber, shipmentID, status string) error
+
+	// FindByProviderOrderID loads the finalize snapshot for the order behind a
+	// Revolut order id (the webhook lookup key). Returns ErrOrderNotFound if
+	// none matches.
+	FindByProviderOrderID(ctx context.Context, providerOrderID string) (OrderForFinalize, error)
+
+	// MarkPaid settles a pending_payment order once its payment is confirmed.
+	MarkPaid(ctx context.Context, orderID uuid.UUID, providerReference string, capturedMinor int64) error
+
+	// MarkPaymentFailed moves a pending_payment order to payment_failed.
+	MarkPaymentFailed(ctx context.Context, orderID uuid.UUID, reason string) error
+
+	// GetPaymentContext returns the payment/refund state used to authorize and
+	// size a refund.
+	GetPaymentContext(ctx context.Context, orderID uuid.UUID) (OrderPaymentContext, error)
+
+	// RecordRefund persists a refund and advances the order's refund state.
+	RecordRefund(ctx context.Context, input RecordRefundInput) error
+
+	// ListPendingPaymentOlderThan returns card orders still awaiting payment
+	// since before the cutoff — the abandoned-payment sweeper's work list.
+	ListPendingPaymentOlderThan(ctx context.Context, cutoff time.Time) ([]PendingPaymentRef, error)
+
+	// GetStatusByNumber returns just an order's status, keyed by its order
+	// number — powers the storefront's post-payment status poll for guests.
+	GetStatusByNumber(ctx context.Context, orderNumber string) (string, error)
+}
+
+// PendingPaymentRef ties an order to its Revolut order id for the sweeper.
+type PendingPaymentRef struct {
+	OrderID         uuid.UUID
+	ProviderOrderID string
+}
+
+// OrderForFinalize is the subset of a placed order the settlement path needs
+// to commit stock and book the shipment from a webhook, without reloading the
+// customer's original in-memory checkout submission.
+type OrderForFinalize struct {
+	ID               uuid.UUID
+	OrderNumber      string
+	Status           string
+	UserID           uuid.UUID
+	ReservationID    *uuid.UUID
+	DeliveryMethod   string
+	DeliveryOfficeID string
+	PaymentMethod    string
+	ContactName      string
+	ContactEmail     string
+	ContactPhone     string
+	ShippingAddress  OrderAddress
+	Total            money.Money
+}
+
+// OrderPaymentContext mirrors the orders module's payment/refund state.
+type OrderPaymentContext struct {
+	OrderStatus     string
+	ProviderOrderID string
+	CapturedMinor   int64
+	RefundedMinor   int64
+	Currency        string
+}
+
+// RecordRefundInput asks the orders module to persist one refund and, when
+// completed, advance the order's rolled-up status.
+type RecordRefundInput struct {
+	OrderID          uuid.UUID
+	ProviderRefundID string
+	Amount           money.Money
+	Reason           string
+	State            string
+	CreatedBy        *uuid.UUID
+	OrderStatus      string
 }
 
 // CreateShipmentInput is what checkout hands the fulfillment module after an
@@ -171,31 +244,53 @@ type FulfillmentGateway interface {
 	CreateShipment(ctx context.Context, input CreateShipmentInput) (ShipmentResult, error)
 }
 
-type CardInput struct {
-	Number   string
-	ExpMonth int
-	ExpYear  int
-	CVV      string
+// Revolut order states (lowercased by the gateway). We only branch on
+// "completed"; the rest are logged/ignored until a later webhook resolves them.
+const (
+	PaymentStateCompleted = "completed"
+	PaymentStateCancelled = "cancelled"
+	PaymentStateFailed    = "failed"
+)
+
+// CreatePaymentOrderInput asks the gateway to open a Revolut order the
+// customer will pay via the embedded widget. Card data never passes through
+// here — the widget tokenizes it client-side.
+type CreatePaymentOrderInput struct {
+	Amount        money.Money
+	OrderNumber   string // sent as merchant_order_ext_ref
+	CustomerEmail string
 }
 
-type ChargeInput struct {
-	Amount   money.Money
-	OrderRef string
-	Card     CardInput
+// PaymentOrder is the created/queried Revolut order. Token is the public token
+// the frontend widget mounts; ID is the server-side order id used for webhook
+// lookups and refunds.
+type PaymentOrder struct {
+	ID          string
+	Token       string
+	State       string
+	AmountMinor int64
+	Currency    string
 }
 
-type ChargeResult struct {
-	Succeeded         bool
-	ProviderReference string
-	FailureReason     string
+type RefundInput struct {
+	ProviderOrderID string
+	Amount          money.Money
+	Reason          string
 }
 
-// PaymentGateway is shaped after the Revolut Merchant API (an order/charge
-// reference plus a succeeded/failed outcome) so the mock implementation
-// can be swapped for a real Revolut client once the merchant account is
-// verified, without touching PlaceOrder.
+type RefundResult struct {
+	ID    string
+	State string
+}
+
+// PaymentGateway is the Revolut Merchant seam: open an order for the widget,
+// re-fetch it authoritatively when a webhook arrives, and refund it. The mock
+// implementation stands in until the merchant account is live, without
+// PlaceOrder/FinalizePaidOrder needing to change.
 type PaymentGateway interface {
-	Charge(ctx context.Context, input ChargeInput) (ChargeResult, error)
+	CreateOrder(ctx context.Context, input CreatePaymentOrderInput) (PaymentOrder, error)
+	GetOrder(ctx context.Context, providerOrderID string) (PaymentOrder, error)
+	Refund(ctx context.Context, input RefundInput) (RefundResult, error)
 }
 
 // DiscountInfo carries the result of a valid discount code lookup.

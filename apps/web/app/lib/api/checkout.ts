@@ -44,13 +44,6 @@ export type CheckoutAddress = {
   country_code: string;
 };
 
-export type Card = {
-  number: string;
-  exp_month: number;
-  exp_year: number;
-  cvv: string;
-};
-
 export type PlaceOrderInput = {
   contact: Contact;
   shipping_address: CheckoutAddress;
@@ -58,7 +51,6 @@ export type PlaceOrderInput = {
   delivery_method: DeliveryMethodCode;
   delivery_office_id?: string;
   payment_method: PaymentMethodCode;
-  card?: Card;
   discount_code?: string;
 };
 
@@ -104,13 +96,36 @@ export async function validateDiscountCode(code: string): Promise<DiscountCodeVa
   );
 }
 
-export async function placeOrder(input: PlaceOrderInput): Promise<PlacedOrder> {
-  const token = getCartToken();
-  const raw = await apiFetch<RawPlacedOrder>("/api/v1/checkout", {
-    method: "POST",
-    body: input,
-    headers: token ? { "X-Cart-Token": token } : {},
-  });
+// PaymentInitiation is returned instead of a placed order for online-card
+// checkout: the order is created pending_payment and the customer pays via the
+// Revolut widget using revolut_order_token, then the confirmation page polls
+// getOrderPaymentStatus until the webhook settles it.
+export type PaymentInitiation = {
+  order_id: string;
+  order_number: string;
+  revolut_order_id: string;
+  revolut_order_token: string;
+  amount: Money;
+  payment_method: PaymentMethodCode;
+  status: string;
+};
+
+type RawPaymentInitiation = {
+  requires_payment: true;
+  order_id: string;
+  order_number: string;
+  revolut_order_id: string;
+  revolut_order_token: string;
+  amount: MoneyDTO;
+  payment_method: PaymentMethodCode;
+  status: string;
+};
+
+export type PlaceOrderResult =
+  | { kind: "placed"; order: PlacedOrder }
+  | { kind: "payment_required"; initiation: PaymentInitiation };
+
+function fromRawPlacedOrder(raw: RawPlacedOrder): PlacedOrder {
   return {
     ...raw,
     total: fromMoneyDTO(raw.total),
@@ -118,4 +133,37 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlacedOrder> {
     discount_amount: raw.discount_amount ? fromMoneyDTO(raw.discount_amount) : undefined,
     items: raw.items.map((item) => ({ ...item, unit_price: fromMoneyDTO(item.unit_price) })),
   };
+}
+
+export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResult> {
+  const token = getCartToken();
+  const raw = await apiFetch<RawPlacedOrder | RawPaymentInitiation>("/api/v1/checkout", {
+    method: "POST",
+    body: input,
+    headers: token ? { "X-Cart-Token": token } : {},
+  });
+  if ("requires_payment" in raw && raw.requires_payment) {
+    return {
+      kind: "payment_required",
+      initiation: {
+        order_id: raw.order_id,
+        order_number: raw.order_number,
+        revolut_order_id: raw.revolut_order_id,
+        revolut_order_token: raw.revolut_order_token,
+        amount: fromMoneyDTO(raw.amount),
+        payment_method: raw.payment_method,
+        status: raw.status,
+      },
+    };
+  }
+  return { kind: "placed", order: fromRawPlacedOrder(raw as RawPlacedOrder) };
+}
+
+// getOrderPaymentStatus is the public post-payment poll (works for guests):
+// the confirmation page calls it until the order flips to paid / payment_failed.
+export async function getOrderPaymentStatus(orderNumber: string): Promise<{ order_number: string; status: string }> {
+  return apiFetch<{ order_number: string; status: string }>(
+    `/api/v1/checkout/orders/${encodeURIComponent(orderNumber)}/status`,
+    { auth: false },
+  );
 }

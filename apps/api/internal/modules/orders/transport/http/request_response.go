@@ -43,6 +43,34 @@ type orderPaymentResponse struct {
 	ProviderReference string        `json:"provider_reference,omitempty"`
 	Status            string        `json:"status"`
 	Amount            moneyResponse `json:"amount"`
+	Captured          moneyResponse `json:"captured"`
+	Refunded          moneyResponse `json:"refunded"`
+}
+
+type paymentTransactionResponse struct {
+	ID                string        `json:"id"`
+	Type              string        `json:"type"`
+	Status            string        `json:"status,omitempty"`
+	Provider          string        `json:"provider"`
+	ProviderReference string        `json:"provider_reference,omitempty"`
+	Amount            moneyResponse `json:"amount"`
+	CreatedAt         string        `json:"created_at"`
+}
+
+func toPaymentTransactionResponses(txns []domain.PaymentTransaction) []paymentTransactionResponse {
+	resp := make([]paymentTransactionResponse, 0, len(txns))
+	for _, t := range txns {
+		resp = append(resp, paymentTransactionResponse{
+			ID:                t.ID.String(),
+			Type:              t.Type,
+			Status:            t.Status,
+			Provider:          t.Provider,
+			ProviderReference: t.ProviderReference,
+			Amount:            moneyResponse{AmountMinor: t.Amount.AmountMinor, Currency: t.Amount.Currency},
+			CreatedAt:         t.CreatedAt.Format(timeFormat),
+		})
+	}
+	return resp
 }
 
 type orderResponse struct {
@@ -96,6 +124,8 @@ func toOrderResponse(o domain.Order) orderResponse {
 			ProviderReference: o.Payment.ProviderReference,
 			Status:            o.Payment.Status,
 			Amount:            moneyResponse{AmountMinor: o.Payment.Amount.AmountMinor, Currency: o.Payment.Amount.Currency},
+			Captured:          moneyResponse{AmountMinor: o.Payment.CapturedMinor, Currency: o.Payment.Amount.Currency},
+			Refunded:          moneyResponse{AmountMinor: o.Payment.RefundedMinor, Currency: o.Payment.Amount.Currency},
 		}
 	}
 	if o.Carrier != nil {

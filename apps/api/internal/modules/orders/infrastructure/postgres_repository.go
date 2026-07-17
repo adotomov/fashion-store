@@ -32,6 +32,10 @@ const orderColumns = `
 	discount_code, discount_amount_minor, discount_amount_currency,
 	created_at, updated_at`
 
+const paymentColumns = `
+	id, order_id, provider, COALESCE(provider_order_id, ''), COALESCE(provider_reference, ''),
+	status, amount_minor, currency, captured_minor, refunded_minor, created_at`
+
 func (r *PostgresRepository) ListByUser(ctx context.Context, userID uuid.UUID) ([]domain.Order, error) {
 	rows, err := r.db.Query(ctx, `SELECT `+orderColumns+` FROM orders WHERE user_id = $1 ORDER BY placed_at DESC`, userID)
 	if err != nil {
@@ -108,6 +112,18 @@ func (r *PostgresRepository) FindByID(ctx context.Context, id uuid.UUID) (*domai
 	return order, nil
 }
 
+func (r *PostgresRepository) FindByOrderNumber(ctx context.Context, orderNumber string) (*domain.Order, error) {
+	row := r.db.QueryRow(ctx, `SELECT `+orderColumns+` FROM orders WHERE order_number = $1`, orderNumber)
+	order, err := scanOrder(row)
+	if err != nil {
+		return nil, err
+	}
+	if err := r.attachItemsAndPayment(ctx, order); err != nil {
+		return nil, err
+	}
+	return order, nil
+}
+
 func (r *PostgresRepository) attachItemsAndPayment(ctx context.Context, order *domain.Order) error {
 	items, err := r.itemsFor(ctx, order.ID)
 	if err != nil {
@@ -169,11 +185,15 @@ func (r *PostgresRepository) Create(ctx context.Context, order domain.Order) (*d
 	}
 
 	if order.Payment != nil {
+		var providerOrderID *string
+		if order.Payment.ProviderOrderID != "" {
+			providerOrderID = &order.Payment.ProviderOrderID
+		}
 		paymentRow := tx.QueryRow(ctx, `
-			INSERT INTO order_payments (order_id, provider, provider_reference, status, amount_minor, currency)
-			VALUES ($1, $2, $3, $4, $5, $6)
-			RETURNING id, order_id, provider, COALESCE(provider_reference, ''), status, amount_minor, currency, created_at`,
-			created.ID, order.Payment.Provider, order.Payment.ProviderReference, order.Payment.Status,
+			INSERT INTO order_payments (order_id, provider, provider_order_id, provider_reference, status, amount_minor, currency)
+			VALUES ($1, $2, $3, $4, $5, $6, $7)
+			RETURNING `+paymentColumns,
+			created.ID, order.Payment.Provider, providerOrderID, order.Payment.ProviderReference, order.Payment.Status,
 			order.Payment.Amount.AmountMinor, order.Payment.Amount.Currency)
 
 		payment, err := scanOrderPayment(paymentRow)
@@ -181,6 +201,15 @@ func (r *PostgresRepository) Create(ctx context.Context, order domain.Order) (*d
 			return nil, err
 		}
 		created.Payment = payment
+
+		// Ledger: opening a payment (Revolut order created) is the first audit
+		// entry. Only card orders carry a Payment; pay-on-delivery orders don't.
+		if err := insertPaymentTransaction(ctx, tx, created.ID, order.Payment.Provider,
+			order.Payment.ProviderOrderID, order.Payment.ProviderReference,
+			domain.PaymentTxnInitiated, order.Payment.Status,
+			order.Payment.Amount.AmountMinor, order.Payment.Amount.Currency); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -285,8 +314,7 @@ func (r *PostgresRepository) itemsFor(ctx context.Context, orderID uuid.UUID) ([
 }
 
 func (r *PostgresRepository) paymentFor(ctx context.Context, orderID uuid.UUID) (*domain.OrderPayment, error) {
-	row := r.db.QueryRow(ctx, `
-		SELECT id, order_id, provider, COALESCE(provider_reference, ''), status, amount_minor, currency, created_at
+	row := r.db.QueryRow(ctx, `SELECT `+paymentColumns+`
 		FROM order_payments WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1`, orderID)
 	payment, err := scanOrderPayment(row)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -296,6 +324,236 @@ func (r *PostgresRepository) paymentFor(ctx context.Context, orderID uuid.UUID) 
 		return nil, err
 	}
 	return payment, nil
+}
+
+// FindByProviderOrderID resolves the order behind a Revolut order id via its
+// payment row, then loads the full order.
+func (r *PostgresRepository) FindByProviderOrderID(ctx context.Context, providerOrderID string) (*domain.Order, error) {
+	var orderID uuid.UUID
+	err := r.db.QueryRow(ctx,
+		`SELECT order_id FROM order_payments WHERE provider_order_id = $1 ORDER BY created_at DESC LIMIT 1`,
+		providerOrderID).Scan(&orderID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, domain.ErrOrderNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return r.FindByID(ctx, orderID)
+}
+
+// MarkPaid settles a card order: only a pending_payment order transitions, so
+// a duplicated/late webhook is a harmless no-op that appends no ledger row.
+func (r *PostgresRepository) MarkPaid(ctx context.Context, orderID uuid.UUID, providerReference string, capturedMinor int64) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var settled uuid.UUID
+	err = tx.QueryRow(ctx,
+		`UPDATE orders SET status = 'paid', updated_at = NOW() WHERE id = $1 AND status = 'pending_payment' RETURNING id`,
+		orderID).Scan(&settled)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil // already settled — no-op, no duplicate ledger entry
+	}
+	if err != nil {
+		return err
+	}
+
+	var provider, providerOrderID, currency string
+	if err := tx.QueryRow(ctx,
+		`UPDATE order_payments SET status = 'succeeded', provider_reference = $2, captured_minor = $3, updated_at = NOW()
+		 WHERE order_id = $1 RETURNING provider, COALESCE(provider_order_id, ''), currency`,
+		orderID, providerReference, capturedMinor).Scan(&provider, &providerOrderID, &currency); err != nil {
+		return err
+	}
+	if err := insertPaymentTransaction(ctx, tx, orderID, provider, providerOrderID, providerReference,
+		domain.PaymentTxnCaptured, "succeeded", capturedMinor, currency); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+// MarkPaymentFailed moves a pending_payment order to payment_failed. Idempotent
+// like MarkPaid: no transition means no ledger row.
+func (r *PostgresRepository) MarkPaymentFailed(ctx context.Context, orderID uuid.UUID, reason string) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var failed uuid.UUID
+	err = tx.QueryRow(ctx,
+		`UPDATE orders SET status = 'payment_failed', updated_at = NOW() WHERE id = $1 AND status = 'pending_payment' RETURNING id`,
+		orderID).Scan(&failed)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	var provider, providerOrderID, currency string
+	var amountMinor int64
+	if err := tx.QueryRow(ctx,
+		`UPDATE order_payments SET status = 'failed', updated_at = NOW()
+		 WHERE order_id = $1 RETURNING provider, COALESCE(provider_order_id, ''), amount_minor, currency`,
+		orderID).Scan(&provider, &providerOrderID, &amountMinor, &currency); err != nil {
+		return err
+	}
+	// The failure reason (e.g. "ORDER_CANCELLED", "abandoned") is the most
+	// useful audit descriptor here; the full webhook payload is also retained in
+	// payment_webhook_events. A failed payment has no settlement reference.
+	failStatus := reason
+	if failStatus == "" {
+		failStatus = "failed"
+	}
+	if err := insertPaymentTransaction(ctx, tx, orderID, provider, providerOrderID, "",
+		domain.PaymentTxnFailed, failStatus, amountMinor, currency); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *PostgresRepository) GetOrderPaymentContext(ctx context.Context, orderID uuid.UUID) (application.OrderPaymentContext, error) {
+	var pc application.OrderPaymentContext
+	err := r.db.QueryRow(ctx, `
+		SELECT o.status, COALESCE(p.provider_order_id, ''), COALESCE(p.captured_minor, 0), COALESCE(p.refunded_minor, 0), o.total_currency
+		FROM orders o
+		LEFT JOIN order_payments p ON p.order_id = o.id
+		WHERE o.id = $1
+		ORDER BY p.created_at DESC NULLS LAST
+		LIMIT 1`, orderID,
+	).Scan(&pc.Status, &pc.ProviderOrderID, &pc.CapturedMinor, &pc.RefundedMinor, &pc.Currency)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return application.OrderPaymentContext{}, domain.ErrOrderNotFound
+	}
+	if err != nil {
+		return application.OrderPaymentContext{}, err
+	}
+	return pc, nil
+}
+
+// RecordRefund inserts a refund and, when it's completed, advances the
+// payment's refunded total and the order's rolled-up status — one transaction.
+func (r *PostgresRepository) RecordRefund(ctx context.Context, input application.RecordRefundInput) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	var providerRefundID *string
+	if input.ProviderRefundID != "" {
+		providerRefundID = &input.ProviderRefundID
+	}
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO order_refunds (order_id, provider_refund_id, amount_minor, currency, reason, state, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		input.OrderID, providerRefundID, input.AmountMinor, input.Currency, nullifyEmpty(input.Reason), input.State, input.CreatedBy,
+	); err != nil {
+		return err
+	}
+
+	// Ledger: record the refund event. provider comes from the order's payment
+	// row so the entry ties back to the same Revolut order as the capture.
+	var provider, providerOrderID string
+	if err := tx.QueryRow(ctx,
+		`SELECT provider, COALESCE(provider_order_id, '') FROM order_payments WHERE order_id = $1 ORDER BY created_at DESC LIMIT 1`,
+		input.OrderID).Scan(&provider, &providerOrderID); err != nil {
+		return err
+	}
+	if err := insertPaymentTransaction(ctx, tx, input.OrderID, provider, providerOrderID, input.ProviderRefundID,
+		domain.PaymentTxnRefunded, input.State, input.AmountMinor, input.Currency); err != nil {
+		return err
+	}
+
+	if input.State == "completed" {
+		if _, err := tx.Exec(ctx,
+			`UPDATE order_payments SET refunded_minor = refunded_minor + $2, updated_at = NOW() WHERE order_id = $1`,
+			input.OrderID, input.AmountMinor); err != nil {
+			return err
+		}
+		if input.OrderStatus != "" {
+			if _, err := tx.Exec(ctx,
+				`UPDATE orders SET status = $2, updated_at = NOW() WHERE id = $1`,
+				input.OrderID, input.OrderStatus); err != nil {
+				return err
+			}
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func nullifyEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+// insertPaymentTransaction appends one immutable row to the payment audit
+// ledger. Always called with the enclosing tx so the entry commits atomically
+// with the state change that produced it.
+func insertPaymentTransaction(ctx context.Context, tx pgx.Tx, orderID uuid.UUID, provider, providerOrderID, providerReference, txType, status string, amountMinor int64, currency string) error {
+	_, err := tx.Exec(ctx, `
+		INSERT INTO payment_transactions (order_id, provider, provider_order_id, provider_reference, type, status, amount_minor, currency)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		orderID, provider, nullifyEmpty(providerOrderID), nullifyEmpty(providerReference), txType, nullifyEmpty(status), amountMinor, currency)
+	return err
+}
+
+// ListPaymentTransactions returns an order's payment audit trail, oldest first.
+func (r *PostgresRepository) ListPaymentTransactions(ctx context.Context, orderID uuid.UUID) ([]domain.PaymentTransaction, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, order_id, provider, COALESCE(provider_order_id, ''), COALESCE(provider_reference, ''),
+		       type, COALESCE(status, ''), amount_minor, currency, created_at
+		FROM payment_transactions WHERE order_id = $1 ORDER BY created_at`, orderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	txns := []domain.PaymentTransaction{}
+	for rows.Next() {
+		var t domain.PaymentTransaction
+		var amount int64
+		var currency string
+		if err := rows.Scan(&t.ID, &t.OrderID, &t.Provider, &t.ProviderOrderID, &t.ProviderReference,
+			&t.Type, &t.Status, &amount, &currency, &t.CreatedAt); err != nil {
+			return nil, err
+		}
+		t.Amount = money.Money{AmountMinor: amount, Currency: currency}
+		txns = append(txns, t)
+	}
+	return txns, rows.Err()
+}
+
+func (r *PostgresRepository) ListPendingPaymentOlderThan(ctx context.Context, cutoff time.Time) ([]application.PendingPaymentRef, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT o.id, p.provider_order_id
+		FROM orders o
+		JOIN order_payments p ON p.order_id = o.id
+		WHERE o.status = 'pending_payment'
+		  AND p.provider_order_id IS NOT NULL
+		  AND o.created_at < $1`, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	refs := []application.PendingPaymentRef{}
+	for rows.Next() {
+		var ref application.PendingPaymentRef
+		if err := rows.Scan(&ref.OrderID, &ref.ProviderOrderID); err != nil {
+			return nil, err
+		}
+		refs = append(refs, ref)
+	}
+	return refs, rows.Err()
 }
 
 func (r *PostgresRepository) Stats(ctx context.Context, since time.Time) (application.OrderStats, error) {
@@ -481,7 +739,8 @@ func scanOrderPayment(row pgx.Row) (*domain.OrderPayment, error) {
 	var p domain.OrderPayment
 	var amount int64
 	var currency string
-	if err := row.Scan(&p.ID, &p.OrderID, &p.Provider, &p.ProviderReference, &p.Status, &amount, &currency, &p.CreatedAt); err != nil {
+	if err := row.Scan(&p.ID, &p.OrderID, &p.Provider, &p.ProviderOrderID, &p.ProviderReference,
+		&p.Status, &amount, &currency, &p.CapturedMinor, &p.RefundedMinor, &p.CreatedAt); err != nil {
 		return nil, err
 	}
 	p.Amount = money.Money{AmountMinor: amount, Currency: currency}

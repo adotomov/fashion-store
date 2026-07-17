@@ -255,6 +255,101 @@ func (a *checkoutOrderGatewayAdapter) SetShipmentInfo(ctx context.Context, order
 	return err
 }
 
+func (a *checkoutOrderGatewayAdapter) FindByProviderOrderID(ctx context.Context, providerOrderID string) (checkoutapplication.OrderForFinalize, error) {
+	order, err := a.orders.FindByProviderOrderID(ctx, providerOrderID)
+	if err != nil {
+		if errors.Is(err, ordersdomain.ErrOrderNotFound) {
+			return checkoutapplication.OrderForFinalize{}, checkoutdomain.ErrOrderNotFound
+		}
+		return checkoutapplication.OrderForFinalize{}, err
+	}
+	var officeID string
+	if order.DeliveryOfficeID != nil {
+		officeID = *order.DeliveryOfficeID
+	}
+	return checkoutapplication.OrderForFinalize{
+		ID:               order.ID,
+		OrderNumber:      order.OrderNumber,
+		Status:           string(order.Status),
+		UserID:           order.UserID,
+		ReservationID:    order.ReservationID,
+		DeliveryMethod:   order.DeliveryMethod,
+		DeliveryOfficeID: officeID,
+		PaymentMethod:    order.PaymentMethod,
+		ContactName:      order.ContactName,
+		ContactEmail:     order.ContactEmail,
+		ContactPhone:     order.ContactPhone,
+		ShippingAddress: checkoutapplication.OrderAddress{
+			RecipientName: order.ShippingAddress.RecipientName, Phone: order.ShippingAddress.Phone,
+			Line1: order.ShippingAddress.Line1, Line2: order.ShippingAddress.Line2,
+			City: order.ShippingAddress.City, Region: order.ShippingAddress.Region,
+			PostalCode: order.ShippingAddress.PostalCode, CountryCode: order.ShippingAddress.CountryCode,
+		},
+		Total: order.Total,
+	}, nil
+}
+
+func (a *checkoutOrderGatewayAdapter) MarkPaid(ctx context.Context, orderID uuid.UUID, providerReference string, capturedMinor int64) error {
+	return a.orders.MarkPaid(ctx, orderID, providerReference, capturedMinor)
+}
+
+func (a *checkoutOrderGatewayAdapter) MarkPaymentFailed(ctx context.Context, orderID uuid.UUID, reason string) error {
+	return a.orders.MarkPaymentFailed(ctx, orderID, reason)
+}
+
+func (a *checkoutOrderGatewayAdapter) GetPaymentContext(ctx context.Context, orderID uuid.UUID) (checkoutapplication.OrderPaymentContext, error) {
+	pc, err := a.orders.GetOrderPaymentContext(ctx, orderID)
+	if err != nil {
+		if errors.Is(err, ordersdomain.ErrOrderNotFound) {
+			return checkoutapplication.OrderPaymentContext{}, checkoutdomain.ErrOrderNotFound
+		}
+		return checkoutapplication.OrderPaymentContext{}, err
+	}
+	return checkoutapplication.OrderPaymentContext{
+		OrderStatus:     pc.Status,
+		ProviderOrderID: pc.ProviderOrderID,
+		CapturedMinor:   pc.CapturedMinor,
+		RefundedMinor:   pc.RefundedMinor,
+		Currency:        pc.Currency,
+	}, nil
+}
+
+func (a *checkoutOrderGatewayAdapter) RecordRefund(ctx context.Context, input checkoutapplication.RecordRefundInput) error {
+	return a.orders.RecordRefund(ctx, ordersapplication.RecordRefundInput{
+		OrderID:          input.OrderID,
+		ProviderRefundID: input.ProviderRefundID,
+		AmountMinor:      input.Amount.AmountMinor,
+		Currency:         input.Amount.Currency,
+		Reason:           input.Reason,
+		State:            input.State,
+		CreatedBy:        input.CreatedBy,
+		OrderStatus:      input.OrderStatus,
+	})
+}
+
+func (a *checkoutOrderGatewayAdapter) GetStatusByNumber(ctx context.Context, orderNumber string) (string, error) {
+	order, err := a.orders.FindByOrderNumber(ctx, orderNumber)
+	if err != nil {
+		if errors.Is(err, ordersdomain.ErrOrderNotFound) {
+			return "", checkoutdomain.ErrOrderNotFound
+		}
+		return "", err
+	}
+	return string(order.Status), nil
+}
+
+func (a *checkoutOrderGatewayAdapter) ListPendingPaymentOlderThan(ctx context.Context, cutoff time.Time) ([]checkoutapplication.PendingPaymentRef, error) {
+	refs, err := a.orders.ListPendingPaymentOlderThan(ctx, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]checkoutapplication.PendingPaymentRef, 0, len(refs))
+	for _, ref := range refs {
+		out = append(out, checkoutapplication.PendingPaymentRef{OrderID: ref.OrderID, ProviderOrderID: ref.ProviderOrderID})
+	}
+	return out, nil
+}
+
 // checkoutFulfillmentGatewayAdapter implements checkout's FulfillmentGateway
 // port on top of the fulfillment module's application service.
 type checkoutFulfillmentGatewayAdapter struct {
@@ -469,7 +564,7 @@ func (a *usersOrderCounterAdapter) CountOrdersByUser(ctx context.Context, userID
 // registrars, plus the fulfillment service so main.go can launch its
 // background tracking poller. Modules are added here as they are
 // implemented.
-func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.Service) {
+func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.Service, *checkoutapplication.Service) {
 	usersRepo := usersinfra.NewPostgresRepository(a.DB)
 
 	identityRepo := authinfra.NewPostgresIdentityRepository(a.DB)
@@ -602,12 +697,25 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 	checkoutInventoryGateway := &checkoutInventoryGatewayAdapter{inventory: inventoryService}
 	checkoutUserGateway := &checkoutUserGatewayAdapter{users: usersService}
 	checkoutOrderGateway := &checkoutOrderGatewayAdapter{orders: ordersService}
-	checkoutPaymentGateway := checkoutinfra.NewMockRevolutGateway()
+	// Real Revolut client when an API key is configured; otherwise the mock
+	// gateway keeps local/devbox checkout working without a merchant account.
+	var checkoutPaymentGateway checkoutapplication.PaymentGateway = checkoutinfra.NewMockRevolutGateway()
+	if a.Config.Payments.RevolutAPIKey != "" {
+		checkoutPaymentGateway = checkoutinfra.NewRevolutGateway(
+			a.Config.Payments.RevolutBaseURL(),
+			a.Config.Payments.RevolutAPIKey,
+			a.Config.Payments.RevolutAPIVersion,
+			a.Logger,
+		)
+	} else {
+		a.Logger.Warn("REVOLUT_API_KEY not set — using mock Revolut gateway; no real card payments will be taken")
+	}
 	checkoutFulfillmentGateway := &checkoutFulfillmentGatewayAdapter{fulfillment: fulfillmentService}
 	checkoutDiscountGateway := &checkoutDiscountGatewayAdapter{promotions: promotionsService}
-	checkoutService := checkoutapplication.NewService(checkoutCartGateway, checkoutInventoryGateway, checkoutUserGateway, checkoutOrderGateway, checkoutPaymentGateway, checkoutFulfillmentGateway, checkoutDiscountGateway, deferredInvoices, a.Logger)
-	checkoutHandler := checkouthttp.NewHandler(checkoutService)
-	checkoutModule := checkouthttp.NewModule(checkoutHandler, authhttp.OptionalAuth(authService))
+	checkoutWebhookStore := checkoutinfra.NewPostgresWebhookEventStore(a.DB)
+	checkoutService := checkoutapplication.NewService(checkoutCartGateway, checkoutInventoryGateway, checkoutUserGateway, checkoutOrderGateway, checkoutPaymentGateway, checkoutFulfillmentGateway, checkoutDiscountGateway, deferredInvoices, checkoutWebhookStore, a.Logger)
+	checkoutHandler := checkouthttp.NewHandler(checkoutService, a.Config.Payments.RevolutWebhookSecret)
+	checkoutModule := checkouthttp.NewModule(checkoutHandler, authhttp.OptionalAuth(authService), requireAdmin)
 
 	wishlistRepo := wishlistinfra.NewPostgresRepository(a.DB)
 	wishlistService := wishlistapplication.NewService(wishlistRepo)
@@ -633,7 +741,7 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 		i18nStorefrontModule,
 		wishlistModule,
 		invoicingModule,
-	}, fulfillmentService
+	}, fulfillmentService, checkoutService
 }
 
 // defaultUIStrings seeds the English baseline for the static-text

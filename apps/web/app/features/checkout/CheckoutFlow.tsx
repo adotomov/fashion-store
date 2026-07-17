@@ -8,18 +8,19 @@ import { Input } from "../../components/ui/Input";
 import { Select } from "../../components/ui/Select";
 import { Heading, Text } from "../../components/ui/Text";
 import {
-  type Card as CardInput,
   type CheckoutAddress,
   type Contact,
   type DeliveryMethod,
   type DeliveryMethodCode,
   type DiscountCodeValidation,
+  type PaymentInitiation,
   type PaymentMethodCode,
   type PlacedOrder,
   listDeliveryMethods,
   placeOrder,
   validateDiscountCode,
 } from "../../lib/api/checkout";
+import { RevolutPaymentStep } from "./RevolutPaymentStep";
 import { type Office, listOffices } from "../../lib/api/admin-logistics";
 import { type Address, listAddresses } from "../../lib/api/users";
 import { COUNTRIES } from "../../lib/data/countries";
@@ -91,7 +92,9 @@ export function CheckoutFlow() {
   const [officesError, setOfficesError] = useState<string | null>(null);
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodCode | null>(null);
-  const [card, setCard] = useState<CardInput>({ number: "", exp_month: 1, exp_year: new Date().getFullYear(), cvv: "" });
+  // Set once an online-card order is created and awaiting widget payment.
+  const [paymentInitiation, setPaymentInitiation] = useState<PaymentInitiation | null>(null);
+  const [pendingSnapshot, setPendingSnapshot] = useState<PlacedOrder | null>(null);
 
   const [discountCodeInput, setDiscountCodeInput] = useState("");
   const [appliedDiscount, setAppliedDiscount] = useState<DiscountCodeValidation | null>(null);
@@ -211,33 +214,74 @@ export function CheckoutFlow() {
     return { ...address, recipient_name: contact.full_name, phone: contact.phone };
   }
 
+  // Build the confirmation snapshot for a card order from the current cart, so
+  // the confirmation screen can render even though the cart is cleared once the
+  // (pending_payment) order is created.
+  function buildPendingSnapshot(initiation: PaymentInitiation): PlacedOrder {
+    return {
+      id: initiation.order_id,
+      order_number: initiation.order_number,
+      status: "pending_payment",
+      total: grandTotal,
+      delivery_method: deliveryMethod as DeliveryMethodCode,
+      delivery_fee: selectedDeliveryMethod?.fee ?? { amount: 0, currency: grandTotal.currency },
+      payment_method: "card_online",
+      placed_at: new Date().toISOString(),
+      discount_code: appliedDiscount?.code,
+      discount_amount: appliedDiscount ? { amount: discountAmount, currency: subtotal.currency } : undefined,
+      items: items.map((item) => ({
+        product_name: item.product_name,
+        variant_label: item.variant_label,
+        quantity: item.quantity,
+        unit_price: item.unit_price,
+      })),
+    };
+  }
+
   async function submitOrder() {
     if (!deliveryMethod || !paymentMethod) return;
     setIsPlacing(true);
     setPlaceError(null);
     try {
-      const order = await placeOrder({
+      const result = await placeOrder({
         contact,
         shipping_address: withRecipient(shippingAddress),
         billing_address: withRecipient(billingSameAsShipping ? shippingAddress : billingAddress),
         delivery_method: deliveryMethod,
         delivery_office_id: deliveryMethod === "easybox" ? officeId : undefined,
         payment_method: paymentMethod,
-        card: paymentMethod === "card_online" ? card : undefined,
         discount_code: appliedDiscount?.code,
       });
-      setPlacedOrder(order);
-      setStep("confirmation");
-      await refreshCart();
+      if (result.kind === "payment_required") {
+        // Card order created; render the Revolut widget to collect payment.
+        setPendingSnapshot(buildPendingSnapshot(result.initiation));
+        setPaymentInitiation(result.initiation);
+        await refreshCart();
+      } else {
+        setPlacedOrder(result.order);
+        setStep("confirmation");
+        await refreshCart();
+      }
     } catch {
       setPlaceError(
         paymentMethod === "card_online"
-          ? t("checkout.payment_failed_error", "Payment could not be processed. Please check your card details and try again.")
+          ? t("checkout.start_payment_error", "Could not start the payment. Please try again.")
           : t("checkout.place_order_error", "Could not place your order. Please try again."),
       );
     } finally {
       setIsPlacing(false);
     }
+  }
+
+  function handleCardPaid() {
+    setPlacedOrder(pendingSnapshot ? { ...pendingSnapshot, status: "paid" } : null);
+    setPaymentInitiation(null);
+    setStep("confirmation");
+  }
+
+  function handleCardFailed(message: string) {
+    setPaymentInitiation(null);
+    setPlaceError(message);
   }
 
   if (items.length === 0 && !placedOrder) {
@@ -421,75 +465,76 @@ export function CheckoutFlow() {
 
         {step === "payment" && (
           <Card className="p-6">
-            <Heading as="h2" size="sm">
-              {t("checkout.payment_method", "Payment Method")}
-            </Heading>
-            <div className="mt-4 flex flex-col gap-3">
-              {allowedPaymentMethods.map((method) => (
-                <SelectableOption
-                  key={method}
-                  selected={paymentMethod === method}
-                  onClick={() => setPaymentMethod(method)}
-                  title={paymentMethodLabels[method]}
-                  description={paymentMethodDescriptions[method]}
-                />
-              ))}
-            </div>
+            {paymentInitiation ? (
+              <>
+                <Heading as="h2" size="sm">
+                  {t("checkout.pay_by_card", "Pay by Card")}
+                </Heading>
+                <Text size="sm" tone="muted" className="mt-1">
+                  {t("checkout.pay_amount_prompt", "Enter your card details, or use Apple Pay / Google Pay.")}
+                </Text>
+                <div className="mt-6">
+                  <RevolutPaymentStep
+                    token={paymentInitiation.revolut_order_token}
+                    orderNumber={paymentInitiation.order_number}
+                    cardHolderName={contact.full_name}
+                    email={contact.email}
+                    payLabel={`${t("checkout.pay", "Pay")} ${formatMoneyDual(grandTotal, storeLocale)}`}
+                    onPaid={handleCardPaid}
+                    onFailed={handleCardFailed}
+                  />
+                </div>
+                <div className="mt-4">
+                  <Button variant="ghost" size="sm" onClick={() => setPaymentInitiation(null)}>
+                    {t("checkout.use_different_method", "Use a different payment method")}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <Heading as="h2" size="sm">
+                  {t("checkout.payment_method", "Payment Method")}
+                </Heading>
+                <div className="mt-4 flex flex-col gap-3">
+                  {allowedPaymentMethods.map((method) => (
+                    <SelectableOption
+                      key={method}
+                      selected={paymentMethod === method}
+                      onClick={() => setPaymentMethod(method)}
+                      title={paymentMethodLabels[method]}
+                      description={paymentMethodDescriptions[method]}
+                    />
+                  ))}
+                </div>
 
-            {paymentMethod === "card_online" && (
-              <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <FormField label={t("checkout.card_number", "Card number")} htmlFor="card-number" className="sm:col-span-2" hint={t("checkout.card_mock_hint", "Mock payment — any number works, except one ending in 0000.")}>
-                  <Input
-                    id="card-number"
-                    value={card.number}
-                    onChange={(e) => setCard((c) => ({ ...c, number: e.target.value }))}
-                    placeholder="4242 4242 4242 4242"
-                  />
-                </FormField>
-                <FormField label={t("common.expiry_month", "Expiry month")} htmlFor="card-exp-month">
-                  <Input
-                    id="card-exp-month"
-                    type="number"
-                    min="1"
-                    max="12"
-                    value={card.exp_month}
-                    onChange={(e) => setCard((c) => ({ ...c, exp_month: Number(e.target.value) }))}
-                  />
-                </FormField>
-                <FormField label={t("common.expiry_year", "Expiry year")} htmlFor="card-exp-year">
-                  <Input
-                    id="card-exp-year"
-                    type="number"
-                    value={card.exp_year}
-                    onChange={(e) => setCard((c) => ({ ...c, exp_year: Number(e.target.value) }))}
-                  />
-                </FormField>
-                <FormField label={t("checkout.cvv", "CVV")} htmlFor="card-cvv">
-                  <Input id="card-cvv" value={card.cvv} onChange={(e) => setCard((c) => ({ ...c, cvv: e.target.value }))} />
-                </FormField>
-              </div>
+                {paymentMethod === "card_online" && (
+                  <Text size="sm" tone="muted" className="mt-4">
+                    {t("checkout.card_online_next_step", "You'll enter your card, or use Apple Pay / Google Pay, on the next step.")}
+                  </Text>
+                )}
+
+                {placeError && (
+                  <Text size="sm" tone="danger" className="mt-4">
+                    {placeError}
+                  </Text>
+                )}
+
+                <div className="mt-6 flex justify-between">
+                  <Button variant="outline" onClick={() => setStep("delivery")} disabled={isPlacing}>
+                    {t("common.back", "Back")}
+                  </Button>
+                  {paymentMethod === "card_online" ? (
+                    <Button variant="primary" onClick={submitOrder} disabled={isPlacing}>
+                      {isPlacing ? t("checkout.starting_payment", "Starting payment…") : t("checkout.continue_to_pay", "Continue to Payment")}
+                    </Button>
+                  ) : (
+                    <Button variant="primary" disabled={!paymentMethod} onClick={() => setStep("confirmation")}>
+                      {t("checkout.review_order", "Review Order")}
+                    </Button>
+                  )}
+                </div>
+              </>
             )}
-
-            {placeError && (
-              <Text size="sm" tone="danger" className="mt-4">
-                {placeError}
-              </Text>
-            )}
-
-            <div className="mt-6 flex justify-between">
-              <Button variant="outline" onClick={() => setStep("delivery")} disabled={isPlacing}>
-                {t("common.back", "Back")}
-              </Button>
-              {paymentMethod === "card_online" ? (
-                <Button variant="primary" onClick={submitOrder} disabled={isPlacing || !card.number.trim()}>
-                  {isPlacing ? t("checkout.processing_payment", "Processing payment…") : `${t("checkout.pay", "Pay")} ${formatMoneyDual(grandTotal, storeLocale)}`}
-                </Button>
-              ) : (
-                <Button variant="primary" disabled={!paymentMethod} onClick={() => setStep("confirmation")}>
-                  {t("checkout.review_order", "Review Order")}
-                </Button>
-              )}
-            </div>
           </Card>
         )}
 

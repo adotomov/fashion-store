@@ -63,6 +63,19 @@ resource "google_dns_record_set" "api_dev_cname" {
   rrdatas      = ["ghs.googlehosted.com."]
 }
 
+# --- Google site verification (Search Console) ---
+# Required so the boutiqueverani@gmail.com account can create Cloud Run domain
+# mappings for dev.verani.bg / api.dev.verani.bg. Apex TXT record.
+
+resource "google_dns_record_set" "google_site_verification" {
+  project      = var.project_id
+  managed_zone = google_dns_managed_zone.root.name
+  name         = google_dns_managed_zone.root.dns_name
+  type         = "TXT"
+  ttl          = 300
+  rrdatas      = ["\"google-site-verification=CNKnHx-eSyIwKLglHqWzI85yrSdco7AUY-1qzbJEzXQ\""]
+}
+
 # --- Email: preserved from SuperHosting, must not break on cutover ---
 
 resource "google_dns_record_set" "mx" {

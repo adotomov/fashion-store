@@ -13,6 +13,13 @@ type RouteRegistrar interface {
 	RegisterRoutes(r chi.Router)
 }
 
+// RootRouteRegistrar is optionally implemented by a module that also needs to
+// mount routes at the router root, outside /api/v1 and its auth/CORS — e.g. a
+// payment-provider webhook authenticated by signature rather than a token.
+type RootRouteRegistrar interface {
+	RegisterRootRoutes(r chi.Router)
+}
+
 // maxRequestBodyBytes bounds request body size to prevent memory-exhaustion
 // DoS. Sits above the per-route media-upload cap (10 MiB) so uploads still work.
 const maxRequestBodyBytes = 16 << 20 // 16 MiB
@@ -33,6 +40,14 @@ func NewRouter(log *slog.Logger, corsOrigins []string, enableHSTS bool, registra
 
 	r.Get("/healthz", healthzHandler)
 	r.Get("/readyz", readyzHandler)
+
+	// Root-level routes (e.g. provider webhooks) mount before the versioned
+	// API, outside its auth.
+	for _, reg := range registrars {
+		if rr, ok := reg.(RootRouteRegistrar); ok {
+			rr.RegisterRootRoutes(r)
+		}
+	}
 
 	r.Route("/api/v1", func(api chi.Router) {
 		for _, reg := range registrars {

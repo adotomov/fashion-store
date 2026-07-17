@@ -18,8 +18,13 @@ WORKDIR /app
 # other environments override them via --build-arg at build time.
 ARG VITE_API_BASE_URL=http://api.api.localhost
 ARG VITE_GOOGLE_CLIENT_ID=673528779465-pajifaekv8l1odrbd8mpbglo351d7r15.apps.googleusercontent.com
+# Revolut checkout widget mode: "sandbox" (default, matches local devbox + dev)
+# or "prod". This is the ONLY Revolut value that ships to the browser — no
+# publishable key; the per-order token carries auth.
+ARG VITE_REVOLUT_ENV=sandbox
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
+ENV VITE_REVOLUT_ENV=$VITE_REVOLUT_ENV
 RUN npm run build
 
 FROM node:24-alpine

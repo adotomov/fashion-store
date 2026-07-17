@@ -16,6 +16,7 @@ import (
 	_ "time/tzdata"
 
 	"github.com/adotomov/fashion-store/apps/api/internal/app"
+	checkoutapplication "github.com/adotomov/fashion-store/apps/api/internal/modules/checkout/application"
 )
 
 const shutdownTimeout = 15 * time.Second
@@ -33,7 +34,7 @@ func main() {
 
 	log := bootstrapped.Logger
 
-	registrars, fulfillmentService := buildRegistrars(bootstrapped)
+	registrars, fulfillmentService, checkoutService := buildRegistrars(bootstrapped)
 
 	// Emit HSTS everywhere except local dev (served over plain HTTP).
 	enableHSTS := bootstrapped.Config.App.Env != "local"
@@ -41,6 +42,10 @@ func main() {
 	srv := app.NewServer(bootstrapped.Config.HTTP.Addr, router)
 
 	go fulfillmentService.Run(ctx, bootstrapped.Config.Fulfillment.PollInterval)
+
+	// Safety net for missed/lost payment webhooks: reconcile abandoned
+	// pending_payment card orders on an interval.
+	go checkoutService.RunPaymentSweeper(ctx, checkoutapplication.DefaultPaymentSweepInterval, checkoutapplication.DefaultAbandonedPaymentTTL)
 
 	go func() {
 		log.Info("starting api server", slog.String("addr", bootstrapped.Config.HTTP.Addr))
