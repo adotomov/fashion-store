@@ -13,7 +13,6 @@ const navItems: AccountNavItem[] = [
   { label: "Personal Info", href: "/account", icon: "profile" },
   { label: "Addresses", href: "/account/addresses", icon: "mapPin" },
   { label: "My Orders", href: "/account/orders", icon: "inventory" },
-  { label: "Payment Methods", href: "/account/payment-methods", icon: "payment" },
 ];
 
 export function AccountSidebar() {

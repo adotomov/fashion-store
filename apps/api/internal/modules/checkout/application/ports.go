@@ -33,11 +33,30 @@ type CartSnapshot struct {
 	Lines []CartLine
 }
 
-// CartGateway lets checkout read and clear the customer's cart without
-// depending on the cart module's domain/application packages directly.
+// CartReservation is a checkout-session stock hold recorded on the cart.
+type CartReservation struct {
+	ReservationID uuid.UUID
+	ExpiresAt     time.Time
+}
+
+// ExpiredCartReservation is an abandoned hold the sweeper should reclaim: the
+// owner (to clear the hold on the right cart) and the reservation to release.
+type ExpiredCartReservation struct {
+	Owner         CartOwner
+	ReservationID uuid.UUID
+}
+
+// CartGateway lets checkout read and clear the customer's cart — and manage the
+// checkout-session stock hold recorded on it — without depending on the cart
+// module's domain/application packages directly.
 type CartGateway interface {
 	GetCart(ctx context.Context, owner CartOwner) (CartSnapshot, error)
 	ClearCart(ctx context.Context, owner CartOwner) error
+	// GetReservation returns the cart's current hold, or nil when there's none.
+	GetReservation(ctx context.Context, owner CartOwner) (*CartReservation, error)
+	SetReservation(ctx context.Context, owner CartOwner, reservationID uuid.UUID, expiresAt time.Time) error
+	ClearReservation(ctx context.Context, owner CartOwner) error
+	ListExpiredReservations(ctx context.Context, cutoff time.Time) ([]ExpiredCartReservation, error)
 }
 
 type ReserveLine struct {
@@ -163,6 +182,11 @@ type OrderGateway interface {
 	// ListPendingPaymentOlderThan returns card orders still awaiting payment
 	// since before the cutoff — the abandoned-payment sweeper's work list.
 	ListPendingPaymentOlderThan(ctx context.Context, cutoff time.Time) ([]PendingPaymentRef, error)
+
+	// HasPendingPaymentForReservation reports whether a pending_payment order
+	// still references the reservation — the checkout-reservation sweeper's guard
+	// against reclaiming a hold under an in-flight card payment.
+	HasPendingPaymentForReservation(ctx context.Context, reservationID uuid.UUID) (bool, error)
 
 	// GetStatusByNumber returns just an order's status, keyed by its order
 	// number — powers the storefront's post-payment status poll for guests.

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 
 import { Button, buttonStyles } from "../../components/ui/Button";
@@ -19,8 +19,11 @@ import {
   cancelPayment,
   listDeliveryMethods,
   placeOrder,
+  releaseCheckoutSession,
+  reserveCheckoutSession,
   validateDiscountCode,
 } from "../../lib/api/checkout";
+import { ApiError } from "../../lib/api/client";
 import { RevolutPaymentStep } from "./RevolutPaymentStep";
 import { type Office, listOffices } from "../../lib/api/admin-logistics";
 import { type Address, listAddresses } from "../../lib/api/users";
@@ -106,11 +109,51 @@ export function CheckoutFlow() {
   const [placeError, setPlaceError] = useState<string | null>(null);
   const [placedOrder, setPlacedOrder] = useState<PlacedOrder | null>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
+  // Set when the checkout-session stock hold can't be acquired because the
+  // items are out of stock — blocks the whole flow with a clear message.
+  const [reserveOutOfStock, setReserveOutOfStock] = useState(false);
+
+  // Tracks whether we hold a checkout-session reservation, so the unmount
+  // cleanup can release it. Not released while an order is placed or a card
+  // payment is in flight (paymentInitiation) — then the hold is owned by the
+  // order/settlement, and the server sweeper is the safety net.
+  const holdActiveRef = useRef(false);
+  const orderInFlightRef = useRef(false);
+  orderInFlightRef.current = paymentInitiation !== null || placedOrder !== null;
 
   useEffect(() => {
     listDeliveryMethods()
       .then(setDeliveryMethods)
       .catch(() => setDeliveryMethods([]));
+  }, []);
+
+  // Reserve stock for the whole checkout the moment the shopper arrives with a
+  // non-empty cart — so a slow-filling shopper isn't beaten to the last unit at
+  // the payment step, and switching payment methods never re-touches stock. A
+  // second shopper for the same last unit is told out-of-stock here, up front.
+  useEffect(() => {
+    if (holdActiveRef.current || reserveOutOfStock) return;
+    if (!cart || (cart.items?.length ?? 0) === 0) return;
+    if (placedOrder || paymentInitiation) return;
+    holdActiveRef.current = true;
+    reserveCheckoutSession().catch((err) => {
+      holdActiveRef.current = false;
+      if (err instanceof ApiError && (err.status === 409 || err.code === "insufficient_stock")) {
+        setReserveOutOfStock(true);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cart]);
+
+  // Best-effort release of the hold if the shopper leaves checkout without
+  // completing (and no card payment is mid-flight); the server sweeper reclaims
+  // it otherwise.
+  useEffect(() => {
+    return () => {
+      if (holdActiveRef.current && !orderInFlightRef.current) {
+        void releaseCheckoutSession();
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -351,6 +394,24 @@ export function CheckoutFlow() {
         <Text tone="muted">{t("cart.empty", "Your cart is empty")}</Text>
         <Link to="/shop" className={buttonStyles({ variant: "primary" })}>
           {t("common.continue_shopping", "Continue Shopping")}
+        </Link>
+      </div>
+    );
+  }
+
+  // Couldn't hold the stock for checkout — one or more items are out of stock.
+  // Send the shopper back to the cart to remove them before trying again.
+  if (reserveOutOfStock && !placedOrder && !paymentInitiation) {
+    return (
+      <div className="flex flex-col items-center gap-4 py-16 text-center">
+        <Text tone="danger" className="font-medium">
+          {t("checkout.out_of_stock_title", "Some items are no longer in stock")}
+        </Text>
+        <Text size="sm" tone="muted">
+          {t("checkout.out_of_stock_desc", "We couldn't reserve everything in your cart. Please review and remove the out-of-stock items to continue.")}
+        </Text>
+        <Link to="/cart" className={buttonStyles({ variant: "primary" })}>
+          {t("checkout.back_to_cart", "Back to Cart")}
         </Link>
       </div>
     );
@@ -658,10 +719,17 @@ export function CheckoutFlow() {
         )}
       </div>
 
-      <Card className="h-fit p-6">
-        <Heading as="h2" size="sm">
-          {t("checkout.order_summary", "Order Summary")}
-        </Heading>
+      <div className="flex flex-col gap-6">
+        {/* Spacer matching the step indicator's height (single line of text-sm =
+            20px) so the summary drops to align with the step content rather than
+            the breadcrumbs. Fixed height (not a clone of StepIndicator, which
+            would wrap taller in this 320px column). Only on lg, where the two
+            columns sit side by side; collapses when the layout stacks. */}
+        <div aria-hidden className="hidden h-5 lg:block" />
+        <Card className="h-fit p-6">
+          <Heading as="h2" size="sm">
+            {t("checkout.order_summary", "Order Summary")}
+          </Heading>
         <ul className="mt-4 flex flex-col gap-3">
           {summaryLines.map((line) => (
             <li key={line.key} className="flex items-center justify-between text-sm">
@@ -754,7 +822,8 @@ export function CheckoutFlow() {
           <Text className="font-medium">{t("checkout.total", "Total")}</Text>
           <Text className="font-medium">{formatMoneyDual(summaryTotal, storeLocale)}</Text>
         </div>
-      </Card>
+        </Card>
+      </div>
     </div>
   );
 }

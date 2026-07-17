@@ -29,6 +29,15 @@ type Cart struct {
 	UpdatedAt  time.Time
 }
 
+// ExpiredReservation identifies an abandoned checkout hold: the cart owner it
+// belongs to (so the caller can clear the hold on the right cart) and the
+// inventory reservation to release. Returned by the abandonment sweeper.
+type ExpiredReservation struct {
+	UserID        *uuid.UUID
+	GuestToken    *uuid.UUID
+	ReservationID uuid.UUID
+}
+
 // CartItem is read enriched with current catalog/inventory data (price,
 // stock, product name/image) rather than snapshotting at add-time — unlike
 // an order line, a cart line should always reflect what the customer would

@@ -94,8 +94,42 @@ func (s *Service) RunPaymentSweeper(ctx context.Context, interval, ttl time.Dura
 			if err := s.SweepAbandonedCardPayments(ctx, ttl); err != nil {
 				s.logger.Error("payment sweep failed", "error", err)
 			}
+			if err := s.SweepExpiredCheckoutReservations(ctx); err != nil {
+				s.logger.Error("checkout reservation sweep failed", "error", err)
+			}
 		}
 	}
+}
+
+// SweepExpiredCheckoutReservations reclaims abandoned checkout holds: for each
+// cart whose reservation has passed its expiry, it releases the stock and clears
+// the hold columns. It skips a hold still referenced by a pending_payment order
+// (a card payment that may yet settle) so it never releases stock out from under
+// an in-flight payment; the abandoned-payment sweeper deals with that order
+// first, after which a later tick reclaims the hold.
+func (s *Service) SweepExpiredCheckoutReservations(ctx context.Context) error {
+	expired, err := s.cart.ListExpiredReservations(ctx, time.Now())
+	if err != nil {
+		return err
+	}
+	for _, e := range expired {
+		pending, err := s.orders.HasPendingPaymentForReservation(ctx, e.ReservationID)
+		if err != nil {
+			s.logger.Error("reservation sweep: pending-payment check failed", "error", err, "reservation_id", e.ReservationID)
+			continue
+		}
+		if pending {
+			continue // an in-flight card payment still owns this hold
+		}
+		if err := s.inventory.Release(ctx, e.ReservationID, e.Owner.UserID); err != nil {
+			s.logger.Error("reservation sweep: release failed", "error", err, "reservation_id", e.ReservationID)
+			continue
+		}
+		if err := s.cart.ClearReservation(ctx, e.Owner); err != nil {
+			s.logger.Error("reservation sweep: clear failed", "error", err, "reservation_id", e.ReservationID)
+		}
+	}
+	return nil
 }
 
 // SweepAbandonedCardPayments finds pending_payment orders older than ttl and

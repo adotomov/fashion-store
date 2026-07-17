@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -118,6 +119,47 @@ func (s *Service) ClearCart(ctx context.Context, owner CartOwner) error {
 		return err
 	}
 	return s.repo.ClearItems(ctx, cart.ID)
+}
+
+// SetReservation records the checkout-session stock hold on the owner's cart,
+// creating the cart if needed (a hold is only ever set once the cart has items).
+func (s *Service) SetReservation(ctx context.Context, owner CartOwner, reservationID uuid.UUID, expiresAt time.Time) error {
+	cart, err := s.resolveOrCreateCart(ctx, owner)
+	if err != nil {
+		return err
+	}
+	return s.repo.SetReservation(ctx, cart.ID, reservationID, expiresAt)
+}
+
+// GetReservation returns the owner's current checkout hold, or (nil, nil) when
+// there's no cart or no hold.
+func (s *Service) GetReservation(ctx context.Context, owner CartOwner) (*uuid.UUID, *time.Time, error) {
+	cart, err := s.findCart(ctx, owner)
+	if errors.Is(err, domain.ErrCartNotFound) {
+		return nil, nil, nil
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	return s.repo.GetReservation(ctx, cart.ID)
+}
+
+// ClearReservation drops the checkout hold columns from the owner's cart. A
+// missing cart is a no-op.
+func (s *Service) ClearReservation(ctx context.Context, owner CartOwner) error {
+	cart, err := s.findCart(ctx, owner)
+	if errors.Is(err, domain.ErrCartNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return s.repo.ClearReservation(ctx, cart.ID)
+}
+
+// ListExpiredReservations returns abandoned checkout holds past their expiry.
+func (s *Service) ListExpiredReservations(ctx context.Context, cutoff time.Time) ([]domain.ExpiredReservation, error) {
+	return s.repo.ListExpiredReservations(ctx, cutoff)
 }
 
 // MergeGuestCartIntoUser folds an anonymous cart into the now-authenticated

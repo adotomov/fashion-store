@@ -2,9 +2,11 @@ import type { RevolutCheckoutCardField, RevolutCheckoutInstance } from "@revolut
 import { useEffect, useRef, useState } from "react";
 
 import { Button } from "../../components/ui/Button";
+import { Icon } from "../../components/ui/Icon";
 import { Text } from "../../components/ui/Text";
 import { getOrderPaymentStatus } from "../../lib/api/checkout";
 import { useLanguage } from "../i18n/LanguageContext";
+import { PaymentBrandLogos } from "./PaymentBrandLogos";
 
 type PaymentRequestInstance = ReturnType<RevolutCheckoutInstance["paymentRequest"]>;
 
@@ -17,6 +19,19 @@ const REVOLUT_ENV = (import.meta.env.VITE_REVOLUT_ENV as "sandbox" | "prod" | un
 // it, usually within a second or two.
 const POLL_INTERVAL_MS = 1500;
 const POLL_MAX_ATTEMPTS = 20;
+
+// Typographic styling for the Revolut card iframe so the number/expiry/CVV
+// entry matches the store's own inputs (Inter, stone palette). The widget owns
+// its layout (PAN grouped in 4s on top, expiry + CVV beneath) — these keys only
+// style the text within each field-status. Colours are the stone-900 body /
+// stone-400 placeholder / danger-600 invalid values used elsewhere in the UI.
+const CARD_FONT_FAMILY = '"Inter", ui-sans-serif, system-ui, sans-serif';
+const cardFieldStyles = {
+  default: { color: "#1c1917", fontFamily: CARD_FONT_FAMILY, fontSize: "16px", fontWeight: "500" },
+  empty: { color: "#a8a29e", fontFamily: CARD_FONT_FAMILY, fontSize: "16px" },
+  autofilled: { color: "#1c1917", fontFamily: CARD_FONT_FAMILY, fontSize: "16px" },
+  invalid: { color: "#dc2626", fontFamily: CARD_FONT_FAMILY, fontSize: "16px" },
+} as const;
 
 type Props = {
   /** Revolut order public token from the checkout initiation response. */
@@ -36,6 +51,10 @@ export function RevolutPaymentStep({ token, orderNumber, cardHolderName, email, 
   const cardFieldRef = useRef<RevolutCheckoutCardField | null>(null);
   const paymentRequestRef = useRef<PaymentRequestInstance | null>(null);
   const instanceRef = useRef<RevolutCheckoutInstance | null>(null);
+  // Tracks whether a Pay click is in flight. Needed because Revolut reports a
+  // rejected card via onValidation (a field event that also fires during normal
+  // typing), so we only surface it as a submit failure when a submit is pending.
+  const submittingRef = useRef(false);
 
   const [ready, setReady] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -88,10 +107,29 @@ export function RevolutPaymentStep({ token, orderNumber, cardHolderName, email, 
 
         cardFieldRef.current = instance.createCardField({
           target: cardTarget,
-          onSuccess: () => void confirmSettlement(),
+          theme: "light",
+          styles: cardFieldStyles,
+          onSuccess: () => {
+            submittingRef.current = false;
+            void confirmSettlement();
+          },
           onError: (err) => {
+            submittingRef.current = false;
             setSubmitting(false);
             setError(err?.message ?? t("checkout.payment_failed_error", "Payment could not be processed. Please try again."));
+          },
+          // A rejected/invalid card comes back through validation, not onError.
+          // Only treat it as a submit failure when a Pay click is pending —
+          // otherwise this fires on ordinary typing and would flash an error.
+          onValidation: (errors) => {
+            if (errors.length > 0 && submittingRef.current) {
+              submittingRef.current = false;
+              setSubmitting(false);
+              // The widget already highlights the offending field inline; this
+              // adds a single translatable summary and, crucially, un-sticks the
+              // Pay button so the shopper can correct and retry.
+              setError(t("checkout.card_invalid_error", "Please check your card details and try again."));
+            }
           },
         });
 
@@ -130,6 +168,7 @@ export function RevolutPaymentStep({ token, orderNumber, cardHolderName, email, 
   function handlePay() {
     if (!cardFieldRef.current) return;
     setError(null);
+    submittingRef.current = true;
     setSubmitting(true);
     cardFieldRef.current.submit({ name: cardHolderName, email });
   }
@@ -146,7 +185,16 @@ export function RevolutPaymentStep({ token, orderNumber, cardHolderName, email, 
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex w-full max-w-md flex-col gap-5 text-left">
+      {/* Secure-payment banner, echoing the reassurance strip at the top of a
+          Revolut Hosted Checkout page. */}
+      <div className="flex items-center justify-center gap-2 rounded-sm bg-stone-50 py-2.5 text-stone-600">
+        <Icon name="lock" size={15} />
+        <Text size="xs" className="font-medium uppercase tracking-wide">
+          {t("checkout.secure_payment_banner", "Secure payment")}
+        </Text>
+      </div>
+
       {/* Always mounted so the ref exists when the SDK renders the wallet
           button; the divider only shows once a wallet is confirmed available. */}
       <div ref={payRequestRef} />
@@ -158,7 +206,15 @@ export function RevolutPaymentStep({ token, orderNumber, cardHolderName, email, 
         </div>
       )}
 
-      <div ref={cardTargetRef} className="rounded-sm border border-stone-200 p-3" />
+      <div className="flex flex-col gap-1.5">
+        <Text size="xs" className="font-medium uppercase tracking-wide text-stone-500">
+          {t("checkout.card_details_label", "Card details")}
+        </Text>
+        <div
+          ref={cardTargetRef}
+          className="rounded-md border border-stone-300 bg-white px-3.5 py-3 shadow-sm transition-colors focus-within:border-stone-900"
+        />
+      </div>
 
       {error && (
         <Text size="sm" tone="danger">
@@ -166,13 +222,27 @@ export function RevolutPaymentStep({ token, orderNumber, cardHolderName, email, 
         </Text>
       )}
 
-      <Button variant="primary" onClick={handlePay} disabled={!ready || submitting}>
+      <Button variant="primary" onClick={handlePay} disabled={!ready || submitting} className="h-12 text-base">
+        <Icon name="lock" size={16} />
         {submitting ? t("checkout.processing_payment", "Processing payment…") : payLabel}
       </Button>
 
-      <Text size="xs" tone="muted" className="text-center">
-        {t("checkout.card_secured_by_revolut", "Payments are securely processed by Revolut.")}
-      </Text>
+      {/* Accepted methods + no-storage reassurance. Translatable copy, brand
+          marks rendered inline (see PaymentBrandLogos). */}
+      <div className="flex flex-col items-center gap-3 rounded-md border border-stone-200 bg-stone-50/60 px-4 py-4 text-center">
+        <PaymentBrandLogos className="flex items-center justify-center gap-2" />
+        <div className="flex items-start gap-2 text-left">
+          <span className="mt-0.5 text-emerald-600">
+            <Icon name="shieldCheck" size={16} />
+          </span>
+          <Text size="xs" tone="muted" className="leading-relaxed">
+            {t(
+              "checkout.accepted_methods_note",
+              "We accept Visa, Mastercard, Apple Pay and Google Pay. Your payment is encrypted and processed securely by Revolut — we never see or store your card details.",
+            )}
+          </Text>
+        </div>
+      </div>
     </div>
   );
 }

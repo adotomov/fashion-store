@@ -10,6 +10,7 @@ import {
   Globe,
   Heart,
   LayoutDashboard,
+  Lock,
   LogOut,
   Mail,
   MapPin,
@@ -23,6 +24,7 @@ import {
   Receipt,
   Search,
   Settings,
+  ShieldCheck,
   ShoppingBag,
   SlidersHorizontal,
   Star,
@@ -113,6 +115,8 @@ const icons = {
   chevronsUpDown: ChevronsUpDown,
   globe: Globe,
   tag: Tag,
+  lock: Lock,
+  shieldCheck: ShieldCheck,
 } as const;
 
 export type IconName = keyof typeof icons;

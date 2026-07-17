@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -32,6 +33,8 @@ func (h *Handler) RegisterRoutes(r chi.Router, optionalAuth, requireAdmin func(h
 		r.Use(optionalAuth)
 		r.Get("/checkout/delivery-methods", h.listDeliveryMethods)
 		r.Post("/checkout", h.placeOrder)
+		r.Post("/checkout/session/reserve", h.reserveSession)
+		r.Post("/checkout/session/release", h.releaseSession)
 		r.Get("/checkout/orders/{order_number}/status", h.orderStatus)
 		r.Post("/checkout/orders/{order_number}/cancel", h.cancelPayment)
 	})
@@ -89,6 +92,40 @@ func (h *Handler) placeOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, toOrderResultResponse(*result.Order))
+}
+
+// reserveSession acquires (or extends) the checkout-session stock hold for the
+// shopper's cart — called when they enter checkout. A live hold on the last unit
+// means a second shopper is told out-of-stock (409) here, up front, rather than
+// mid-checkout.
+func (h *Handler) reserveSession(w http.ResponseWriter, r *http.Request) {
+	owner, _, err := ownerFromRequest(r)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_cart_token", "cart token is invalid")
+		return
+	}
+	expiresAt, err := h.service.ReserveCheckoutSession(r.Context(), owner)
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"expires_at": expiresAt.UTC().Format(time.RFC3339)})
+}
+
+// releaseSession drops the checkout hold, returning stock — best-effort, called
+// when the shopper explicitly leaves checkout. Silent abandonment is reclaimed
+// by the sweeper instead.
+func (h *Handler) releaseSession(w http.ResponseWriter, r *http.Request) {
+	owner, _, err := ownerFromRequest(r)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_cart_token", "cart token is invalid")
+		return
+	}
+	if err := h.service.ReleaseCheckoutSession(r.Context(), owner); err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "an unexpected error occurred")
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "released"})
 }
 
 // orderStatus is the public post-payment poll: it returns only the order

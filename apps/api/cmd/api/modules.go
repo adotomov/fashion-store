@@ -42,9 +42,6 @@ import (
 	ordersdomain "github.com/adotomov/fashion-store/apps/api/internal/modules/orders/domain"
 	ordersinfra "github.com/adotomov/fashion-store/apps/api/internal/modules/orders/infrastructure"
 	ordershttp "github.com/adotomov/fashion-store/apps/api/internal/modules/orders/transport/http"
-	paymentsapplication "github.com/adotomov/fashion-store/apps/api/internal/modules/payments/application"
-	paymentsinfra "github.com/adotomov/fashion-store/apps/api/internal/modules/payments/infrastructure"
-	paymentshttp "github.com/adotomov/fashion-store/apps/api/internal/modules/payments/transport/http"
 	promotionsapplication "github.com/adotomov/fashion-store/apps/api/internal/modules/promotions/application"
 	promotionsinfra "github.com/adotomov/fashion-store/apps/api/internal/modules/promotions/infrastructure"
 	promotionshttp "github.com/adotomov/fashion-store/apps/api/internal/modules/promotions/transport/http"
@@ -109,6 +106,40 @@ func (a *checkoutCartGatewayAdapter) GetCart(ctx context.Context, owner checkout
 
 func (a *checkoutCartGatewayAdapter) ClearCart(ctx context.Context, owner checkoutapplication.CartOwner) error {
 	return a.cart.ClearCart(ctx, cartapplication.CartOwner{UserID: owner.UserID, GuestToken: owner.GuestToken})
+}
+
+func (a *checkoutCartGatewayAdapter) GetReservation(ctx context.Context, owner checkoutapplication.CartOwner) (*checkoutapplication.CartReservation, error) {
+	reservationID, expiresAt, err := a.cart.GetReservation(ctx, cartapplication.CartOwner{UserID: owner.UserID, GuestToken: owner.GuestToken})
+	if err != nil {
+		return nil, err
+	}
+	if reservationID == nil || expiresAt == nil {
+		return nil, nil
+	}
+	return &checkoutapplication.CartReservation{ReservationID: *reservationID, ExpiresAt: *expiresAt}, nil
+}
+
+func (a *checkoutCartGatewayAdapter) SetReservation(ctx context.Context, owner checkoutapplication.CartOwner, reservationID uuid.UUID, expiresAt time.Time) error {
+	return a.cart.SetReservation(ctx, cartapplication.CartOwner{UserID: owner.UserID, GuestToken: owner.GuestToken}, reservationID, expiresAt)
+}
+
+func (a *checkoutCartGatewayAdapter) ClearReservation(ctx context.Context, owner checkoutapplication.CartOwner) error {
+	return a.cart.ClearReservation(ctx, cartapplication.CartOwner{UserID: owner.UserID, GuestToken: owner.GuestToken})
+}
+
+func (a *checkoutCartGatewayAdapter) ListExpiredReservations(ctx context.Context, cutoff time.Time) ([]checkoutapplication.ExpiredCartReservation, error) {
+	expired, err := a.cart.ListExpiredReservations(ctx, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]checkoutapplication.ExpiredCartReservation, 0, len(expired))
+	for _, e := range expired {
+		out = append(out, checkoutapplication.ExpiredCartReservation{
+			Owner:         checkoutapplication.CartOwner{UserID: e.UserID, GuestToken: e.GuestToken},
+			ReservationID: e.ReservationID,
+		})
+	}
+	return out, nil
 }
 
 // checkoutInventoryGatewayAdapter implements checkout's InventoryGateway
@@ -339,6 +370,10 @@ func (a *checkoutOrderGatewayAdapter) GetStatusByNumber(ctx context.Context, ord
 		return "", err
 	}
 	return string(order.Status), nil
+}
+
+func (a *checkoutOrderGatewayAdapter) HasPendingPaymentForReservation(ctx context.Context, reservationID uuid.UUID) (bool, error) {
+	return a.orders.HasPendingPaymentForReservation(ctx, reservationID)
 }
 
 func (a *checkoutOrderGatewayAdapter) ListPendingPaymentOlderThan(ctx context.Context, cutoff time.Time) ([]checkoutapplication.PendingPaymentRef, error) {
@@ -640,11 +675,6 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 	ordersHandler := ordershttp.NewHandler(ordersService)
 	ordersModule := ordershttp.NewModule(ordersHandler, authhttp.RequireAuth(authService), requireAdmin)
 
-	paymentsRepo := paymentsinfra.NewPostgresRepository(a.DB)
-	paymentsService := paymentsapplication.NewService(paymentsRepo)
-	paymentsHandler := paymentshttp.NewHandler(paymentsService)
-	paymentsModule := paymentshttp.NewModule(paymentsHandler, authhttp.RequireAuth(authService))
-
 	cartRepo := cartinfra.NewPostgresRepository(a.DB)
 	cartService := cartapplication.NewService(cartRepo)
 	cartHandler := carthttp.NewHandler(cartService)
@@ -733,7 +763,6 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 		storefrontHandler,
 		inventoryModule,
 		ordersModule,
-		paymentsModule,
 		cartModule,
 		adminModule,
 		adminStorefrontHandler,

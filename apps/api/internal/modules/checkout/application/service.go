@@ -65,6 +65,74 @@ func addressFromOrder(a OrderAddress) domain.Address {
 	}
 }
 
+// ReserveCheckoutSession acquires (or extends) the stock hold for a shopper's
+// checkout, called when they enter checkout. Holding it for the whole session —
+// rather than only during payment — means a shopper who's filling in details
+// won't be beaten to the last unit at the payment step, and switching payment
+// methods never re-touches stock. A second shopper for the same last unit is
+// told out-of-stock up front (409) instead of mid-checkout. Reuses a live hold
+// (extending its expiry); otherwise reserves fresh, first dropping any lapsed
+// hold so it isn't orphaned. Returns the (new) expiry.
+func (s *Service) ReserveCheckoutSession(ctx context.Context, owner CartOwner) (time.Time, error) {
+	cartSnap, err := s.cart.GetCart(ctx, owner)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if len(cartSnap.Lines) == 0 {
+		return time.Time{}, domain.ErrCartEmpty
+	}
+
+	now := time.Now()
+	expiresAt := now.Add(DefaultAbandonedPaymentTTL)
+
+	existing, err := s.cart.GetReservation(ctx, owner)
+	if err != nil {
+		return time.Time{}, err
+	}
+	if existing != nil {
+		if existing.ExpiresAt.After(now) {
+			// Live hold — extend and reuse. (The cart isn't editable during
+			// checkout; a cart edit releases the hold via ReleaseCheckoutSession,
+			// so a live hold still matches the cart.)
+			if err := s.cart.SetReservation(ctx, owner, existing.ReservationID, expiresAt); err != nil {
+				return time.Time{}, err
+			}
+			return expiresAt, nil
+		}
+		// Lapsed hold — release it before acquiring a fresh one.
+		_ = s.inventory.Release(ctx, existing.ReservationID, owner.UserID)
+	}
+
+	reserveLines := make([]ReserveLine, 0, len(cartSnap.Lines))
+	for _, line := range cartSnap.Lines {
+		reserveLines = append(reserveLines, ReserveLine{VariantID: line.VariantID, Quantity: line.Quantity})
+	}
+	reservationID, err := s.inventory.Reserve(ctx, reserveLines, owner.UserID)
+	if err != nil {
+		return time.Time{}, err // ErrInsufficientStock → 409
+	}
+	if err := s.cart.SetReservation(ctx, owner, reservationID, expiresAt); err != nil {
+		_ = s.inventory.Release(ctx, reservationID, owner.UserID)
+		return time.Time{}, err
+	}
+	return expiresAt, nil
+}
+
+// ReleaseCheckoutSession drops a shopper's checkout hold, returning the stock —
+// called best-effort when they explicitly leave checkout (or edit their cart).
+// Silent abandonment is caught by the sweeper instead. No hold is a no-op.
+func (s *Service) ReleaseCheckoutSession(ctx context.Context, owner CartOwner) error {
+	existing, err := s.cart.GetReservation(ctx, owner)
+	if err != nil {
+		return err
+	}
+	if existing == nil {
+		return nil
+	}
+	_ = s.inventory.Release(ctx, existing.ReservationID, owner.UserID)
+	return s.cart.ClearReservation(ctx, owner)
+}
+
 // PlaceOrder orchestrates checkout up to the point payment diverges: validate
 // the cart and chosen methods, price the order, and reserve stock for every
 // line (so nothing oversells while a payment is in flight). Then it branches:
@@ -125,12 +193,23 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 		userID = id
 	}
 
+	// Reuse the checkout-session stock hold if one is live (acquired when the
+	// shopper entered checkout and reused across payment-method switches). With a
+	// hold in place the cart's AvailableQuantity already nets out our own
+	// reservation, so the per-line availability check is skipped — it's the hold,
+	// not this snapshot, that guarantees the stock.
+	sessionRes, err := s.cart.GetReservation(ctx, owner)
+	if err != nil {
+		return PlaceOrderResult{}, err
+	}
+	hasSessionHold := sessionRes != nil && sessionRes.ExpiresAt.After(time.Now())
+
 	var subtotal int64
 	currency := deliveryMethod.Fee.Currency
 	reserveLines := make([]ReserveLine, 0, len(cartSnap.Lines))
 	orderItems := make([]CreateOrderItemInput, 0, len(cartSnap.Lines))
 	for _, line := range cartSnap.Lines {
-		if line.Quantity > line.AvailableQuantity {
+		if !hasSessionHold && line.Quantity > line.AvailableQuantity {
 			return PlaceOrderResult{}, domain.ErrInsufficientStock
 		}
 		subtotal += line.UnitPrice.AmountMinor * int64(line.Quantity)
@@ -172,9 +251,32 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 	total := money.Money{AmountMinor: subtotalAfterDiscount + deliveryMethod.Fee.AmountMinor, Currency: currency}
 	orderNumber := generateOrderNumber()
 
-	reservationID, err := s.inventory.Reserve(ctx, reserveLines, &userID)
-	if err != nil {
-		return PlaceOrderResult{}, err
+	var reservationID uuid.UUID
+	sessionOwned := hasSessionHold
+	if hasSessionHold {
+		reservationID = sessionRes.ReservationID
+	} else {
+		// No live checkout hold (COD placed straight from the cart, or the hold
+		// lapsed) — reserve inline now, dropping a lapsed hold first so it isn't
+		// left orphaned.
+		if sessionRes != nil {
+			_ = s.inventory.Release(ctx, sessionRes.ReservationID, owner.UserID)
+			_ = s.cart.ClearReservation(ctx, owner)
+		}
+		reservationID, err = s.inventory.Reserve(ctx, reserveLines, &userID)
+		if err != nil {
+			return PlaceOrderResult{}, err
+		}
+		// For card payments, record the inline reservation as the checkout-session
+		// hold so its lifecycle is owned by the cart (retryable across payment
+		// switches, reclaimed by the sweeper) rather than this single pending order.
+		if domain.RequiresUpfrontPayment(input.PaymentMethod) {
+			if err := s.cart.SetReservation(ctx, owner, reservationID, time.Now().Add(DefaultAbandonedPaymentTTL)); err != nil {
+				_ = s.inventory.Release(ctx, reservationID, &userID)
+				return PlaceOrderResult{}, err
+			}
+			sessionOwned = true
+		}
 	}
 
 	// Online card payment: open a Revolut order, persist the order as
@@ -187,6 +289,7 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 			orderNumber:      orderNumber,
 			userID:           userID,
 			reservationID:    reservationID,
+			sessionOwned:     sessionOwned,
 			total:            total,
 			contactName:      contactName,
 			contactEmail:     contactEmail,
@@ -207,6 +310,7 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 	// away: commit stock and create the order in its normal pending state.
 	if err := s.inventory.Commit(ctx, reservationID, &userID); err != nil {
 		_ = s.inventory.Release(ctx, reservationID, &userID)
+		_ = s.cart.ClearReservation(ctx, owner)
 		return PlaceOrderResult{}, err
 	}
 
@@ -240,6 +344,9 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 		}
 	}
 
+	// Stock is committed and the order placed: drop the cart and its now-consumed
+	// checkout hold.
+	_ = s.cart.ClearReservation(ctx, owner)
 	_ = s.cart.ClearCart(ctx, owner)
 
 	s.createShipment(ctx, result, deliveryMethod, shippingAddr, contactName, contactPhone, contactEmail, input.DeliveryOfficeID, input.PaymentMethod, total)
@@ -272,6 +379,10 @@ type cardPaymentParams struct {
 	orderNumber      string
 	userID           uuid.UUID
 	reservationID    uuid.UUID
+	// sessionOwned is true when reservationID is the checkout-session hold (owned
+	// by the cart, not this order) — in which case a failure here must NOT release
+	// it, so a retry can reuse the same hold.
+	sessionOwned bool
 	total            money.Money
 	contactName      string
 	contactEmail     string
@@ -297,7 +408,9 @@ func (s *Service) initiateCardPayment(ctx context.Context, owner CartOwner, p ca
 		CustomerEmail: p.contactEmail,
 	})
 	if err != nil {
-		_ = s.inventory.Release(ctx, p.reservationID, &p.userID)
+		if !p.sessionOwned {
+			_ = s.inventory.Release(ctx, p.reservationID, &p.userID)
+		}
 		s.logger.Error("failed to create revolut order", "error", err, "order_number", p.orderNumber)
 		return PlaceOrderResult{}, domain.ErrPaymentInitiation
 	}
@@ -330,7 +443,9 @@ func (s *Service) initiateCardPayment(ctx context.Context, owner CartOwner, p ca
 		Items:          p.items,
 	})
 	if err != nil {
-		_ = s.inventory.Release(ctx, p.reservationID, &p.userID)
+		if !p.sessionOwned {
+			_ = s.inventory.Release(ctx, p.reservationID, &p.userID)
+		}
 		return PlaceOrderResult{}, err
 	}
 
@@ -411,6 +526,9 @@ func (s *Service) FinalizePaidOrder(ctx context.Context, providerOrderID string)
 	if err := s.cart.ClearCart(ctx, clearOwner); err != nil {
 		s.logger.Error("failed to clear cart after payment", "error", err, "order_id", ord.ID)
 	}
+	// The checkout-session hold has now been committed above; drop its columns
+	// from the cart so the sweeper doesn't later try to reclaim it.
+	_ = s.cart.ClearReservation(ctx, clearOwner)
 
 	if deliveryMethod, ok := domain.FindDeliveryMethod(ord.DeliveryMethod); ok {
 		s.createShipment(ctx, OrderResult{ID: ord.ID, OrderNumber: ord.OrderNumber}, deliveryMethod,
@@ -425,8 +543,12 @@ func (s *Service) FinalizePaidOrder(ctx context.Context, providerOrderID string)
 	return nil
 }
 
-// FailPayment releases the reservation and marks a card order payment_failed
-// after a declined/cancelled/abandoned payment. Idempotent.
+// FailPayment marks a card order payment_failed after a declined/cancelled/
+// abandoned payment. It deliberately does NOT release stock: the reservation is
+// the checkout-session hold owned by the cart, so a failed/cancelled attempt
+// keeps it for a retry with another method. The hold is reclaimed by the
+// checkout-reservation sweeper on abandonment, or committed on settlement.
+// Idempotent.
 func (s *Service) FailPayment(ctx context.Context, providerOrderID, reason string) error {
 	ord, err := s.orders.FindByProviderOrderID(ctx, providerOrderID)
 	if err != nil {
@@ -437,9 +559,6 @@ func (s *Service) FailPayment(ctx context.Context, providerOrderID, reason strin
 	}
 	if ord.Status != orderStatusPendingPayment {
 		return nil
-	}
-	if ord.ReservationID != nil {
-		_ = s.inventory.Release(ctx, *ord.ReservationID, &ord.UserID)
 	}
 	return s.orders.MarkPaymentFailed(ctx, ord.ID, reason)
 }

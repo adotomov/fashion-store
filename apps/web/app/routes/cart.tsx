@@ -21,6 +21,9 @@ export default function CartPage() {
   const { storeLocale } = useStoreBranding();
   const { cart, isLoading } = useCart();
   const items = cart?.items ?? [];
+  // Any line whose requested quantity exceeds what's in stock (including fully
+  // out-of-stock items) blocks checkout — it would otherwise 409 at the API.
+  const hasUnavailableItems = items.some((item) => item.quantity > item.available_quantity);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -62,9 +65,25 @@ export default function CartPage() {
                     {formatMoneyDual(cart!.subtotal, storeLocale)}
                   </Text>
                 </div>
-                <Link to="/checkout" className={buttonStyles({ variant: "primary", size: "lg", className: "mt-6 w-full" })}>
-                  {t("cart.checkout", "Checkout")}
-                </Link>
+                {hasUnavailableItems ? (
+                  <>
+                    <button
+                      type="button"
+                      disabled
+                      aria-disabled="true"
+                      className={buttonStyles({ variant: "primary", size: "lg", className: "mt-6 w-full cursor-not-allowed opacity-50" })}
+                    >
+                      {t("cart.checkout", "Checkout")}
+                    </button>
+                    <Text size="xs" tone="danger" className="mt-2 text-center">
+                      {t("cart.remove_unavailable", "Remove the out-of-stock items to continue.")}
+                    </Text>
+                  </>
+                ) : (
+                  <Link to="/checkout" className={buttonStyles({ variant: "primary", size: "lg", className: "mt-6 w-full" })}>
+                    {t("cart.checkout", "Checkout")}
+                  </Link>
+                )}
               </div>
             </div>
           )}
@@ -105,11 +124,17 @@ function CartLineItem({ item }: { item: CartItem }) {
     }
   }
 
+  const outOfStock = item.available_quantity <= 0;
+  const insufficientStock = !outOfStock && item.quantity > item.available_quantity;
+  const dimmed = outOfStock ? "opacity-50" : "";
+
   return (
-    <li className="flex gap-4 rounded-sm border border-stone-200 bg-white p-4">
+    <li
+      className={`flex gap-4 rounded-sm border p-4 ${outOfStock ? "border-danger-200 bg-danger-50/40" : "border-stone-200 bg-white"}`}
+    >
       <Link
         to={`/shop/${item.product_slug}`}
-        className="block h-24 w-20 shrink-0 overflow-hidden rounded-sm bg-stone-100"
+        className={`block h-24 w-20 shrink-0 overflow-hidden rounded-sm bg-stone-100 ${dimmed}`}
       >
         {item.image_url && (
           <img src={resolveImageUrl(item.image_url)} alt={item.product_name} className="h-full w-full object-cover" />
@@ -118,7 +143,7 @@ function CartLineItem({ item }: { item: CartItem }) {
 
       <div className="flex flex-1 flex-col gap-1">
         <div className="flex items-start justify-between gap-3">
-          <div>
+          <div className={dimmed}>
             <Link to={`/shop/${item.product_slug}`} className="font-medium text-stone-900 hover:underline">
               {item.product_name}
             </Link>
@@ -131,7 +156,12 @@ function CartLineItem({ item }: { item: CartItem }) {
           <Price price={item.unit_price} size="sm" />
         </div>
 
-        {item.quantity > item.available_quantity && (
+        {outOfStock && (
+          <Text size="sm" tone="danger" className="font-medium">
+            {t("cart.out_of_stock", "Out of stock — remove to continue")}
+          </Text>
+        )}
+        {insufficientStock && (
           <Text size="sm" tone="danger">
             {t("cart.only", "Only")} {item.available_quantity} {t("cart.left_in_stock", "left in stock")}
           </Text>
@@ -159,7 +189,7 @@ function CartLineItem({ item }: { item: CartItem }) {
             <button
               type="button"
               aria-label={t("cart.increase_qty", "Increase quantity")}
-              disabled={isUpdating}
+              disabled={isUpdating || item.quantity >= item.available_quantity}
               onClick={() => changeQuantity(item.quantity + 1)}
               className="flex h-8 w-8 items-center justify-center text-stone-600 hover:bg-stone-50 disabled:opacity-50"
             >

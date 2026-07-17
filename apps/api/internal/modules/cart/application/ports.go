@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -29,4 +30,11 @@ type Repository interface {
 	// (summing quantities on conflict), deletes the source cart, and
 	// returns the resulting target cart.
 	MergeCarts(ctx context.Context, sourceCartID, targetCartID uuid.UUID) (*domain.Cart, error)
+
+	// Checkout-session hold: a single inventory reservation held against the
+	// cart for the duration of a checkout, tracked on the cart row.
+	SetReservation(ctx context.Context, cartID, reservationID uuid.UUID, expiresAt time.Time) error
+	GetReservation(ctx context.Context, cartID uuid.UUID) (*uuid.UUID, *time.Time, error)
+	ClearReservation(ctx context.Context, cartID uuid.UUID) error
+	ListExpiredReservations(ctx context.Context, cutoff time.Time) ([]domain.ExpiredReservation, error)
 }

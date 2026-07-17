@@ -22,7 +22,6 @@ export default [
       index("routes/account/personal-info.tsx"),
       route("addresses", "routes/account/addresses.tsx"),
       route("orders", "routes/account/orders.tsx"),
-      route("payment-methods", "routes/account/payment-methods.tsx"),
     ]),
   ]),
   route("style-guide", "routes/style-guide.tsx"),

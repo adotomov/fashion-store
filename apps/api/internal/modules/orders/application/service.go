@@ -175,6 +175,13 @@ func (s *Service) ListPendingPaymentOlderThan(ctx context.Context, cutoff time.T
 	return s.repo.ListPendingPaymentOlderThan(ctx, cutoff)
 }
 
+// HasPendingPaymentForReservation reports whether a pending_payment order still
+// references the reservation — the guard the checkout sweeper uses before
+// reclaiming an abandoned hold.
+func (s *Service) HasPendingPaymentForReservation(ctx context.Context, reservationID uuid.UUID) (bool, error) {
+	return s.repo.HasPendingPaymentForReservation(ctx, reservationID)
+}
+
 // ListPaymentTransactions returns an order's append-only payment audit trail,
 // for admin/reconciliation views.
 func (s *Service) ListPaymentTransactions(ctx context.Context, orderID uuid.UUID) ([]domain.PaymentTransaction, error) {

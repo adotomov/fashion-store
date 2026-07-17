@@ -60,6 +60,11 @@ type Repository interface {
 	// before the cutoff, paired with their Revolut order id.
 	ListPendingPaymentOlderThan(ctx context.Context, cutoff time.Time) ([]PendingPaymentRef, error)
 
+	// HasPendingPaymentForReservation reports whether a pending_payment order
+	// still references the given reservation — used to avoid releasing a checkout
+	// hold out from under an in-flight card payment that may yet settle.
+	HasPendingPaymentForReservation(ctx context.Context, reservationID uuid.UUID) (bool, error)
+
 	// ListPaymentTransactions returns an order's append-only payment audit trail.
 	ListPaymentTransactions(ctx context.Context, orderID uuid.UUID) ([]domain.PaymentTransaction, error)
 }

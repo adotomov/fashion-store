@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -229,6 +230,60 @@ func (r *PostgresRepository) ClearItems(ctx context.Context, cartID uuid.UUID) e
 	}
 	_, err := r.db.Exec(ctx, `UPDATE carts SET updated_at = NOW() WHERE id = $1`, cartID)
 	return err
+}
+
+// SetReservation records (or replaces) the checkout hold on a cart.
+func (r *PostgresRepository) SetReservation(ctx context.Context, cartID, reservationID uuid.UUID, expiresAt time.Time) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE carts SET reservation_id = $2, reservation_expires_at = $3, updated_at = NOW() WHERE id = $1`,
+		cartID, reservationID, expiresAt)
+	return err
+}
+
+// GetReservation returns the cart's current hold, or (nil, nil, nil) if none.
+func (r *PostgresRepository) GetReservation(ctx context.Context, cartID uuid.UUID) (*uuid.UUID, *time.Time, error) {
+	var reservationID *uuid.UUID
+	var expiresAt *time.Time
+	err := r.db.QueryRow(ctx, `SELECT reservation_id, reservation_expires_at FROM carts WHERE id = $1`, cartID).
+		Scan(&reservationID, &expiresAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, nil, domain.ErrCartNotFound
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	return reservationID, expiresAt, nil
+}
+
+// ClearReservation drops the checkout hold columns (the reservation itself is
+// committed/released by the caller before or after this).
+func (r *PostgresRepository) ClearReservation(ctx context.Context, cartID uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE carts SET reservation_id = NULL, reservation_expires_at = NULL, updated_at = NOW() WHERE id = $1`,
+		cartID)
+	return err
+}
+
+// ListExpiredReservations returns holds whose expiry has passed, so the sweeper
+// can release the stock and clear the columns.
+func (r *PostgresRepository) ListExpiredReservations(ctx context.Context, cutoff time.Time) ([]domain.ExpiredReservation, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT user_id, guest_token, reservation_id FROM carts
+		WHERE reservation_id IS NOT NULL AND reservation_expires_at < $1`, cutoff)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []domain.ExpiredReservation{}
+	for rows.Next() {
+		var e domain.ExpiredReservation
+		if err := rows.Scan(&e.UserID, &e.GuestToken, &e.ReservationID); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 func (r *PostgresRepository) MergeCarts(ctx context.Context, sourceCartID, targetCartID uuid.UUID) (*domain.Cart, error) {

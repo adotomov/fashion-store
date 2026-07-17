@@ -532,6 +532,15 @@ func (r *PostgresRepository) ListPaymentTransactions(ctx context.Context, orderI
 	return txns, rows.Err()
 }
 
+func (r *PostgresRepository) HasPendingPaymentForReservation(ctx context.Context, reservationID uuid.UUID) (bool, error) {
+	var exists bool
+	err := r.db.QueryRow(ctx, `
+		SELECT EXISTS (
+			SELECT 1 FROM orders WHERE reservation_id = $1 AND status = 'pending_payment'
+		)`, reservationID).Scan(&exists)
+	return exists, err
+}
+
 func (r *PostgresRepository) ListPendingPaymentOlderThan(ctx context.Context, cutoff time.Time) ([]application.PendingPaymentRef, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT o.id, p.provider_order_id

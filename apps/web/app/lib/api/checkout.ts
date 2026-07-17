@@ -159,6 +159,29 @@ export async function placeOrder(input: PlaceOrderInput): Promise<PlaceOrderResu
   return { kind: "placed", order: fromRawPlacedOrder(raw as RawPlacedOrder) };
 }
 
+// reserveCheckoutSession acquires (or extends) the stock hold for the shopper's
+// cart when they enter checkout, held for the whole session so switching payment
+// methods never re-touches stock. Throws (409) if the items are out of stock.
+// Owner is the logged-in user (bearer) or the guest cart token.
+export async function reserveCheckoutSession(): Promise<{ expires_at: string }> {
+  const token = getCartToken();
+  return apiFetch<{ expires_at: string }>("/api/v1/checkout/session/reserve", {
+    method: "POST",
+    headers: token ? { "X-Cart-Token": token } : {},
+  });
+}
+
+// releaseCheckoutSession drops the checkout hold (returning stock), called
+// best-effort when the shopper leaves checkout. Silent abandonment is reclaimed
+// by the server-side sweeper.
+export async function releaseCheckoutSession(): Promise<void> {
+  const token = getCartToken();
+  await apiFetch<{ status: string }>("/api/v1/checkout/session/release", {
+    method: "POST",
+    headers: token ? { "X-Cart-Token": token } : {},
+  });
+}
+
 // getOrderPaymentStatus is the public post-payment poll (works for guests):
 // the confirmation page calls it until the order flips to paid / payment_failed.
 export async function getOrderPaymentStatus(orderNumber: string): Promise<{ order_number: string; status: string }> {
@@ -175,6 +198,6 @@ export async function getOrderPaymentStatus(orderNumber: string): Promise<{ orde
 export async function cancelPayment(orderNumber: string, revolutOrderId: string): Promise<void> {
   await apiFetch<{ status: string }>(
     `/api/v1/checkout/orders/${encodeURIComponent(orderNumber)}/cancel`,
-    { method: "POST", auth: false, body: JSON.stringify({ revolut_order_id: revolutOrderId }) },
+    { method: "POST", auth: false, body: { revolut_order_id: revolutOrderId } },
   );
 }
