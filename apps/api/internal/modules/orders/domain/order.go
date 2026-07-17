@@ -141,6 +141,9 @@ type Order struct {
 	DeliveryOfficeID *string
 	ViewedByAdminAt  *time.Time
 	ReservationID    *uuid.UUID
+	// CartGuestToken is set only for guest card orders — the cart token the order
+	// was placed from, used to clear that cart when the payment webhook settles.
+	CartGuestToken *uuid.UUID
 
 	DiscountCode   *string
 	DiscountAmount *money.Money

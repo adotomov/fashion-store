@@ -16,6 +16,7 @@ import {
   type PaymentInitiation,
   type PaymentMethodCode,
   type PlacedOrder,
+  cancelPayment,
   listDeliveryMethods,
   placeOrder,
   validateDiscountCode,
@@ -163,6 +164,38 @@ export function CheckoutFlow() {
     currency: subtotal.currency,
   };
 
+  // Once an online-card order is initiated the server clears the cart, so the
+  // live `cart` is empty while the Revolut widget is on screen. Drive the order
+  // summary (and totals) from the snapshot captured at initiation instead.
+  const payingByCard = paymentInitiation !== null && pendingSnapshot !== null;
+  const summaryLines = payingByCard
+    ? pendingSnapshot!.items.map((it, i) => ({
+        key: `snap-${i}`,
+        product_name: it.product_name,
+        variant_label: it.variant_label,
+        quantity: it.quantity,
+        line_total: { amount: it.unit_price.amount * it.quantity, currency: it.unit_price.currency },
+      }))
+    : items.map((it) => ({
+        key: it.id,
+        product_name: it.product_name,
+        variant_label: it.variant_label,
+        quantity: it.quantity,
+        line_total: it.line_total,
+      }));
+  const summarySubtotal = payingByCard
+    ? { amount: summaryLines.reduce((sum, l) => sum + l.line_total.amount, 0), currency: grandTotal.currency }
+    : subtotal;
+  const summaryDeliveryFee = payingByCard ? pendingSnapshot!.delivery_fee : selectedDeliveryMethod?.fee ?? null;
+  const summaryDiscount = payingByCard
+    ? pendingSnapshot!.discount_amount
+      ? { code: pendingSnapshot!.discount_code ?? "", amount: pendingSnapshot!.discount_amount }
+      : null
+    : appliedDiscount
+      ? { code: appliedDiscount.code, amount: { amount: discountAmount, currency: subtotal.currency } }
+      : null;
+  const summaryTotal = payingByCard ? pendingSnapshot!.total : grandTotal;
+
   async function applyDiscountCode() {
     const code = discountCodeInput.trim();
     if (!code) return;
@@ -277,14 +310,42 @@ export function CheckoutFlow() {
     setPlacedOrder(pendingSnapshot ? { ...pendingSnapshot, status: "paid" } : null);
     setPaymentInitiation(null);
     setStep("confirmation");
+    // The webhook clears the cart server-side on settlement; refresh so the
+    // header/cart badge reflect the now-empty cart.
+    void refreshCart();
   }
 
   function handleCardFailed(message: string) {
     setPaymentInitiation(null);
     setPlaceError(message);
+    // Payment failed after the order was created: the reservation is released
+    // and the cart was never cleared, so the customer can retry. Reflect that.
+    void refreshCart();
   }
 
-  if (items.length === 0 && !placedOrder) {
+  // Back out of an initiated card payment to pick another method: cancel the
+  // pending order server-side (releases stock, fails the order) and return to
+  // the payment step. The cart was never cleared, so it's still there.
+  const [isCancelling, setIsCancelling] = useState(false);
+  async function cancelCardPayment() {
+    if (!paymentInitiation) return;
+    setIsCancelling(true);
+    try {
+      await cancelPayment(paymentInitiation.order_number, paymentInitiation.revolut_order_id);
+    } catch {
+      // Even if the cancel call fails, the sweeper will reclaim the pending
+      // order; let the customer move on rather than trapping them here.
+    } finally {
+      setIsCancelling(false);
+      setPaymentInitiation(null);
+      setPendingSnapshot(null);
+      setPaymentMethod(null);
+      setPlaceError(null);
+      await refreshCart();
+    }
+  }
+
+  if (items.length === 0 && !placedOrder && !paymentInitiation) {
     return (
       <div className="flex flex-col items-center gap-4 py-16 text-center">
         <Text tone="muted">{t("cart.empty", "Your cart is empty")}</Text>
@@ -479,14 +540,16 @@ export function CheckoutFlow() {
                     orderNumber={paymentInitiation.order_number}
                     cardHolderName={contact.full_name}
                     email={contact.email}
-                    payLabel={`${t("checkout.pay", "Pay")} ${formatMoneyDual(grandTotal, storeLocale)}`}
+                    payLabel={`${t("checkout.pay", "Pay")} ${formatMoneyDual(paymentInitiation.amount, storeLocale)}`}
                     onPaid={handleCardPaid}
                     onFailed={handleCardFailed}
                   />
                 </div>
                 <div className="mt-4">
-                  <Button variant="ghost" size="sm" onClick={() => setPaymentInitiation(null)}>
-                    {t("checkout.use_different_method", "Use a different payment method")}
+                  <Button variant="ghost" size="sm" onClick={() => void cancelCardPayment()} disabled={isCancelling}>
+                    {isCancelling
+                      ? t("checkout.cancelling_payment", "Cancelling…")
+                      : t("checkout.use_different_method", "Use a different payment method")}
                   </Button>
                 </div>
               </>
@@ -600,14 +663,14 @@ export function CheckoutFlow() {
           {t("checkout.order_summary", "Order Summary")}
         </Heading>
         <ul className="mt-4 flex flex-col gap-3">
-          {items.map((item) => (
-            <li key={item.id} className="flex items-center justify-between text-sm">
+          {summaryLines.map((line) => (
+            <li key={line.key} className="flex items-center justify-between text-sm">
               <span className="text-stone-700">
-                {item.product_name}
-                {item.variant_label ? ` — ${item.variant_label}` : ""}
-                <span className="ml-2 text-stone-400">× {item.quantity}</span>
+                {line.product_name}
+                {line.variant_label ? ` — ${line.variant_label}` : ""}
+                <span className="ml-2 text-stone-400">× {line.quantity}</span>
               </span>
-              <span className="text-stone-600">{formatMoneyDual(item.line_total, storeLocale)}</span>
+              <span className="text-stone-600">{formatMoneyDual(line.line_total, storeLocale)}</span>
             </li>
           ))}
         </ul>
@@ -616,7 +679,7 @@ export function CheckoutFlow() {
             {t("checkout.subtotal", "Subtotal")}
           </Text>
           <Text size="sm" className="font-medium">
-            {formatMoneyDual(subtotal, storeLocale)}
+            {formatMoneyDual(summarySubtotal, storeLocale)}
           </Text>
         </div>
         <div className="mt-2 flex items-center justify-between">
@@ -624,12 +687,26 @@ export function CheckoutFlow() {
             {t("checkout.delivery_label", "Delivery")}
           </Text>
           <Text size="sm" tone="muted">
-            {selectedDeliveryMethod ? (selectedDeliveryMethod.fee.amount ? formatMoneyDual(selectedDeliveryMethod.fee, storeLocale) : t("checkout.free", "Free")) : "–"}
+            {summaryDeliveryFee ? (summaryDeliveryFee.amount ? formatMoneyDual(summaryDeliveryFee, storeLocale) : t("checkout.free", "Free")) : "–"}
           </Text>
         </div>
 
         <div className="mt-4 border-t border-stone-200 pt-4">
-          {appliedDiscount ? (
+          {payingByCard ? (
+            // Cart is cleared during payment: the discount is locked in on the
+            // pending order, so show it read-only (or nothing) rather than the
+            // editable code input.
+            summaryDiscount && (
+              <div className="flex items-center justify-between">
+                <Text size="sm" tone="muted">
+                  {t("checkout.discount_label", "Discount")}{summaryDiscount.code ? ` (${summaryDiscount.code})` : ""}
+                </Text>
+                <Text size="sm" tone="muted">
+                  −{formatMoneyDual(summaryDiscount.amount, storeLocale)}
+                </Text>
+              </div>
+            )
+          ) : appliedDiscount ? (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Text size="sm" tone="muted">
@@ -666,7 +743,7 @@ export function CheckoutFlow() {
               </Button>
             </div>
           )}
-          {discountError && (
+          {discountError && !payingByCard && (
             <Text size="sm" tone="danger" className="mt-1">
               {discountError}
             </Text>
@@ -675,7 +752,7 @@ export function CheckoutFlow() {
 
         <div className="mt-2 flex items-center justify-between border-t border-stone-200 pt-4">
           <Text className="font-medium">{t("checkout.total", "Total")}</Text>
-          <Text className="font-medium">{formatMoneyDual(grandTotal, storeLocale)}</Text>
+          <Text className="font-medium">{formatMoneyDual(summaryTotal, storeLocale)}</Text>
         </div>
       </Card>
     </div>

@@ -322,6 +322,7 @@ func (s *Service) initiateCardPayment(ctx context.Context, owner CartOwner, p ca
 			Amount:          p.total,
 		},
 		ReservationID:  reservationID,
+		CartGuestToken: owner.GuestToken,
 		Status:         orderStatusPendingPayment,
 		Total:          p.total,
 		DiscountCode:   p.discountCode,
@@ -335,15 +336,16 @@ func (s *Service) initiateCardPayment(ctx context.Context, owner CartOwner, p ca
 
 	// Reserve the discount code use now — an abandoned payment consuming a use
 	// is an acceptable, rare trade-off vs. the complexity of releasing it on the
-	// failure webhook. Clearing the cart here (we still have the owner) means a
-	// guest's cart is emptied against the reserved stock, matching the on-hold
-	// intent even though the money isn't captured yet.
+	// failure webhook.
 	if p.discountCodeID != uuid.Nil {
 		if err := s.discounts.UseCode(ctx, p.discountCodeID); err != nil {
 			s.logger.Error("failed to increment discount code use", "error", err, "code_id", p.discountCodeID)
 		}
 	}
-	_ = s.cart.ClearCart(ctx, owner)
+	// NB: the cart is deliberately NOT cleared here. It's cleared only once the
+	// payment settles (FinalizePaidOrder), so that a customer who abandons the
+	// widget, fails payment, or cancels keeps their cart. The guest cart token is
+	// stored on the order (CartGuestToken) so the webhook can clear the right cart.
 
 	return PlaceOrderResult{PaymentRequired: &PaymentInitiation{
 		OrderID:           result.ID,
@@ -398,6 +400,18 @@ func (s *Service) FinalizePaidOrder(ctx context.Context, providerOrderID string)
 		return err
 	}
 
+	// Payment confirmed: clear the cart now (deferred from initiation so an
+	// abandoned/failed/cancelled payment keeps it). A guest's cart is keyed by
+	// the token captured on the order; a signed-in user's by their id. Best
+	// effort — a stale cart must never fail an otherwise-settled order.
+	clearOwner := CartOwner{UserID: &ord.UserID}
+	if ord.CartGuestToken != nil {
+		clearOwner = CartOwner{GuestToken: ord.CartGuestToken}
+	}
+	if err := s.cart.ClearCart(ctx, clearOwner); err != nil {
+		s.logger.Error("failed to clear cart after payment", "error", err, "order_id", ord.ID)
+	}
+
 	if deliveryMethod, ok := domain.FindDeliveryMethod(ord.DeliveryMethod); ok {
 		s.createShipment(ctx, OrderResult{ID: ord.ID, OrderNumber: ord.OrderNumber}, deliveryMethod,
 			addressFromOrder(ord.ShippingAddress), ord.ContactName, ord.ContactPhone, ord.ContactEmail,
@@ -428,6 +442,30 @@ func (s *Service) FailPayment(ctx context.Context, providerOrderID, reason strin
 		_ = s.inventory.Release(ctx, *ord.ReservationID, &ord.UserID)
 	}
 	return s.orders.MarkPaymentFailed(ctx, ord.ID, reason)
+}
+
+// CancelPendingPayment is the customer-initiated counterpart to the abandoned-
+// payment sweeper: when a shopper backs out of the card widget to pick another
+// method, release the held stock and mark the order payment_failed right away
+// (rather than waiting ~30 min for the sweeper). The cart was never cleared for
+// a pending-payment order, so backing out leaves it intact. Authorised by proving
+// knowledge of the order's (unguessable) provider order id — no session required,
+// so it works for guests too. Idempotent and safe to call on an already-settled
+// or unknown order (no-op).
+func (s *Service) CancelPendingPayment(ctx context.Context, orderNumber, providerOrderID string) error {
+	ord, err := s.orders.FindByProviderOrderID(ctx, providerOrderID)
+	if err != nil {
+		if errors.Is(err, domain.ErrOrderNotFound) {
+			return nil
+		}
+		return err
+	}
+	// The provider order id must belong to the claimed order number — this is the
+	// capability check that keeps one customer from cancelling another's order.
+	if ord.OrderNumber != orderNumber {
+		return domain.ErrOrderNotFound
+	}
+	return s.FailPayment(ctx, providerOrderID, "cancelled_by_customer")
 }
 
 // RefundOrder issues a (possibly partial) refund against a settled card order

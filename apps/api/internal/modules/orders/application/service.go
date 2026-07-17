@@ -49,6 +49,7 @@ func (s *Service) CreateOrder(ctx context.Context, userID uuid.UUID, input Creat
 		PaymentMethod:    input.PaymentMethod,
 		DeliveryOfficeID: input.DeliveryOfficeID,
 		ReservationID:    input.ReservationID,
+		CartGuestToken:   input.CartGuestToken,
 		DiscountCode:     input.DiscountCode,
 		DiscountAmount:   input.DiscountAmount,
 	}

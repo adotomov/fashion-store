@@ -167,3 +167,14 @@ export async function getOrderPaymentStatus(orderNumber: string): Promise<{ orde
     { auth: false },
   );
 }
+
+// cancelPayment backs out a card payment the customer initiated but didn't
+// complete (e.g. to choose a different method). It releases the held stock and
+// fails the order server-side; the cart is left intact. Authorised by the
+// revolut order id the client received at initiation, so it works for guests.
+export async function cancelPayment(orderNumber: string, revolutOrderId: string): Promise<void> {
+  await apiFetch<{ status: string }>(
+    `/api/v1/checkout/orders/${encodeURIComponent(orderNumber)}/cancel`,
+    { method: "POST", auth: false, body: JSON.stringify({ revolut_order_id: revolutOrderId }) },
+  );
+}

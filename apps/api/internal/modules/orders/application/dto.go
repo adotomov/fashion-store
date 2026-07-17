@@ -77,7 +77,8 @@ type CreateOrderInput struct {
 	Payment          *CreateOrderPaymentInput
 	DeliveryOfficeID *string
 
-	ReservationID *uuid.UUID
+	ReservationID  *uuid.UUID
+	CartGuestToken *uuid.UUID
 
 	DiscountCode   *string
 	DiscountAmount *money.Money

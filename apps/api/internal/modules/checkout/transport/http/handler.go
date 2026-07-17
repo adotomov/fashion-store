@@ -33,6 +33,7 @@ func (h *Handler) RegisterRoutes(r chi.Router, optionalAuth, requireAdmin func(h
 		r.Get("/checkout/delivery-methods", h.listDeliveryMethods)
 		r.Post("/checkout", h.placeOrder)
 		r.Get("/checkout/orders/{order_number}/status", h.orderStatus)
+		r.Post("/checkout/orders/{order_number}/cancel", h.cancelPayment)
 	})
 	r.Group(func(r chi.Router) {
 		r.Use(requireAdmin)
@@ -105,6 +106,33 @@ func (h *Handler) orderStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"order_number": orderNumber, "status": status})
+}
+
+// cancelPayment lets the customer back out of a card payment they've initiated
+// (e.g. to choose a different method). It releases the reserved stock and marks
+// the order payment_failed; the cart was never cleared for a pending order, so
+// it stays intact. Authorised by the provider order id in the body, which the
+// client holds from the checkout initiation response — no session needed.
+func (h *Handler) cancelPayment(w http.ResponseWriter, r *http.Request) {
+	orderNumber := chi.URLParam(r, "order_number")
+	var req cancelPaymentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "request body is invalid")
+		return
+	}
+	if req.RevolutOrderID == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "revolut_order_id is required")
+		return
+	}
+	if err := h.service.CancelPendingPayment(r.Context(), orderNumber, req.RevolutOrderID); err != nil {
+		if errors.Is(err, domain.ErrOrderNotFound) {
+			httpx.WriteError(w, http.StatusNotFound, "order_not_found", "order not found")
+			return
+		}
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "an unexpected error occurred")
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
 }
 
 func (h *Handler) refundOrder(w http.ResponseWriter, r *http.Request) {

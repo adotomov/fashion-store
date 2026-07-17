@@ -216,6 +216,7 @@ func (a *checkoutOrderGatewayAdapter) CreateOrder(ctx context.Context, input che
 		PaymentMethod:  input.PaymentMethod,
 		Payment:        payment,
 		ReservationID:  &reservationID,
+		CartGuestToken: input.CartGuestToken,
 		Items:          items,
 	})
 	if err != nil {
@@ -272,6 +273,7 @@ func (a *checkoutOrderGatewayAdapter) FindByProviderOrderID(ctx context.Context,
 		OrderNumber:      order.OrderNumber,
 		Status:           string(order.Status),
 		UserID:           order.UserID,
+		CartGuestToken:   order.CartGuestToken,
 		ReservationID:    order.ReservationID,
 		DeliveryMethod:   order.DeliveryMethod,
 		DeliveryOfficeID: officeID,

@@ -89,6 +89,13 @@ type refundRequest struct {
 	Reason      string `json:"reason,omitempty"`
 }
 
+// cancelPaymentRequest backs out a card payment the customer initiated but
+// didn't complete. The revolut_order_id is the capability that authorises the
+// cancel — the client holds it from the checkout initiation response.
+type cancelPaymentRequest struct {
+	RevolutOrderID string `json:"revolut_order_id"`
+}
+
 // paymentInitiationResponse is returned for online-card orders: the order is
 // created as pending_payment and the client mounts the Revolut widget with the
 // token, then polls the order until the payment webhook settles it.

@@ -90,6 +90,10 @@ type CreateOrderInput struct {
 	Payment          *OrderPaymentRecord
 
 	ReservationID uuid.UUID
+	// CartGuestToken is set only for guest card orders, so the payment webhook can
+	// clear that guest cart once settled (see FinalizePaidOrder). Nil for signed-in
+	// users (cleared by user id) and pay-on-delivery orders.
+	CartGuestToken *uuid.UUID
 
 	Status         string
 	Total          money.Money
@@ -179,6 +183,7 @@ type OrderForFinalize struct {
 	OrderNumber      string
 	Status           string
 	UserID           uuid.UUID
+	CartGuestToken   *uuid.UUID
 	ReservationID    *uuid.UUID
 	DeliveryMethod   string
 	DeliveryOfficeID string

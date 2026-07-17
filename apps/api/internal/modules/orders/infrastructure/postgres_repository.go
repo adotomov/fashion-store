@@ -28,7 +28,7 @@ const orderColumns = `
 	shipping_recipient_name, shipping_phone, shipping_line1, shipping_line2, shipping_city, shipping_region, shipping_postal_code, shipping_country_code,
 	billing_recipient_name, billing_phone, billing_line1, billing_line2, billing_city, billing_region, billing_postal_code, billing_country_code,
 	delivery_method, delivery_fee_amount, delivery_fee_currency, payment_method,
-	carrier, tracking_number, shipment_status, speedy_shipment_id, delivery_office_id, viewed_by_admin_at, reservation_id,
+	carrier, tracking_number, shipment_status, speedy_shipment_id, delivery_office_id, viewed_by_admin_at, reservation_id, cart_guest_token,
 	discount_code, discount_amount_minor, discount_amount_currency,
 	created_at, updated_at`
 
@@ -152,9 +152,9 @@ func (r *PostgresRepository) Create(ctx context.Context, order domain.Order) (*d
 			contact_name, contact_email, contact_phone,
 			shipping_recipient_name, shipping_phone, shipping_line1, shipping_line2, shipping_city, shipping_region, shipping_postal_code, shipping_country_code,
 			billing_recipient_name, billing_phone, billing_line1, billing_line2, billing_city, billing_region, billing_postal_code, billing_country_code,
-			delivery_method, delivery_fee_amount, delivery_fee_currency, payment_method, delivery_office_id, reservation_id,
+			delivery_method, delivery_fee_amount, delivery_fee_currency, payment_method, delivery_office_id, reservation_id, cart_guest_token,
 			discount_code, discount_amount_minor, discount_amount_currency
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34)
+		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)
 		RETURNING `+orderColumns,
 		order.UserID, order.OrderNumber, order.Status, order.Total.AmountMinor, order.Total.Currency, order.PlacedAt,
 		order.ContactName, order.ContactEmail, order.ContactPhone,
@@ -162,7 +162,7 @@ func (r *PostgresRepository) Create(ctx context.Context, order domain.Order) (*d
 		order.ShippingAddress.City, order.ShippingAddress.Region, order.ShippingAddress.PostalCode, order.ShippingAddress.CountryCode,
 		order.BillingAddress.RecipientName, order.BillingAddress.Phone, order.BillingAddress.Line1, order.BillingAddress.Line2,
 		order.BillingAddress.City, order.BillingAddress.Region, order.BillingAddress.PostalCode, order.BillingAddress.CountryCode,
-		order.DeliveryMethod, order.DeliveryFee.AmountMinor, order.DeliveryFee.Currency, order.PaymentMethod, order.DeliveryOfficeID, order.ReservationID,
+		order.DeliveryMethod, order.DeliveryFee.AmountMinor, order.DeliveryFee.Currency, order.PaymentMethod, order.DeliveryOfficeID, order.ReservationID, order.CartGuestToken,
 		order.DiscountCode, discountAmountMinor(order.DiscountAmount), discountAmountCurrency(order.DiscountAmount))
 
 	created, err := scanOrder(row)
@@ -677,7 +677,7 @@ func scanOrder(row pgx.Row) (*domain.Order, error) {
 		&shipRecipient, &shipPhone, &shipLine1, &shipLine2, &shipCity, &shipRegion, &shipPostal, &shipCountry,
 		&billRecipient, &billPhone, &billLine1, &billLine2, &billCity, &billRegion, &billPostal, &billCountry,
 		&deliveryMethod, &deliveryFeeAmount, &deliveryFeeCurrency, &paymentMethod,
-		&o.Carrier, &o.TrackingNumber, &o.ShipmentStatus, &o.SpeedyShipmentID, &o.DeliveryOfficeID, &o.ViewedByAdminAt, &o.ReservationID,
+		&o.Carrier, &o.TrackingNumber, &o.ShipmentStatus, &o.SpeedyShipmentID, &o.DeliveryOfficeID, &o.ViewedByAdminAt, &o.ReservationID, &o.CartGuestToken,
 		&o.DiscountCode, &discountAmountMinorCol, &discountAmountCurrencyCol,
 		&o.CreatedAt, &o.UpdatedAt,
 	)
