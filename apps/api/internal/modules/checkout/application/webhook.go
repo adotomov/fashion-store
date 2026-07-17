@@ -50,6 +50,7 @@ func (s *Service) HandleWebhook(ctx context.Context, event WebhookEvent) error {
 	}
 	seen, err := s.events.Seen(ctx, event.ID)
 	if err != nil {
+		s.logger.Error("webhook: dedup lookup failed", "error", err, "event", event.Type, "provider_order_id", event.ProviderOrderID)
 		return err
 	}
 	if seen {
@@ -59,10 +60,12 @@ func (s *Service) HandleWebhook(ctx context.Context, event WebhookEvent) error {
 	switch event.Type {
 	case WebhookOrderCompleted:
 		if err := s.FinalizePaidOrder(ctx, event.ProviderOrderID); err != nil {
+			s.logger.Error("webhook: finalize failed", "error", err, "event", event.Type, "provider_order_id", event.ProviderOrderID)
 			return err
 		}
 	case WebhookOrderCancelled, WebhookOrderPaymentFailed:
 		if err := s.FailPayment(ctx, event.ProviderOrderID, event.Type); err != nil {
+			s.logger.Error("webhook: fail-payment failed", "error", err, "event", event.Type, "provider_order_id", event.ProviderOrderID)
 			return err
 		}
 	default:
@@ -70,7 +73,11 @@ func (s *Service) HandleWebhook(ctx context.Context, event WebhookEvent) error {
 		// auto-capture. Still recorded below so we don't reprocess it.
 	}
 
-	return s.events.Record(ctx, event)
+	if err := s.events.Record(ctx, event); err != nil {
+		s.logger.Error("webhook: record failed", "error", err, "event", event.Type, "provider_order_id", event.ProviderOrderID)
+		return err
+	}
+	return nil
 }
 
 // RunPaymentSweeper reconciles abandoned card payments on an interval until the

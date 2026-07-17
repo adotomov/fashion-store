@@ -169,6 +169,7 @@ func (a *checkoutOrderGatewayAdapter) CreateOrder(ctx context.Context, input che
 	if input.Payment != nil {
 		payment = &ordersapplication.CreateOrderPaymentInput{
 			Provider:          input.Payment.Provider,
+			ProviderOrderID:   input.Payment.ProviderOrderID,
 			ProviderReference: input.Payment.ProviderReference,
 			Status:            input.Payment.Status,
 			Amount:            input.Payment.Amount,
