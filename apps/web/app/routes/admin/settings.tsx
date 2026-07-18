@@ -209,11 +209,11 @@ function IdentityTab() {
         <Card className="mt-3 p-6">
           <div className="flex flex-col gap-4">
             <FormField label="Store name" htmlFor="store-name">
-              <Input id="store-name" placeholder="Maison" {...field("store_name")} />
+              <Input id="store-name" placeholder="Your store name" {...field("store_name")} />
             </FormField>
 
             <FormField label="Legal entity name" htmlFor="legal-entity-name" hint="Used on invoices and legal documents">
-              <Input id="legal-entity-name" placeholder="Maison Retail Ltd." {...field("legal_entity_name")} />
+              <Input id="legal-entity-name" placeholder="Your Company Ltd." {...field("legal_entity_name")} />
             </FormField>
 
             <FormField label="Logo" htmlFor="store-logo" hint="PNG, SVG, or JPEG" error={logoError ?? undefined}>
@@ -401,7 +401,7 @@ function ContactsTab() {
           <Card className="mt-3 p-6">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <FormField label="Contact email" htmlFor="contactEmail">
-                <Input id="contactEmail" type="email" placeholder="hello@maison.example" {...field("contact_email")} />
+                <Input id="contactEmail" type="email" placeholder="hello@example.com" {...field("contact_email")} />
               </FormField>
               <FormField label="Contact phone" htmlFor="contactPhone">
                 <Input id="contactPhone" type="tel" placeholder="+359 2 123 4567" {...field("contact_phone")} />

@@ -16,7 +16,7 @@ import { type HomeSectionConfig, getPublicHomeSections } from "../lib/api/admin-
 
 export function meta({}: Route.MetaArgs) {
   return [
-    { title: "Maison — Fashion Store" },
+    { title: "Fashion Store" },
     { name: "description", content: "Clothing, jewelry, bags, and accessories." },
   ];
 }

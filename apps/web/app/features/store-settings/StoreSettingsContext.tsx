@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 
 import { getStoreSettings, resolveImageUrl } from "../../lib/api/storefront";
 
-const DEFAULT_STORE_NAME = "MAISON";
+const DEFAULT_STORE_NAME = "Fashion Store";
 
 type StoreBranding = {
   storeName: string;
@@ -52,6 +52,19 @@ export function StoreSettingsProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refresh();
   }, []);
+
+  // Point the browser favicon at the store's uploaded logo once branding
+  // loads. Falls back to the static /favicon.ico when no logo is configured.
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    let link = document.querySelector<HTMLLinkElement>("link[rel~='icon']");
+    if (!link) {
+      link = document.createElement("link");
+      link.rel = "icon";
+      document.head.appendChild(link);
+    }
+    link.href = logoUrl ?? "/favicon.ico";
+  }, [logoUrl]);
 
   return (
     <StoreSettingsContext.Provider value={{ storeName, logoUrl, storeLocale, facebookUrl, instagramUrl, refresh }}>

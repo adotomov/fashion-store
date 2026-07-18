@@ -119,10 +119,6 @@ export function Footer() {
               <Icon name="shipping" size={14} />
               {t("footer.free_shipping", "Free shipping over $100")}
             </span>
-            <span className="flex items-center gap-1.5 text-xs">
-              <Icon name="mail" size={14} />
-              hello@maison.example
-            </span>
           </div>
         </div>
       </div>

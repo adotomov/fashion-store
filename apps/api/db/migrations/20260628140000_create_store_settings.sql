@@ -33,7 +33,7 @@ CREATE TABLE store_settings (
 
 -- store_settings is a singleton: exactly one row, seeded here, never created
 -- or deleted by application code (only updated).
-INSERT INTO store_settings (store_name, locale, currency) VALUES ('Maison', 'en-US', 'EUR');
+INSERT INTO store_settings (store_name, locale, currency) VALUES ('My Store', 'en-US', 'EUR');
 
 -- +goose Down
 DROP TABLE store_settings;

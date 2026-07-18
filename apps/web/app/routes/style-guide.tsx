@@ -214,7 +214,7 @@ export default function StyleGuide() {
                 <ProductCard
                   key={i}
                   href="/style-guide"
-                  image={{ src: `https://picsum.photos/seed/maison-${i}/600/800`, alt: "Sample product" }}
+                  image={{ src: `https://picsum.photos/seed/product-${i}/600/800`, alt: "Sample product" }}
                   title="Silk Wrap Dress in Beige"
                   price={{ amount: 8999, currency: "EUR" }}
                   compareAtPrice={i === 1 ? { amount: 12999, currency: "EUR" } : undefined}
@@ -231,11 +231,11 @@ export default function StyleGuide() {
           <Eyebrow>Product Page</Eyebrow>
           <div className="mt-4 grid grid-cols-1 gap-10 lg:grid-cols-2">
             <ProductImageGallery
-              main={{ src: "https://picsum.photos/seed/maison-main/900/900", alt: "Silk Wrap Dress" }}
+              main={{ src: "https://picsum.photos/seed/product-main/900/900", alt: "Silk Wrap Dress" }}
               thumbnails={[
-                { src: "https://picsum.photos/seed/maison-2/900/900", alt: "Detail view" },
-                { src: "https://picsum.photos/seed/maison-3/900/900", alt: "Back view" },
-                { src: "https://picsum.photos/seed/maison-4/900/900", alt: "Fabric detail" },
+                { src: "https://picsum.photos/seed/product-2/900/900", alt: "Detail view" },
+                { src: "https://picsum.photos/seed/product-3/900/900", alt: "Back view" },
+                { src: "https://picsum.photos/seed/product-4/900/900", alt: "Fabric detail" },
               ]}
             />
             <ProductInfo
