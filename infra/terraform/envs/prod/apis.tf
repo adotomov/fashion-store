@@ -10,6 +10,10 @@ locals {
     "cloudresourcemanager.googleapis.com",
     "iam.googleapis.com",
     "compute.googleapis.com",
+    # Observability: Cloud Trace + Cloud Monitoring (Cloud Logging is enabled by
+    # default). Required for OTel span/metric export and alerting policies.
+    "cloudtrace.googleapis.com",
+    "monitoring.googleapis.com",
   ]
 }
 

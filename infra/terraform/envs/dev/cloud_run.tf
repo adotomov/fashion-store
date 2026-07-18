@@ -52,6 +52,26 @@ resource "google_cloud_run_v2_service" "api" {
         name  = "LOG_FORMAT"
         value = "json"
       }
+      # Observability: structured logs always carry the GCP project for trace
+      # correlation; OTel trace/metric export to Cloud Trace + Cloud Monitoring
+      # is gated on observability_enabled so it can be turned on per-env after
+      # the APIs and SA roles have propagated.
+      env {
+        name  = "GCP_PROJECT_ID"
+        value = var.project_id
+      }
+      env {
+        name  = "OTEL_TRACES_ENABLED"
+        value = tostring(var.observability_enabled)
+      }
+      env {
+        name  = "OTEL_METRICS_ENABLED"
+        value = tostring(var.observability_enabled)
+      }
+      env {
+        name  = "OTEL_TRACE_SAMPLE_RATIO"
+        value = var.otel_trace_sample_ratio
+      }
       env {
         name  = "SPEEDY_MODE"
         value = var.speedy_mode

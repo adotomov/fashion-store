@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/exaring/otelpgx"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -17,8 +18,11 @@ const (
 )
 
 // NewPool creates a connection pool to PostgreSQL using the given DSN,
-// applying sensible pool limits and verifying connectivity with a ping.
-func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
+// applying sensible pool limits and verifying connectivity with a ping. When
+// traceQueries is true every query is wrapped in an OTel span (exported to
+// Cloud Trace) via otelpgx, so a request's DB calls appear in its trace
+// waterfall.
+func NewPool(ctx context.Context, databaseURL string, traceQueries bool) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(databaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse database url: %w", err)
@@ -28,6 +32,12 @@ func NewPool(ctx context.Context, databaseURL string) (*pgxpool.Pool, error) {
 	cfg.MinConns = minConns
 	cfg.MaxConnLifetime = maxConnLifetime
 	cfg.MaxConnIdleTime = maxConnIdleTime
+
+	if traceQueries {
+		cfg.ConnConfig.Tracer = otelpgx.NewTracer(
+			otelpgx.WithTrimSQLInSpanName(),
+		)
+	}
 
 	connectCtx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()

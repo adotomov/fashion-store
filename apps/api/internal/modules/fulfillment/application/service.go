@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/adotomov/fashion-store/apps/api/internal/modules/fulfillment/domain"
+	"github.com/adotomov/fashion-store/apps/api/internal/platform/metrics"
 )
 
 type Service struct {
@@ -183,7 +184,8 @@ func (s *Service) Run(ctx context.Context, interval time.Duration) {
 			return
 		case <-ticker.C:
 			if err := s.PollPendingShipments(ctx); err != nil {
-				s.logger.Error("poll pending shipments failed", "error", err)
+				metrics.FulfillmentPollError(ctx)
+				s.logger.ErrorContext(ctx, "poll pending shipments failed", "error", err)
 			}
 		}
 	}

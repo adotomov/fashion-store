@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/adotomov/fashion-store/apps/api/internal/modules/fulfillment/application"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const speedyBaseURL = "https://api.speedy.bg/v1"
@@ -26,7 +27,12 @@ type SpeedyHTTPClient struct {
 }
 
 func NewSpeedyHTTPClient() *SpeedyHTTPClient {
-	return &SpeedyHTTPClient{httpClient: &http.Client{Timeout: 15 * time.Second}}
+	// otelhttp transport emits a client span per outbound call and propagates
+	// trace context; it is a no-op when tracing is disabled.
+	return &SpeedyHTTPClient{httpClient: &http.Client{
+		Timeout:   15 * time.Second,
+		Transport: otelhttp.NewTransport(http.DefaultTransport),
+	}}
 }
 
 type speedyAuth struct {

@@ -3,19 +3,21 @@ package app
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"time"
 )
 
 type Config struct {
-	App         AppConfig
-	HTTP        HTTPConfig
-	Database    DatabaseConfig
-	Log         LogConfig
-	Google      GoogleConfig
-	Auth        AuthConfig
-	Storage     StorageConfig
-	Fulfillment FulfillmentConfig
-	Payments    PaymentsConfig
+	App           AppConfig
+	HTTP          HTTPConfig
+	Database      DatabaseConfig
+	Log           LogConfig
+	Google        GoogleConfig
+	Auth          AuthConfig
+	Storage       StorageConfig
+	Fulfillment   FulfillmentConfig
+	Payments      PaymentsConfig
+	Observability ObservabilityConfig
 }
 
 type AppConfig struct {
@@ -34,6 +36,24 @@ type DatabaseConfig struct {
 type LogConfig struct {
 	Level  string
 	Format string
+}
+
+// ObservabilityConfig controls structured-log trace correlation and the OTel
+// telemetry pipeline (Cloud Trace + Cloud Monitoring). Traces and metrics
+// default OFF so local/devbox runs need no GCP credentials; Cloud Run enables
+// them via env. ProjectID is required for trace correlation and metric export
+// and is reused from the storage config's project when a dedicated
+// GCP_PROJECT_ID is not set.
+type ObservabilityConfig struct {
+	ProjectID      string
+	TracesEnabled  bool
+	MetricsEnabled bool
+	// SampleRatio is the parent-based trace sampling ratio (0.0–1.0) applied to
+	// root spans; child spans follow the parent's decision.
+	SampleRatio float64
+	// MetricInterval is how often the OTel meter provider pushes to Cloud
+	// Monitoring.
+	MetricInterval time.Duration
 }
 
 type GoogleConfig struct {
@@ -120,6 +140,28 @@ func LoadConfig() (*Config, error) {
 		pollInterval = d
 	}
 
+	sampleRatio := 0.1
+	if v := os.Getenv("OTEL_TRACE_SAMPLE_RATIO"); v != "" {
+		f, err := strconv.ParseFloat(v, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid OTEL_TRACE_SAMPLE_RATIO: %w", err)
+		}
+		sampleRatio = f
+	}
+
+	metricInterval := 60 * time.Second
+	if v := os.Getenv("OTEL_METRIC_EXPORT_INTERVAL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid OTEL_METRIC_EXPORT_INTERVAL: %w", err)
+		}
+		metricInterval = d
+	}
+
+	// Reuse the storage project when a dedicated GCP_PROJECT_ID is unset — both
+	// point at the same GCP project in every deployed environment.
+	projectID := getEnv("GCP_PROJECT_ID", os.Getenv("STORAGE_PROJECT_ID"))
+
 	cfg := &Config{
 		App: AppConfig{
 			Name: getEnv("APP_NAME", "fashion-store-api"),
@@ -157,6 +199,13 @@ func LoadConfig() (*Config, error) {
 			RevolutAPIKey:        os.Getenv("REVOLUT_API_KEY"),
 			RevolutWebhookSecret: os.Getenv("REVOLUT_WEBHOOK_SECRET"),
 			RevolutAPIVersion:    os.Getenv("REVOLUT_API_VERSION"),
+		},
+		Observability: ObservabilityConfig{
+			ProjectID:      projectID,
+			TracesEnabled:  getEnv("OTEL_TRACES_ENABLED", "false") == "true",
+			MetricsEnabled: getEnv("OTEL_METRICS_ENABLED", "false") == "true",
+			SampleRatio:    sampleRatio,
+			MetricInterval: metricInterval,
 		},
 	}
 

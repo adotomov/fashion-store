@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/adotomov/fashion-store/apps/api/internal/modules/checkout/domain"
+	"github.com/adotomov/fashion-store/apps/api/internal/platform/metrics"
 	"github.com/adotomov/fashion-store/apps/api/internal/shared/money"
 )
 
@@ -99,8 +100,12 @@ func (s *Service) ReserveCheckoutSession(ctx context.Context, owner CartOwner) (
 			}
 			return expiresAt, nil
 		}
-		// Lapsed hold — release it before acquiring a fresh one.
-		_ = s.inventory.Release(ctx, existing.ReservationID, owner.UserID)
+		// Lapsed hold — release it before acquiring a fresh one. A failed release
+		// orphans the old inventory reservation (nothing points to it once the
+		// cart columns are overwritten below), so surface it for troubleshooting.
+		if err := s.inventory.Release(ctx, existing.ReservationID, owner.UserID); err != nil {
+			s.logger.WarnContext(ctx, "failed to release lapsed checkout reservation", "error", err, "reservation_id", existing.ReservationID)
+		}
 	}
 
 	reserveLines := make([]ReserveLine, 0, len(cartSnap.Lines))
@@ -109,6 +114,9 @@ func (s *Service) ReserveCheckoutSession(ctx context.Context, owner CartOwner) (
 	}
 	reservationID, err := s.inventory.Reserve(ctx, reserveLines, owner.UserID)
 	if err != nil {
+		if errors.Is(err, domain.ErrInsufficientStock) {
+			metrics.ReservationConflict(ctx)
+		}
 		return time.Time{}, err // ErrInsufficientStock → 409
 	}
 	if err := s.cart.SetReservation(ctx, owner, reservationID, expiresAt); err != nil {
@@ -260,7 +268,9 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 		// lapsed) — reserve inline now, dropping a lapsed hold first so it isn't
 		// left orphaned.
 		if sessionRes != nil {
-			_ = s.inventory.Release(ctx, sessionRes.ReservationID, owner.UserID)
+			if err := s.inventory.Release(ctx, sessionRes.ReservationID, owner.UserID); err != nil {
+				s.logger.WarnContext(ctx, "failed to release lapsed checkout reservation", "error", err, "reservation_id", sessionRes.ReservationID)
+			}
 			_ = s.cart.ClearReservation(ctx, owner)
 		}
 		reservationID, err = s.inventory.Reserve(ctx, reserveLines, &userID)
@@ -340,9 +350,11 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 	// Increment discount code use count after successful order creation.
 	if discountCodeID != uuid.Nil {
 		if err := s.discounts.UseCode(ctx, discountCodeID); err != nil {
-			s.logger.Error("failed to increment discount code use", "error", err, "code_id", discountCodeID)
+			s.logger.ErrorContext(ctx, "failed to increment discount code use", "error", err, "code_id", discountCodeID)
 		}
 	}
+
+	metrics.OrderPlaced(ctx, input.PaymentMethod)
 
 	// Stock is committed and the order placed: drop the cart and its now-consumed
 	// checkout hold.
@@ -357,7 +369,7 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 	// the orders module's delivered-status trigger stays a harmless retry.
 	if s.invoices != nil {
 		if err := s.invoices.GenerateForOrder(ctx, result.ID); err != nil {
-			s.logger.Error("failed to generate invoice for order", "error", err, "order_id", result.ID)
+			s.logger.ErrorContext(ctx, "failed to generate invoice for order", "error", err, "order_id", result.ID)
 		}
 	}
 
@@ -376,13 +388,13 @@ const (
 )
 
 type cardPaymentParams struct {
-	orderNumber      string
-	userID           uuid.UUID
-	reservationID    uuid.UUID
+	orderNumber   string
+	userID        uuid.UUID
+	reservationID uuid.UUID
 	// sessionOwned is true when reservationID is the checkout-session hold (owned
 	// by the cart, not this order) — in which case a failure here must NOT release
 	// it, so a retry can reuse the same hold.
-	sessionOwned bool
+	sessionOwned     bool
 	total            money.Money
 	contactName      string
 	contactEmail     string
@@ -411,7 +423,7 @@ func (s *Service) initiateCardPayment(ctx context.Context, owner CartOwner, p ca
 		if !p.sessionOwned {
 			_ = s.inventory.Release(ctx, p.reservationID, &p.userID)
 		}
-		s.logger.Error("failed to create revolut order", "error", err, "order_number", p.orderNumber)
+		s.logger.ErrorContext(ctx, "failed to create revolut order", "error", err, "order_number", p.orderNumber)
 		return PlaceOrderResult{}, domain.ErrPaymentInitiation
 	}
 
@@ -454,9 +466,12 @@ func (s *Service) initiateCardPayment(ctx context.Context, owner CartOwner, p ca
 	// failure webhook.
 	if p.discountCodeID != uuid.Nil {
 		if err := s.discounts.UseCode(ctx, p.discountCodeID); err != nil {
-			s.logger.Error("failed to increment discount code use", "error", err, "code_id", p.discountCodeID)
+			s.logger.ErrorContext(ctx, "failed to increment discount code use", "error", err, "code_id", p.discountCodeID)
 		}
 	}
+
+	metrics.PaymentInitiated(ctx)
+
 	// NB: the cart is deliberately NOT cleared here. It's cleared only once the
 	// payment settles (FinalizePaidOrder), so that a customer who abandons the
 	// widget, fails payment, or cancels keeps their cart. The guest cart token is
@@ -501,8 +516,9 @@ func (s *Service) FinalizePaidOrder(ctx context.Context, providerOrderID string)
 		return nil // not paid yet (e.g. an authorised-only event) — wait for the completion webhook
 	}
 	if paymentOrder.AmountMinor != ord.Total.AmountMinor || paymentOrder.Currency != ord.Total.Currency {
-		s.logger.Error("revolut payment amount mismatch", "order_number", ord.OrderNumber,
+		s.logger.ErrorContext(ctx, "revolut payment amount mismatch", "order_number", ord.OrderNumber,
 			"expected_minor", ord.Total.AmountMinor, "got_minor", paymentOrder.AmountMinor)
+		metrics.PaymentFailed(ctx, "amount_mismatch")
 		return domain.ErrPaymentAmountMismatch
 	}
 
@@ -515,6 +531,9 @@ func (s *Service) FinalizePaidOrder(ctx context.Context, providerOrderID string)
 		return err
 	}
 
+	metrics.PaymentSucceeded(ctx)
+	metrics.OrderPlaced(ctx, ord.PaymentMethod)
+
 	// Payment confirmed: clear the cart now (deferred from initiation so an
 	// abandoned/failed/cancelled payment keeps it). A guest's cart is keyed by
 	// the token captured on the order; a signed-in user's by their id. Best
@@ -524,7 +543,7 @@ func (s *Service) FinalizePaidOrder(ctx context.Context, providerOrderID string)
 		clearOwner = CartOwner{GuestToken: ord.CartGuestToken}
 	}
 	if err := s.cart.ClearCart(ctx, clearOwner); err != nil {
-		s.logger.Error("failed to clear cart after payment", "error", err, "order_id", ord.ID)
+		s.logger.ErrorContext(ctx, "failed to clear cart after payment", "error", err, "order_id", ord.ID)
 	}
 	// The checkout-session hold has now been committed above; drop its columns
 	// from the cart so the sweeper doesn't later try to reclaim it.
@@ -537,7 +556,7 @@ func (s *Service) FinalizePaidOrder(ctx context.Context, providerOrderID string)
 	}
 	if s.invoices != nil {
 		if err := s.invoices.GenerateForOrder(ctx, ord.ID); err != nil {
-			s.logger.Error("failed to generate invoice for order", "error", err, "order_id", ord.ID)
+			s.logger.ErrorContext(ctx, "failed to generate invoice for order", "error", err, "order_id", ord.ID)
 		}
 	}
 	return nil
@@ -560,7 +579,11 @@ func (s *Service) FailPayment(ctx context.Context, providerOrderID, reason strin
 	if ord.Status != orderStatusPendingPayment {
 		return nil
 	}
-	return s.orders.MarkPaymentFailed(ctx, ord.ID, reason)
+	if err := s.orders.MarkPaymentFailed(ctx, ord.ID, reason); err != nil {
+		return err
+	}
+	metrics.PaymentFailed(ctx, reason)
+	return nil
 }
 
 // CancelPendingPayment is the customer-initiated counterpart to the abandoned-
@@ -614,7 +637,8 @@ func (s *Service) RefundOrder(ctx context.Context, orderID uuid.UUID, amountMino
 		Reason:          reason,
 	})
 	if err != nil {
-		s.logger.Error("revolut refund failed", "error", err, "order_id", orderID)
+		s.logger.ErrorContext(ctx, "revolut refund failed", "error", err, "order_id", orderID)
+		metrics.RefundRecorded(ctx, "failed")
 		return domain.ErrRefundFailed
 	}
 
@@ -622,6 +646,7 @@ func (s *Service) RefundOrder(ctx context.Context, orderID uuid.UUID, amountMino
 	if state == "" {
 		state = paymentStatusPending
 	}
+	metrics.RefundRecorded(ctx, state)
 	orderStatus := ""
 	if state == "completed" {
 		if pc.RefundedMinor+amountMinor >= pc.CapturedMinor {

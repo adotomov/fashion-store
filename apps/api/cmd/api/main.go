@@ -17,6 +17,7 @@ import (
 
 	"github.com/adotomov/fashion-store/apps/api/internal/app"
 	checkoutapplication "github.com/adotomov/fashion-store/apps/api/internal/modules/checkout/application"
+	"github.com/adotomov/fashion-store/apps/api/internal/platform/telemetry"
 )
 
 const shutdownTimeout = 15 * time.Second
@@ -34,11 +35,28 @@ func main() {
 
 	log := bootstrapped.Logger
 
+	// Telemetry (Cloud Trace + Cloud Monitoring) is opt-in via env; when off,
+	// Setup and the returned shutdown are no-ops.
+	obsCfg := bootstrapped.Config.Observability
+	shutdownTelemetry, err := telemetry.Setup(ctx, telemetry.Config{
+		ProjectID:      obsCfg.ProjectID,
+		ServiceName:    bootstrapped.Config.App.Name,
+		Env:            bootstrapped.Config.App.Env,
+		TracesEnabled:  obsCfg.TracesEnabled,
+		MetricsEnabled: obsCfg.MetricsEnabled,
+		SampleRatio:    obsCfg.SampleRatio,
+		MetricInterval: obsCfg.MetricInterval,
+	})
+	if err != nil {
+		log.Error("telemetry setup failed", slog.Any("error", err))
+		os.Exit(1)
+	}
+
 	registrars, fulfillmentService, checkoutService := buildRegistrars(bootstrapped)
 
 	// Emit HSTS everywhere except local dev (served over plain HTTP).
 	enableHSTS := bootstrapped.Config.App.Env != "local"
-	router := app.NewRouter(log, corsOrigins(), enableHSTS, registrars...)
+	router := app.NewRouter(log, bootstrapped.DB, bootstrapped.Config.Observability, corsOrigins(), enableHSTS, registrars...)
 	srv := app.NewServer(bootstrapped.Config.HTTP.Addr, router)
 
 	go fulfillmentService.Run(ctx, bootstrapped.Config.Fulfillment.PollInterval)
@@ -60,6 +78,13 @@ func main() {
 
 	if err := app.Shutdown(context.Background(), srv, shutdownTimeout); err != nil {
 		log.Error("graceful shutdown failed", slog.Any("error", err))
+	}
+
+	// Flush buffered spans and the final metric batch before exiting.
+	flushCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancel()
+	if err := shutdownTelemetry(flushCtx); err != nil {
+		log.Error("telemetry shutdown failed", slog.Any("error", err))
 	}
 }
 

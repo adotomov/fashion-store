@@ -3,6 +3,8 @@ package application
 import (
 	"context"
 	"time"
+
+	"github.com/adotomov/fashion-store/apps/api/internal/platform/metrics"
 )
 
 // Revolut webhook event types. We settle on ORDER_COMPLETED (auto-capture
@@ -50,7 +52,7 @@ func (s *Service) HandleWebhook(ctx context.Context, event WebhookEvent) error {
 	}
 	seen, err := s.events.Seen(ctx, event.ID)
 	if err != nil {
-		s.logger.Error("webhook: dedup lookup failed", "error", err, "event", event.Type, "provider_order_id", event.ProviderOrderID)
+		s.logger.ErrorContext(ctx, "webhook: dedup lookup failed", "error", err, "event", event.Type, "provider_order_id", event.ProviderOrderID)
 		return err
 	}
 	if seen {
@@ -60,21 +62,26 @@ func (s *Service) HandleWebhook(ctx context.Context, event WebhookEvent) error {
 	switch event.Type {
 	case WebhookOrderCompleted:
 		if err := s.FinalizePaidOrder(ctx, event.ProviderOrderID); err != nil {
-			s.logger.Error("webhook: finalize failed", "error", err, "event", event.Type, "provider_order_id", event.ProviderOrderID)
+			s.logger.ErrorContext(ctx, "webhook: finalize failed", "error", err, "event", event.Type, "provider_order_id", event.ProviderOrderID)
+			metrics.WebhookEvent(ctx, event.Type, "error")
 			return err
 		}
+		metrics.WebhookEvent(ctx, event.Type, "processed")
 	case WebhookOrderCancelled, WebhookOrderPaymentFailed:
 		if err := s.FailPayment(ctx, event.ProviderOrderID, event.Type); err != nil {
-			s.logger.Error("webhook: fail-payment failed", "error", err, "event", event.Type, "provider_order_id", event.ProviderOrderID)
+			s.logger.ErrorContext(ctx, "webhook: fail-payment failed", "error", err, "event", event.Type, "provider_order_id", event.ProviderOrderID)
+			metrics.WebhookEvent(ctx, event.Type, "error")
 			return err
 		}
+		metrics.WebhookEvent(ctx, event.Type, "processed")
 	default:
 		// ORDER_AUTHORISED and any other event: no state change under
 		// auto-capture. Still recorded below so we don't reprocess it.
+		metrics.WebhookEvent(ctx, event.Type, "ignored")
 	}
 
 	if err := s.events.Record(ctx, event); err != nil {
-		s.logger.Error("webhook: record failed", "error", err, "event", event.Type, "provider_order_id", event.ProviderOrderID)
+		s.logger.ErrorContext(ctx, "webhook: record failed", "error", err, "event", event.Type, "provider_order_id", event.ProviderOrderID)
 		return err
 	}
 	return nil
@@ -92,10 +99,10 @@ func (s *Service) RunPaymentSweeper(ctx context.Context, interval, ttl time.Dura
 			return
 		case <-ticker.C:
 			if err := s.SweepAbandonedCardPayments(ctx, ttl); err != nil {
-				s.logger.Error("payment sweep failed", "error", err)
+				s.logger.ErrorContext(ctx, "payment sweep failed", "error", err)
 			}
 			if err := s.SweepExpiredCheckoutReservations(ctx); err != nil {
-				s.logger.Error("checkout reservation sweep failed", "error", err)
+				s.logger.ErrorContext(ctx, "checkout reservation sweep failed", "error", err)
 			}
 		}
 	}
@@ -115,18 +122,19 @@ func (s *Service) SweepExpiredCheckoutReservations(ctx context.Context) error {
 	for _, e := range expired {
 		pending, err := s.orders.HasPendingPaymentForReservation(ctx, e.ReservationID)
 		if err != nil {
-			s.logger.Error("reservation sweep: pending-payment check failed", "error", err, "reservation_id", e.ReservationID)
+			s.logger.ErrorContext(ctx, "reservation sweep: pending-payment check failed", "error", err, "reservation_id", e.ReservationID)
 			continue
 		}
 		if pending {
 			continue // an in-flight card payment still owns this hold
 		}
 		if err := s.inventory.Release(ctx, e.ReservationID, e.Owner.UserID); err != nil {
-			s.logger.Error("reservation sweep: release failed", "error", err, "reservation_id", e.ReservationID)
+			s.logger.ErrorContext(ctx, "reservation sweep: release failed", "error", err, "reservation_id", e.ReservationID)
 			continue
 		}
+		metrics.SweeperReclaim(ctx, "session")
 		if err := s.cart.ClearReservation(ctx, e.Owner); err != nil {
-			s.logger.Error("reservation sweep: clear failed", "error", err, "reservation_id", e.ReservationID)
+			s.logger.ErrorContext(ctx, "reservation sweep: clear failed", "error", err, "reservation_id", e.ReservationID)
 		}
 	}
 	return nil
@@ -144,18 +152,20 @@ func (s *Service) SweepAbandonedCardPayments(ctx context.Context, ttl time.Durat
 	for _, ref := range refs {
 		paymentOrder, err := s.payments.GetOrder(ctx, ref.ProviderOrderID)
 		if err != nil {
-			s.logger.Error("sweep: failed to fetch revolut order", "error", err, "provider_order_id", ref.ProviderOrderID)
+			s.logger.ErrorContext(ctx, "sweep: failed to fetch revolut order", "error", err, "provider_order_id", ref.ProviderOrderID)
 			continue
 		}
 		if paymentOrder.State == PaymentStateCompleted {
 			if err := s.FinalizePaidOrder(ctx, ref.ProviderOrderID); err != nil {
-				s.logger.Error("sweep: failed to finalize recovered order", "error", err, "order_id", ref.OrderID)
+				s.logger.ErrorContext(ctx, "sweep: failed to finalize recovered order", "error", err, "order_id", ref.OrderID)
 			}
 			continue
 		}
 		if err := s.FailPayment(ctx, ref.ProviderOrderID, "abandoned"); err != nil {
-			s.logger.Error("sweep: failed to fail abandoned order", "error", err, "order_id", ref.OrderID)
+			s.logger.ErrorContext(ctx, "sweep: failed to fail abandoned order", "error", err, "order_id", ref.OrderID)
+			continue
 		}
+		metrics.SweeperReclaim(ctx, "abandoned_payment")
 	}
 	return nil
 }

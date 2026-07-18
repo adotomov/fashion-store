@@ -24,6 +24,21 @@ resource "google_project_iam_member" "api_runtime_cloudsql_client" {
   member  = "serviceAccount:${google_service_account.api_runtime.email}"
 }
 
+# api runtime: export OTel spans to Cloud Trace and custom metrics to Cloud
+# Monitoring. (Cloud Logging write is granted to Cloud Run runtime SAs by
+# default, so no logWriter binding is needed for structured logs.)
+resource "google_project_iam_member" "api_runtime_trace_agent" {
+  project = var.project_id
+  role    = "roles/cloudtrace.agent"
+  member  = "serviceAccount:${google_service_account.api_runtime.email}"
+}
+
+resource "google_project_iam_member" "api_runtime_metric_writer" {
+  project = var.project_id
+  role    = "roles/monitoring.metricWriter"
+  member  = "serviceAccount:${google_service_account.api_runtime.email}"
+}
+
 resource "google_secret_manager_secret_iam_member" "api_runtime_secrets" {
   for_each = toset([
     google_secret_manager_secret.database_url.secret_id,

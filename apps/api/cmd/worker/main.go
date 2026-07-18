@@ -6,8 +6,10 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/adotomov/fashion-store/apps/api/internal/app"
+	"github.com/adotomov/fashion-store/apps/api/internal/platform/telemetry"
 )
 
 func main() {
@@ -22,8 +24,30 @@ func main() {
 	defer bootstrapped.DB.Close()
 
 	log := bootstrapped.Logger
+
+	obsCfg := bootstrapped.Config.Observability
+	shutdownTelemetry, err := telemetry.Setup(ctx, telemetry.Config{
+		ProjectID:      obsCfg.ProjectID,
+		ServiceName:    bootstrapped.Config.App.Name + "-worker",
+		Env:            bootstrapped.Config.App.Env,
+		TracesEnabled:  obsCfg.TracesEnabled,
+		MetricsEnabled: obsCfg.MetricsEnabled,
+		SampleRatio:    obsCfg.SampleRatio,
+		MetricInterval: obsCfg.MetricInterval,
+	})
+	if err != nil {
+		log.Error("telemetry setup failed", slog.Any("error", err))
+		os.Exit(1)
+	}
+
 	log.Info("worker started")
 
 	<-ctx.Done()
 	log.Info("worker shutting down")
+
+	flushCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	if err := shutdownTelemetry(flushCtx); err != nil {
+		log.Error("telemetry shutdown failed", slog.Any("error", err))
+	}
 }

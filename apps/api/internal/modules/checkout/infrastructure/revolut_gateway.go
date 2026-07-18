@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/adotomov/fashion-store/apps/api/internal/modules/checkout/application"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const (
@@ -41,8 +42,10 @@ func NewRevolutGateway(baseURL, apiKey, apiVersion string, logger *slog.Logger) 
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		apiKey:     apiKey,
 		apiVersion: apiVersion,
-		http:       &http.Client{Timeout: revolutRequestTimeout},
-		logger:     logger,
+		// otelhttp transport emits a client span per outbound call and propagates
+		// trace context; it is a no-op when tracing is disabled.
+		http:   &http.Client{Timeout: revolutRequestTimeout, Transport: otelhttp.NewTransport(http.DefaultTransport)},
+		logger: logger,
 	}
 }
 

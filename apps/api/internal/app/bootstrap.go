@@ -28,7 +28,7 @@ func Bootstrap(ctx context.Context) (*App, error) {
 
 	log := logger.New(cfg.Log.Level, cfg.Log.Format, cfg.App.Name, cfg.App.Env)
 
-	db, err := postgres.NewPool(ctx, cfg.Database.URL)
+	db, err := postgres.NewPool(ctx, cfg.Database.URL, cfg.Observability.TracesEnabled)
 	if err != nil {
 		return nil, err
 	}

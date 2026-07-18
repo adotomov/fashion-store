@@ -121,3 +121,21 @@ variable "revolut_enabled" {
   type        = bool
   default     = false
 }
+
+variable "observability_enabled" {
+  description = "Export OTel traces to Cloud Trace and custom metrics to Cloud Monitoring. Structured logging + trace correlation are always on; this only gates the OTel exporters. Dev is the first env to enable, so this defaults to true."
+  type        = bool
+  default     = true
+}
+
+variable "otel_trace_sample_ratio" {
+  description = "Parent-based trace sampling ratio (0.0-1.0) applied to root spans."
+  type        = string
+  default     = "0.1"
+}
+
+variable "alert_email" {
+  description = "Email address for a Cloud Monitoring notification channel wired to the alert policies. Leave empty to create the policies without notifications (view-only in the console)."
+  type        = string
+  default     = ""
+}
