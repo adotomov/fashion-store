@@ -46,6 +46,9 @@ type googleLoginRequest struct {
 type sessionResponse struct {
 	Token     string `json:"token"`
 	ExpiresAt string `json:"expires_at"`
+	// IsNew flags a first-time registration so the client can run its one-time
+	// phone-capture step. Omitted (false) for refresh, which reuses this shape.
+	IsNew bool `json:"is_new,omitempty"`
 }
 
 func (h *Handler) loginWithGoogle(w http.ResponseWriter, r *http.Request) {
@@ -65,6 +68,7 @@ func (h *Handler) loginWithGoogle(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, sessionResponse{
 		Token:     result.Token,
 		ExpiresAt: result.ExpiresAt.Format(httpTimeFormat),
+		IsNew:     result.IsNew,
 	})
 }
 

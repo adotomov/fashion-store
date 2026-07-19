@@ -36,6 +36,10 @@ type LoginResult struct {
 	Token     string
 	ExpiresAt time.Time
 	UserID    uuid.UUID
+	// IsNew is true when this login created a brand-new Google identity — i.e.
+	// a first-time registration. The storefront uses it to run the one-time
+	// phone-number capture step before letting the shopper in.
+	IsNew bool
 }
 
 // LoginWithGoogle verifies the Google ID token, provisions or links the
@@ -48,9 +52,11 @@ func (s *Service) LoginWithGoogle(ctx context.Context, idToken string) (*LoginRe
 
 	existing, err := s.identities.FindByProviderSubject(ctx, googleProvider, identity.Subject)
 	var userID uuid.UUID
+	var isNew bool
 	if err == nil {
 		userID = existing.UserID
 	} else if errors.Is(err, domain.ErrIdentityNotFound) {
+		isNew = true
 		user, err := s.provisioner.EnsureUser(ctx, EnsureUserInput{
 			Email:    identity.Email,
 			FullName: identity.FullName,
@@ -73,7 +79,12 @@ func (s *Service) LoginWithGoogle(ctx context.Context, idToken string) (*LoginRe
 		return nil, err
 	}
 
-	return s.issueSession(ctx, userID)
+	result, err := s.issueSession(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	result.IsNew = isNew
+	return result, nil
 }
 
 func (s *Service) issueSession(ctx context.Context, userID uuid.UUID) (*LoginResult, error) {

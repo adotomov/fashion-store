@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, type ReactNode } from "
 
 import { type Cart, addCartItem, getCart, removeCartItem, updateCartItemQuantity } from "../../lib/api/cart";
 import { useAuth } from "../auth/AuthContext";
+import { CartAddedToast } from "./CartAddedToast";
 
 type CartContextValue = {
   cart: Cart | null;
@@ -19,6 +20,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
   const { profile } = useAuth();
   const [cart, setCart] = useState<Cart | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  // Bumped on every successful add so the confirmation toast re-triggers even
+  // when it's already on screen (see CartAddedToast).
+  const [addedNonce, setAddedNonce] = useState(0);
 
   async function refresh() {
     try {
@@ -40,6 +44,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
 
   async function addItem(variantId: string, quantity = 1) {
     setCart(await addCartItem(variantId, quantity));
+    setAddedNonce((n) => n + 1);
   }
 
   async function updateQuantity(itemId: string, quantity: number) {
@@ -63,6 +68,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
       }}
     >
       {children}
+      <CartAddedToast nonce={addedNonce} />
     </CartContext.Provider>
   );
 }

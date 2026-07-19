@@ -117,9 +117,9 @@ variable "revolut_api_version" {
 }
 
 variable "revolut_enabled" {
-  description = "Inject the Revolut API key + webhook secret into the API service. Keep false until the secret VALUES are populated out-of-band; flip to true to activate card payments."
+  description = "Inject the Revolut API key + webhook secret into the API service. Keep false until the secret VALUES are populated out-of-band; flip to true to activate card payments. Defaults true on dev because the fs-dev-revolut-* secrets are already populated — this keeps the flag sticky so a bare `terraform apply` can't silently revert to the mock gateway (mock tokens make the real Revolut widget show \"Something went wrong\")."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "observability_enabled" {

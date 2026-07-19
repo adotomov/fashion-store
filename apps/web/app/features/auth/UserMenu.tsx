@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { Link, useNavigate } from "react-router";
 
 import { Icon } from "../../components/ui/Icon";
@@ -16,6 +16,30 @@ export function UserMenu() {
   const { profile, logout } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  // On touch/coarse-pointer devices there's no hover, so tapping the avatar
+  // must open the dropdown instead of navigating straight to the account page.
+  // Desktop (fine pointer with hover) keeps hover-to-open and click-to-navigate.
+  function handleTriggerClick(e: MouseEvent) {
+    const coarse =
+      typeof window !== "undefined" && window.matchMedia?.("(hover: none)").matches;
+    if (coarse) {
+      e.preventDefault();
+      setOpen((o) => !o);
+    }
+  }
+
+  // Close on an outside tap — needed on touch devices where there's no
+  // mouseleave to dismiss the menu.
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(e: PointerEvent) {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
 
   if (!profile) return null;
 
@@ -26,10 +50,18 @@ export function UserMenu() {
   }
 
   return (
-    <div className="relative" onMouseEnter={() => setOpen(true)} onMouseLeave={() => setOpen(false)}>
+    <div
+      ref={rootRef}
+      className="relative"
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
       <Link
         to="/account"
         aria-label="Account"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={handleTriggerClick}
         className="flex items-center gap-2 rounded-sm p-1.5 pr-2 hover:bg-stone-50"
       >
         <span className="flex h-8 w-8 items-center justify-center rounded-full bg-stone-200 text-xs font-medium text-stone-900">

@@ -80,6 +80,18 @@ export function CheckoutFlow() {
   };
 
   const [step, setStep] = useState<Step>("details");
+  // Scroll the checkout content back to the top whenever the shopper advances
+  // (or steps back) so the next step starts in view rather than wherever the
+  // previous step's scroll position left them — matters most on mobile.
+  const contentRef = useRef<HTMLDivElement>(null);
+  const didMountStepRef = useRef(false);
+  useEffect(() => {
+    if (!didMountStepRef.current) {
+      didMountStepRef.current = true;
+      return; // don't yank the page on first render
+    }
+    contentRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [step]);
 
   const [contact, setContact] = useState<Contact>({ full_name: "", email: "", phone: "" });
   const [shippingAddress, setShippingAddress] = useState<CheckoutAddress>(emptyAddress);
@@ -266,8 +278,8 @@ export function CheckoutFlow() {
   }
 
   function validateDetails(): boolean {
-    if (!contact.full_name.trim() || !contact.email.trim()) {
-      setDetailsError(t("checkout.contact_required_error", "Full name and email are required."));
+    if (!contact.full_name.trim() || !contact.email.trim() || !contact.phone.trim()) {
+      setDetailsError(t("checkout.contact_required_error", "Full name, email and phone number are required."));
       return false;
     }
     if (!shippingAddress.line1.trim() || !shippingAddress.city.trim() ||
@@ -419,7 +431,7 @@ export function CheckoutFlow() {
 
   return (
     <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1fr_320px]">
-      <div className="flex flex-col gap-6">
+      <div ref={contentRef} className="flex flex-col gap-6 scroll-mt-24">
         <StepIndicator step={step} />
 
         {step === "details" && (
@@ -459,10 +471,11 @@ export function CheckoutFlow() {
                   onChange={(e) => setContact((c) => ({ ...c, email: e.target.value }))}
                 />
               </FormField>
-              <FormField label={t("common.phone", "Phone")} htmlFor="contact-phone" hint={t("common.optional", "Optional")}>
+              <FormField label={t("common.phone", "Phone")} htmlFor="contact-phone">
                 <Input
                   id="contact-phone"
                   type="tel"
+                  required
                   value={contact.phone}
                   onChange={(e) => setContact((c) => ({ ...c, phone: e.target.value }))}
                 />

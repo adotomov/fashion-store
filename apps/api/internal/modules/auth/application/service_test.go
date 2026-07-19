@@ -116,6 +116,9 @@ func TestLoginWithGoogle_CreatesUserAndIdentityOnFirstLogin(t *testing.T) {
 	if result.Token == "" {
 		t.Fatal("expected a non-empty token")
 	}
+	if !result.IsNew {
+		t.Fatal("expected IsNew=true on first registration")
+	}
 
 	if _, err := identities.FindByProviderSubject(context.Background(), "google", "google-subject-1"); err != nil {
 		t.Fatalf("expected identity to be created, got error: %v", err)
@@ -144,6 +147,12 @@ func TestLoginWithGoogle_ReusesUserOnRepeatLogin(t *testing.T) {
 
 	if first.UserID != second.UserID {
 		t.Fatalf("expected same user id across logins, got %v and %v", first.UserID, second.UserID)
+	}
+	if !first.IsNew {
+		t.Fatal("expected IsNew=true on the first login")
+	}
+	if second.IsNew {
+		t.Fatal("expected IsNew=false on a repeat login")
 	}
 	if len(provisioner.usersByEmail) != 1 {
 		t.Fatalf("expected exactly one provisioned user, got %d", len(provisioner.usersByEmail))

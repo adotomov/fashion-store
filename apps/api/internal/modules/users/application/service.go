@@ -2,6 +2,7 @@ package application
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 
@@ -71,6 +72,11 @@ func (s *Service) UpdateProfile(ctx context.Context, userID uuid.UUID, input Upd
 		user.FullName = *input.FullName
 	}
 	if input.Phone != nil {
+		// A phone number is mandatory on the profile so orders always have a
+		// reachable contact — reject a caller that tries to clear it.
+		if strings.TrimSpace(*input.Phone) == "" {
+			return nil, domain.ValidationError("phone is required")
+		}
 		user.Phone = *input.Phone
 	}
 	return s.repo.Update(ctx, *user)

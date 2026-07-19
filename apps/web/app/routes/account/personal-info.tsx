@@ -32,6 +32,11 @@ export default function PersonalInfo() {
   }, []);
 
   async function handleSave() {
+    if (!phone.trim()) {
+      setError(t("account.profile.phone_required", "A phone number is required so we can reach you about your orders."));
+      setSaved(false);
+      return;
+    }
     setIsSaving(true);
     setError(null);
     setSaved(false);
@@ -87,7 +92,7 @@ export default function PersonalInfo() {
               <Input id="full-name" value={fullName} onChange={(e) => setFullName(e.target.value)} />
             </FormField>
             <FormField label={t("common.phone", "Phone")} htmlFor="phone">
-              <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 555 123 4567" />
+              <Input id="phone" type="tel" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+1 555 123 4567" />
             </FormField>
           </div>
         </Card>

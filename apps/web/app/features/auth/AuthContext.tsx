@@ -4,6 +4,7 @@ import { mergeGuestCartIntoUser } from "../../lib/api/cart";
 import { apiFetch } from "../../lib/api/client";
 import { clearToken, getToken, setToken } from "../../lib/auth/session";
 import { clearCartToken } from "../../lib/cart/session";
+import { PhoneSetupGate } from "./PhoneSetupGate";
 
 export type Profile = {
   id: string;
@@ -20,6 +21,10 @@ type AuthContextValue = {
   loginWithGoogleIdToken: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  // True right after a first-time Google registration until the shopper has
+  // confirmed/entered a phone number. Drives the one-time PhoneSetup gate.
+  phoneSetupRequired: boolean;
+  completePhoneSetup: (phone: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -27,11 +32,13 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 type SessionResponse = {
   token: string;
   expires_at: string;
+  is_new?: boolean;
 };
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [phoneSetupRequired, setPhoneSetupRequired] = useState(false);
 
   async function loadProfile() {
     if (!getToken()) {
@@ -68,6 +75,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // just stays unmerged and can be retried on next login
     }
     await loadProfile();
+    // First-time registration: gate the shopper on the phone-capture step
+    // before they land in the app. Google never supplies a phone number, so a
+    // brand-new account has none — but an account previously created via guest
+    // checkout may already carry one to confirm.
+    if (session.is_new) setPhoneSetupRequired(true);
+  }
+
+  async function completePhoneSetup(phone: string) {
+    const updated = await apiFetch<Profile>("/api/v1/me", {
+      method: "PATCH",
+      body: { phone },
+    });
+    setProfile(updated);
+    setPhoneSetupRequired(false);
   }
 
   async function logout() {
@@ -77,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearToken();
       clearCartToken();
       setProfile(null);
+      setPhoneSetupRequired(false);
     }
   }
 
@@ -89,9 +111,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         loginWithGoogleIdToken,
         logout,
         refreshProfile: loadProfile,
+        phoneSetupRequired,
+        completePhoneSetup,
       }}
     >
       {children}
+      {phoneSetupRequired && <PhoneSetupGate />}
     </AuthContext.Provider>
   );
 }

@@ -47,5 +47,8 @@ func (c Contact) Validate() error {
 	if c.Email == "" {
 		return ValidationError("email is required")
 	}
+	if c.Phone == "" {
+		return ValidationError("phone is required")
+	}
 	return nil
 }
