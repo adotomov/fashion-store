@@ -63,6 +63,17 @@ export default function Shop() {
   const [onSaleOnly, setOnSaleOnly] = useState<boolean>(
     () => restored?.onSale ?? searchParams.get("sale") === "true",
   );
+  // Landing scoped to a type but without explicit categories (home department
+  // banners / header nav → /shop?type=slug) needs the type expanded into its
+  // category ids: the product query filters by category, not type, so without
+  // this it would show every product. The expansion is deferred until the nav
+  // has loaded (each type's categories come from there), so we flag it here.
+  const [typeExpansionPending, setTypeExpansionPending] = useState<boolean>(
+    () =>
+      !restored &&
+      searchParams.getAll("type").length > 0 &&
+      searchParams.getAll("category_id").length === 0,
+  );
   // A search query lives entirely in the URL (never persisted to
   // sessionStorage like the other filters) — it always reflects exactly
   // what the header search form was last submitted with.
@@ -76,11 +87,14 @@ export default function Shop() {
   const searchParamsKey = searchParams.toString();
   useEffect(() => {
     if (!shouldReset) return;
-    setSelectedTypeSlugs(searchParams.getAll("type"));
-    setSelectedCategoryIds(searchParams.getAll("category_id"));
+    const urlTypes = searchParams.getAll("type");
+    const urlCategoryIds = searchParams.getAll("category_id");
+    setSelectedTypeSlugs(urlTypes);
+    setSelectedCategoryIds(urlCategoryIds);
     setSelectedCatalogId(searchParams.get("catalog_id") ?? undefined);
     setSelectedAttributeValueIds(searchParams.getAll("attribute_value_id"));
     setOnSaleOnly(searchParams.get("sale") === "true");
+    setTypeExpansionPending(urlTypes.length > 0 && urlCategoryIds.length === 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParamsKey, shouldReset]);
 
@@ -104,8 +118,25 @@ export default function Shop() {
   useEffect(() => {
     getNav(locale)
       .then(setNavTypes)
-      .catch(() => {});
+      // If the nav can't load we can't expand a type into its categories —
+      // drop the pending flag so the product list falls back to unfiltered
+      // rather than hanging on the loading skeleton forever.
+      .catch(() => setTypeExpansionPending(false));
   }, [locale]);
+
+  // Once the nav has loaded, expand any type-only scope into that type's
+  // category ids so the product query filters correctly (see the state flag).
+  useEffect(() => {
+    if (!typeExpansionPending || navTypes.length === 0) return;
+    setSelectedCategoryIds((prev) => {
+      const ids = new Set(prev);
+      for (const slug of selectedTypeSlugs) {
+        navTypes.find((nt) => nt.slug === slug)?.categories.forEach((c) => ids.add(c.id));
+      }
+      return Array.from(ids);
+    });
+    setTypeExpansionPending(false);
+  }, [typeExpansionPending, navTypes, selectedTypeSlugs]);
 
   useEffect(() => {
     listFacets({ categoryIds: selectedCategoryIds, catalogId: selectedCatalogId, locale })
@@ -116,6 +147,9 @@ export default function Shop() {
 
   useEffect(() => {
     setProducts(null);
+    // Hold the fetch until a pending type→category expansion resolves, so we
+    // never briefly query unscoped (which would flash every product).
+    if (typeExpansionPending) return;
     listStorefrontProducts({
       categoryIds: selectedCategoryIds,
       catalogId: selectedCatalogId,
@@ -127,7 +161,7 @@ export default function Shop() {
       .then(setProducts)
       .catch(() => setError(t("shop.load_error", "Could not load products.")));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryKey, selectedCatalogId, attributeKey, onSaleOnly, searchQuery, locale]);
+  }, [categoryKey, selectedCatalogId, attributeKey, onSaleOnly, searchQuery, locale, typeExpansionPending]);
 
   // Only types that own at least one selected category stay "active" — lets
   // us drive both the Type and Category groups from the same source of truth.

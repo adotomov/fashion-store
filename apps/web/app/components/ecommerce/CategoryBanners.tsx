@@ -4,10 +4,7 @@ import { Link } from "react-router";
 import { useLanguage } from "../../features/i18n/LanguageContext";
 import { type NavType, getNav, resolveImageUrl } from "../../lib/api/storefront";
 import { Icon } from "../ui/Icon";
-
-// Number of department tiles to feature. Kept small so each stays large and
-// aspirational rather than shrinking into another category row.
-const MAX_TILES = 4;
+import { CardSlider } from "./CardSlider";
 
 // Gradient placeholders used when a department has no category imagery yet —
 // rotated so adjacent tiles never share the same tone.
@@ -20,7 +17,9 @@ const gradients = [
 
 // Large "shop the department" banners: one big tile per parent type, shown high
 // on the page as a bold navigational entry point. Distinct from ShopByCategory,
-// which is a per-category slider deeper down.
+// which is a per-category slider deeper down. Presented as a headless slider so
+// that more than a rowful of departments pages horizontally with arrows rather
+// than wrapping onto a second row.
 export function CategoryBanners() {
   const { locale } = useLanguage();
   const [navTypes, setNavTypes] = useState<NavType[] | null>(null);
@@ -31,9 +30,13 @@ export function CategoryBanners() {
       .catch(() => setNavTypes([]));
   }, [locale]);
 
-  const types = (navTypes ?? []).filter((type) => type.categories.length > 0).slice(0, MAX_TILES);
+  const types = (navTypes ?? []).filter((type) => type.categories.length > 0);
 
   if (navTypes !== null && types.length === 0) return null;
+
+  // Assign gradients by absolute position so a department keeps its tone as the
+  // slider pages, rather than shifting colour with its on-screen slot.
+  const tiles = types.map((type, i) => ({ type, gradient: gradients[i % gradients.length] }));
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-12 sm:px-6 lg:px-8">
@@ -44,11 +47,11 @@ export function CategoryBanners() {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-          {types.map((type, i) => (
-            <DepartmentTile key={type.id} type={type} gradient={gradients[i % gradients.length]} />
-          ))}
-        </div>
+        <CardSlider
+          items={tiles}
+          getKey={({ type }) => type.id}
+          renderItem={({ type, gradient }) => <DepartmentTile type={type} gradient={gradient} />}
+        />
       )}
     </section>
   );

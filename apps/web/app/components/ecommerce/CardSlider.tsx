@@ -29,7 +29,9 @@ export function useVisibleCount(): number {
 }
 
 type CardSliderProps<T> = {
-  title: string;
+  // Optional: when omitted the strip is headless (used by the department
+  // banners) and the arrows sit alone at the top-right.
+  title?: string;
   items: T[];
   getKey: (item: T) => string;
   renderItem: (item: T) => ReactNode;
@@ -57,29 +59,29 @@ export function CardSlider<T>({ title, items, getKey, renderItem }: CardSliderPr
 
   return (
     <div>
-      <div className="flex items-center justify-between gap-4">
-        <Heading as="h3" size="sm">
-          {title}
-        </Heading>
-        {canSlide && (
-          <div className="flex items-center gap-1.5">
-            <SlideButton
-              direction="left"
-              label={t("home.slider_prev", "Previous")}
-              onClick={() => slide(-1)}
-            />
-            <SlideButton
-              direction="right"
-              label={t("home.slider_next", "Next")}
-              onClick={() => slide(1)}
-            />
-          </div>
-        )}
-      </div>
+      {(title || canSlide) && (
+        <div className="flex items-center justify-between gap-4">
+          {title ? <Heading as="h3" size="sm">{title}</Heading> : <span />}
+          {canSlide && (
+            <div className="flex items-center gap-1.5">
+              <SlideButton
+                direction="left"
+                label={t("home.slider_prev", "Previous")}
+                onClick={() => slide(-1)}
+              />
+              <SlideButton
+                direction="right"
+                label={t("home.slider_next", "Next")}
+                onClick={() => slide(1)}
+              />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Always lay out `visibleCount` columns so a group with fewer items
           leaves empty cells rather than stretching its cards across the row. */}
-      <div className="mt-4 grid gap-4 sm:gap-6" style={{ gridTemplateColumns: `repeat(${visibleCount}, minmax(0, 1fr))` }}>
+      <div className={`${title || canSlide ? "mt-4" : ""} grid gap-4 sm:gap-6`} style={{ gridTemplateColumns: `repeat(${visibleCount}, minmax(0, 1fr))` }}>
         {visible.map((item) => (
           <div key={getKey(item)}>{renderItem(item)}</div>
         ))}
