@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -29,6 +31,7 @@ import (
 	fulfillmentinfra "github.com/adotomov/fashion-store/apps/api/internal/modules/fulfillment/infrastructure"
 	fulfillmenthttp "github.com/adotomov/fashion-store/apps/api/internal/modules/fulfillment/transport/http"
 	i18napplication "github.com/adotomov/fashion-store/apps/api/internal/modules/i18n/application"
+	i18ndomain "github.com/adotomov/fashion-store/apps/api/internal/modules/i18n/domain"
 	i18ninfra "github.com/adotomov/fashion-store/apps/api/internal/modules/i18n/infrastructure"
 	i18nhttp "github.com/adotomov/fashion-store/apps/api/internal/modules/i18n/transport/http"
 	inventoryapplication "github.com/adotomov/fashion-store/apps/api/internal/modules/inventory/application"
@@ -38,6 +41,10 @@ import (
 	invoicingapplication "github.com/adotomov/fashion-store/apps/api/internal/modules/invoicing/application"
 	invoicinginfra "github.com/adotomov/fashion-store/apps/api/internal/modules/invoicing/infrastructure"
 	invoicinghttp "github.com/adotomov/fashion-store/apps/api/internal/modules/invoicing/transport/http"
+	notificationsapplication "github.com/adotomov/fashion-store/apps/api/internal/modules/notifications/application"
+	notificationsdomain "github.com/adotomov/fashion-store/apps/api/internal/modules/notifications/domain"
+	notificationsinfra "github.com/adotomov/fashion-store/apps/api/internal/modules/notifications/infrastructure"
+	notificationshttp "github.com/adotomov/fashion-store/apps/api/internal/modules/notifications/transport/http"
 	ordersapplication "github.com/adotomov/fashion-store/apps/api/internal/modules/orders/application"
 	ordersdomain "github.com/adotomov/fashion-store/apps/api/internal/modules/orders/domain"
 	ordersinfra "github.com/adotomov/fashion-store/apps/api/internal/modules/orders/infrastructure"
@@ -76,6 +83,190 @@ func (a *userProvisionerAdapter) EnsureUser(ctx context.Context, input authappli
 
 func (a *userProvisionerAdapter) GetRoles(ctx context.Context, userID uuid.UUID) ([]string, error) {
 	return a.users.GetRoles(ctx, userID)
+}
+
+// notificationsBrandingAdapter implements the notifications module's
+// BrandingProvider port on top of the admin store-settings service, so emails
+// carry the same name and logo as the storefront without the notifications
+// module depending on admin's types.
+type notificationsBrandingAdapter struct {
+	settings      *adminapplication.StoreSettingsService
+	storefrontURL string
+	// assetBaseURL turns the logo's relative API path into an absolute URL a
+	// mail client can fetch. Empty means "render the store name as text".
+	assetBaseURL string
+}
+
+func (a *notificationsBrandingAdapter) Branding(ctx context.Context) (notificationsdomain.Branding, error) {
+	settings, err := a.settings.GetSettings(ctx)
+	if err != nil {
+		return notificationsdomain.Branding{}, err
+	}
+
+	branding := notificationsdomain.Branding{
+		StoreName:     settings.StoreName,
+		Locale:        settings.Locale,
+		StorefrontURL: a.storefrontURL,
+	}
+	if settings.ContactEmail != nil {
+		branding.SupportEmail = *settings.ContactEmail
+	}
+	if settings.HasLogo() && a.assetBaseURL != "" {
+		branding.LogoURL = strings.TrimSuffix(a.assetBaseURL, "/") + "/api/v1/storefront/store-settings/logo/file"
+	}
+	return branding, nil
+}
+
+// authNotifierAdapter implements auth's Notifier port on top of the
+// notifications module, queueing the welcome email for a new account.
+type authNotifierAdapter struct {
+	notifications *notificationsapplication.Service
+}
+
+func (a *authNotifierAdapter) UserRegistered(ctx context.Context, n authapplication.RegistrationNotification) error {
+	return a.notifications.Enqueue(ctx, notificationsapplication.EnqueueInput{
+		TemplateKey: notificationsdomain.TemplateWelcome,
+		ToEmail:     n.Email,
+		ToName:      n.FullName,
+		// Keyed on the user so an account can only ever be welcomed once, even if
+		// the identity row were somehow recreated.
+		DedupeKey: notificationsdomain.TemplateWelcome + ":" + n.UserID.String(),
+		Vars: map[string]any{
+			"CustomerName": n.FullName,
+		},
+	})
+}
+
+// fulfillmentNotifierAdapter implements fulfillment's Notifier port on top of
+// the notifications module, queueing the dispatch notice for a shipped parcel.
+type fulfillmentNotifierAdapter struct {
+	notifications *notificationsapplication.Service
+}
+
+func (a *fulfillmentNotifierAdapter) OrderShipped(ctx context.Context, n fulfillmentapplication.ShipmentNotification) error {
+	carrier := n.Carrier
+	if carrier == "" {
+		carrier = "the courier"
+	}
+	return a.notifications.Enqueue(ctx, notificationsapplication.EnqueueInput{
+		TemplateKey: notificationsdomain.TemplateShippingUpdate,
+		ToEmail:     n.CustomerEmail,
+		ToName:      n.CustomerName,
+		// Keyed on the order: the tracking poll re-sees the in-flight status on
+		// every tick, and this is what stops it mailing on each one.
+		DedupeKey: notificationsdomain.TemplateShippingUpdate + ":" + n.OrderID.String(),
+		Vars: map[string]any{
+			"CustomerName":   n.CustomerName,
+			"OrderNumber":    n.OrderNumber,
+			"Carrier":        carrier,
+			"TrackingNumber": n.TrackingNumber,
+			"TrackingURL":    speedyTrackingURL(n.TrackingNumber),
+		},
+	})
+}
+
+// speedyTrackingURL builds the customer-facing parcel tracking link. Speedy is
+// the only carrier wired today; an empty string simply hides the button.
+func speedyTrackingURL(trackingNumber string) string {
+	if trackingNumber == "" {
+		return ""
+	}
+	return "https://www.speedy.bg/en/track-shipment?shipmentNumber=" + trackingNumber
+}
+
+// checkoutNotifierAdapter implements checkout's OrderNotifier port on top of the
+// notifications module. It owns presentation concerns (formatting money and
+// addresses) and the dedupe keys that make each email send at most once per
+// order, keeping both out of the checkout service.
+type checkoutNotifierAdapter struct {
+	notifications *notificationsapplication.Service
+}
+
+func (a *checkoutNotifierAdapter) OrderConfirmed(ctx context.Context, n checkoutapplication.OrderNotification) error {
+	items := make([]map[string]any, 0, len(n.Items))
+	for _, item := range n.Items {
+		lineTotal := money.Money{
+			AmountMinor: item.UnitPrice.AmountMinor * int64(item.Quantity),
+			Currency:    item.UnitPrice.Currency,
+		}
+		items = append(items, map[string]any{
+			"Name":      item.ProductName,
+			"Variant":   item.VariantLabel,
+			"Quantity":  item.Quantity,
+			"LineTotal": formatMoney(lineTotal),
+		})
+	}
+
+	return a.notifications.Enqueue(ctx, notificationsapplication.EnqueueInput{
+		TemplateKey: notificationsdomain.TemplateOrderConfirmation,
+		ToEmail:     n.CustomerEmail,
+		ToName:      n.CustomerName,
+		// Keyed on the order, so the pay-on-delivery path, a webhook retry and
+		// the payment sweeper can all reach here without sending twice.
+		DedupeKey: notificationsdomain.TemplateOrderConfirmation + ":" + n.OrderID.String(),
+		Vars: map[string]any{
+			"CustomerName":    n.CustomerName,
+			"OrderNumber":     n.OrderNumber,
+			"OrderTotal":      formatMoney(n.Total),
+			"DeliveryFee":     formatMoney(n.DeliveryFee),
+			"DeliveryMethod":  n.DeliveryMethod,
+			"PaymentMethod":   paymentMethodLabel(n.PaymentMethod),
+			"ShippingAddress": formatOrderAddress(n.ShippingAddress),
+			"Items":           items,
+		},
+	})
+}
+
+func (a *checkoutNotifierAdapter) PaymentFailed(ctx context.Context, n checkoutapplication.OrderNotification) error {
+	return a.notifications.Enqueue(ctx, notificationsapplication.EnqueueInput{
+		TemplateKey: notificationsdomain.TemplatePaymentFailed,
+		ToEmail:     n.CustomerEmail,
+		ToName:      n.CustomerName,
+		DedupeKey:   notificationsdomain.TemplatePaymentFailed + ":" + n.OrderID.String(),
+		Vars: map[string]any{
+			"CustomerName": n.CustomerName,
+			"OrderNumber":  n.OrderNumber,
+			"OrderTotal":   formatMoney(n.Total),
+		},
+	})
+}
+
+// formatMoney renders minor units for display. The currency code is spelled out
+// rather than symbolised because the store quotes both BGN and EUR and a bare
+// symbol would be ambiguous.
+func formatMoney(m money.Money) string {
+	if m.Currency == "" {
+		return ""
+	}
+	return fmt.Sprintf("%.2f %s", float64(m.AmountMinor)/100, m.Currency)
+}
+
+func formatOrderAddress(a checkoutapplication.OrderAddress) string {
+	parts := []string{a.RecipientName, a.Line1, a.Line2, a.PostalCode, a.City, a.Region, a.CountryCode}
+	kept := parts[:0]
+	for _, p := range parts {
+		if strings.TrimSpace(p) != "" {
+			kept = append(kept, p)
+		}
+	}
+	return strings.Join(kept, ", ")
+}
+
+// paymentMethodLabel turns a payment code into customer-facing wording.
+// NOTE: these labels are English-only today, while the surrounding template copy
+// is localised — localising them (and delivery method names, which come from the
+// checkout domain) is a follow-up.
+func paymentMethodLabel(code string) string {
+	switch code {
+	case "cash_on_delivery":
+		return "Pay on delivery"
+	case "card_on_easybox":
+		return "Card at the locker terminal"
+	case "card_online":
+		return "Paid online by card"
+	default:
+		return code
+	}
 }
 
 // checkoutCartGatewayAdapter implements checkout's CartGateway port on top
@@ -319,8 +510,23 @@ func (a *checkoutOrderGatewayAdapter) FindByProviderOrderID(ctx context.Context,
 			City: order.ShippingAddress.City, Region: order.ShippingAddress.Region,
 			PostalCode: order.ShippingAddress.PostalCode, CountryCode: order.ShippingAddress.CountryCode,
 		},
-		Total: order.Total,
+		Total:       order.Total,
+		DeliveryFee: order.DeliveryFee,
+		Items:       toCheckoutResultItems(order.Items),
 	}, nil
+}
+
+func toCheckoutResultItems(items []ordersdomain.OrderItem) []checkoutapplication.OrderResultItem {
+	out := make([]checkoutapplication.OrderResultItem, 0, len(items))
+	for _, item := range items {
+		out = append(out, checkoutapplication.OrderResultItem{
+			ProductName:  item.ProductName,
+			VariantLabel: item.VariantLabel,
+			Quantity:     item.Quantity,
+			UnitPrice:    item.UnitPrice,
+		})
+	}
+	return out
 }
 
 func (a *checkoutOrderGatewayAdapter) MarkPaid(ctx context.Context, orderID uuid.UUID, providerReference string, capturedMinor int64) error {
@@ -437,7 +643,17 @@ func (a *fulfillmentOrderGatewayAdapter) ListAwaitingTracking(ctx context.Contex
 		if o.TrackingNumber == nil {
 			continue
 		}
-		refs = append(refs, fulfillmentapplication.TrackedOrderRef{OrderID: o.ID, ParcelID: *o.TrackingNumber})
+		ref := fulfillmentapplication.TrackedOrderRef{
+			OrderID:      o.ID,
+			ParcelID:     *o.TrackingNumber,
+			OrderNumber:  o.OrderNumber,
+			ContactName:  o.ContactName,
+			ContactEmail: o.ContactEmail,
+		}
+		if o.Carrier != nil {
+			ref.Carrier = *o.Carrier
+		}
+		refs = append(refs, ref)
 	}
 	return refs, nil
 }
@@ -483,6 +699,25 @@ func (a *storefrontPromotionsGatewayAdapter) GetEffectivePrices(ctx context.Cont
 		result[productID] = cataloghttp.EffectivePromoPrice{Price: *discounted, Label: promo.Name}
 	}
 	return result, nil
+}
+
+// homeSectionCategoryGroupsGatewayAdapter implements cataloghttp's
+// HomeSectionCategoryGroupsGateway on top of the admin store-settings service,
+// translating the admin domain type into the catalog handler's own type.
+type homeSectionCategoryGroupsGatewayAdapter struct {
+	settings *adminapplication.StoreSettingsService
+}
+
+func (a *homeSectionCategoryGroupsGatewayAdapter) GetSectionCategoryGroups(ctx context.Context, sectionID string) ([]cataloghttp.SectionCategoryGroup, error) {
+	groups, err := a.settings.GetSectionCategoryGroups(ctx, sectionID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]cataloghttp.SectionCategoryGroup, 0, len(groups))
+	for _, g := range groups {
+		out = append(out, cataloghttp.SectionCategoryGroup{CategoryID: g.CategoryID, ProductIDs: g.ProductIDs})
+	}
+	return out, nil
 }
 
 // navCategoryPromotionsGatewayAdapter implements cataloghttp's
@@ -599,10 +834,10 @@ func (a *usersOrderCounterAdapter) CountOrdersByUser(ctx context.Context, userID
 }
 
 // buildRegistrars wires up domain modules and returns their HTTP route
-// registrars, plus the fulfillment service so main.go can launch its
-// background tracking poller. Modules are added here as they are
-// implemented.
-func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.Service, *checkoutapplication.Service) {
+// registrars, plus the services main.go needs to launch background workers
+// (fulfillment tracking poller, payment sweeper, email dispatcher). Modules are
+// added here as they are implemented.
+func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.Service, *checkoutapplication.Service, *notificationsapplication.Service) {
 	usersRepo := usersinfra.NewPostgresRepository(a.DB)
 
 	identityRepo := authinfra.NewPostgresIdentityRepository(a.DB)
@@ -683,8 +918,50 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 	storeSettingsRepo := admininfra.NewPostgresStoreSettingsRepository(a.DB)
 	storeSettingsService := adminapplication.NewStoreSettingsService(storeSettingsRepo, storageClient, a.Config.Storage.Bucket).
 		WithHeroRepo(storeSettingsRepo).
+		WithEditorialBannerRepo(storeSettingsRepo).
 		WithHomeSectionsRepo(storeSettingsRepo)
 	storeSettingsHandler := adminhttp.NewStoreSettingsHandler(storeSettingsService)
+
+	// Notifications (transactional email). The sender is chosen the same way as
+	// the payment gateway: the real provider when credentials are configured,
+	// otherwise a sender that only renders and logs — so local/devbox runs need
+	// no SendGrid account and can never deliver real mail.
+	var emailSender notificationsapplication.EmailSender = notificationsinfra.NewLogSender(a.Logger)
+	if a.Config.Email.Enabled() {
+		emailSender = notificationsinfra.NewSendGridSender(
+			a.Config.Email.SendGridAPIKey,
+			a.Config.Email.FromAddress,
+			a.Config.Email.FromName,
+			nil,
+		)
+	}
+	notificationsBranding := &notificationsBrandingAdapter{
+		settings:      storeSettingsService,
+		storefrontURL: a.Config.Email.StorefrontURL,
+		assetBaseURL:  a.Config.Email.AssetBaseURL,
+	}
+	notificationsService := notificationsapplication.NewService(
+		notificationsinfra.NewPostgresRepository(a.DB),
+		notificationsinfra.NewPostgresTemplateStore(a.DB),
+		notificationsinfra.NewTemplateRenderer(notificationsBranding),
+		emailSender,
+		notificationsinfra.NewPostgresSuppressionStore(a.DB),
+		notificationsBranding,
+		i18ndomain.DefaultLocale,
+		a.Logger,
+	)
+
+	// A bad verification key must not take the API down — the webhook simply
+	// keeps failing closed until it's fixed, so log loudly and carry on.
+	notificationsHandler, err := notificationshttp.NewHandler(notificationsService, a.Config.Email.WebhookVerificationKey)
+	if err != nil {
+		a.Logger.Error("invalid email webhook verification key; provider events will be rejected", "error", err)
+	}
+
+	// Attached after the fact: notifications needs store settings for branding,
+	// which is wired below auth. Same deferred-wiring approach as the invoice
+	// gateway above.
+	authService.WithNotifier(&authNotifierAdapter{notifications: notificationsService}, a.Logger)
 
 	storeAddressRepo := admininfra.NewPostgresStoreAddressRepository(a.DB)
 	storeAddressService := adminapplication.NewStoreAddressService(storeAddressRepo, storeSettingsRepo)
@@ -713,7 +990,8 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 		fulfillmentSpeedyClient = fulfillmentinfra.NewFakeSpeedyClient()
 	}
 	fulfillmentOrderGateway := &fulfillmentOrderGatewayAdapter{orders: ordersService}
-	fulfillmentService := fulfillmentapplication.NewService(fulfillmentSettingsRepo, fulfillmentSpeedyClient, fulfillmentOrderGateway, a.Logger)
+	fulfillmentService := fulfillmentapplication.NewService(fulfillmentSettingsRepo, fulfillmentSpeedyClient, fulfillmentOrderGateway, a.Logger).
+		WithNotifier(&fulfillmentNotifierAdapter{notifications: notificationsService})
 	fulfillmentHandler := fulfillmenthttp.NewHandler(fulfillmentService, a.Config.Fulfillment.SpeedyMode == app.SpeedyModeFake)
 	fulfillmentModule := fulfillmenthttp.NewModule(fulfillmentHandler, requireAdmin)
 
@@ -724,7 +1002,8 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 
 	storefrontPromotionsGateway := &storefrontPromotionsGatewayAdapter{promotions: promotionsService}
 	navCategoryPromotionsGateway := &navCategoryPromotionsGatewayAdapter{promotions: promotionsService}
-	storefrontHandler := cataloghttp.NewStorefrontHandler(productTypeService, categoryService, productService, catalogService, translationService, storefrontPromotionsGateway, navCategoryPromotionsGateway)
+	homeSectionCategoryGroupsGateway := &homeSectionCategoryGroupsGatewayAdapter{settings: storeSettingsService}
+	storefrontHandler := cataloghttp.NewStorefrontHandler(productTypeService, categoryService, productService, catalogService, translationService, storefrontPromotionsGateway, navCategoryPromotionsGateway, homeSectionCategoryGroupsGateway)
 
 	checkoutCartGateway := &checkoutCartGatewayAdapter{cart: cartService}
 	checkoutInventoryGateway := &checkoutInventoryGatewayAdapter{inventory: inventoryService}
@@ -746,7 +1025,8 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 	checkoutFulfillmentGateway := &checkoutFulfillmentGatewayAdapter{fulfillment: fulfillmentService}
 	checkoutDiscountGateway := &checkoutDiscountGatewayAdapter{promotions: promotionsService}
 	checkoutWebhookStore := checkoutinfra.NewPostgresWebhookEventStore(a.DB)
-	checkoutService := checkoutapplication.NewService(checkoutCartGateway, checkoutInventoryGateway, checkoutUserGateway, checkoutOrderGateway, checkoutPaymentGateway, checkoutFulfillmentGateway, checkoutDiscountGateway, deferredInvoices, checkoutWebhookStore, a.Logger)
+	checkoutService := checkoutapplication.NewService(checkoutCartGateway, checkoutInventoryGateway, checkoutUserGateway, checkoutOrderGateway, checkoutPaymentGateway, checkoutFulfillmentGateway, checkoutDiscountGateway, deferredInvoices, checkoutWebhookStore, a.Logger).
+		WithNotifier(&checkoutNotifierAdapter{notifications: notificationsService})
 	checkoutHandler := checkouthttp.NewHandler(checkoutService, a.Config.Payments.RevolutWebhookSecret)
 	checkoutModule := checkouthttp.NewModule(checkoutHandler, authhttp.OptionalAuth(authService), requireAdmin)
 
@@ -773,7 +1053,8 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 		i18nStorefrontModule,
 		wishlistModule,
 		invoicingModule,
-	}, fulfillmentService, checkoutService
+		notificationsHandler,
+	}, fulfillmentService, checkoutService, notificationsService
 }
 
 // defaultUIStrings seeds the English baseline for the static-text

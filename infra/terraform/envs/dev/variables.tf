@@ -122,6 +122,24 @@ variable "revolut_enabled" {
   default     = true
 }
 
+variable "email_enabled" {
+  description = "Inject the SendGrid API key + event-webhook verification key into the API service, switching it from the log sender to real delivery. Keep false until the secret VALUES are populated out-of-band AND the sending domain's SPF/DKIM/DMARC records resolve — sending before then lands mail in spam and harms the domain's reputation."
+  type        = bool
+  default     = false
+}
+
+variable "email_from" {
+  description = "Envelope/header From address for all outbound mail. Must be an address on a domain authenticated in SendGrid."
+  type        = string
+  default     = "info@verani.bg"
+}
+
+variable "email_from_name" {
+  description = "Display name shown alongside email_from in recipients' inboxes."
+  type        = string
+  default     = "Verani"
+}
+
 variable "observability_enabled" {
   description = "Export OTel traces to Cloud Trace and custom metrics to Cloud Monitoring. Structured logging + trace correlation are always on; this only gates the OTel exporters. Dev is the first env to enable, so this defaults to true."
   type        = bool

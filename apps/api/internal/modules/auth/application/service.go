@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
@@ -20,6 +21,17 @@ type Service struct {
 	sessions    SessionRepository
 	provisioner UserProvisioner
 	sessionTTL  time.Duration
+	notifier    Notifier
+	logger      *slog.Logger
+}
+
+// WithNotifier attaches the account-event notifier behind the welcome email.
+// Optional and chainable, so sign-in keeps working in environments where email
+// isn't configured.
+func (s *Service) WithNotifier(notifier Notifier, logger *slog.Logger) *Service {
+	s.notifier = notifier
+	s.logger = logger
+	return s
 }
 
 func NewService(verifier GoogleVerifier, identities IdentityRepository, sessions SessionRepository, provisioner UserProvisioner, sessionTTL time.Duration) *Service {
@@ -84,6 +96,20 @@ func (s *Service) LoginWithGoogle(ctx context.Context, idToken string) (*LoginRe
 		return nil, err
 	}
 	result.IsNew = isNew
+
+	// Welcome the customer once, on the login that created their account. A
+	// failure here must never block sign-in, so it is logged and swallowed.
+	if isNew && s.notifier != nil {
+		notification := RegistrationNotification{
+			UserID:   userID,
+			Email:    identity.Email,
+			FullName: identity.FullName,
+		}
+		if err := s.notifier.UserRegistered(ctx, notification); err != nil && s.logger != nil {
+			s.logger.ErrorContext(ctx, "failed to queue welcome email",
+				slog.Any("error", err), slog.String("user_id", userID.String()))
+		}
+	}
 	return result, nil
 }
 

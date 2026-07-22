@@ -57,6 +57,14 @@ type HeroSettingsRepository interface {
 	SaveHeroSettings(ctx context.Context, s domain.HeroSettings) (domain.HeroSettings, error)
 }
 
+// EditorialBannerRepository persists the singleton editorial_banner_settings row.
+// Like hero_settings, the row always exists (seeded by migration) and is only
+// ever upserted.
+type EditorialBannerRepository interface {
+	GetEditorialBanner(ctx context.Context) (domain.EditorialBanner, error)
+	SaveEditorialBanner(ctx context.Context, b domain.EditorialBanner) (domain.EditorialBanner, error)
+}
+
 // HomeSectionsRepository persists the home_sections and home_section_products
 // rows. The four section rows are seeded by migration and are only updated,
 // never inserted or deleted from application code.
@@ -65,4 +73,6 @@ type HomeSectionsRepository interface {
 	SaveHomeSection(ctx context.Context, s domain.HomeSection) (domain.HomeSection, error)
 	GetSectionProductIDs(ctx context.Context, sectionID string) ([]uuid.UUID, error)
 	SetSectionProducts(ctx context.Context, sectionID string, productIDs []uuid.UUID) error
+	GetSectionCategoryGroups(ctx context.Context, sectionID string) ([]domain.SectionCategoryGroup, error)
+	SetSectionCategoryGroups(ctx context.Context, sectionID string, groups []domain.SectionCategoryGroup) error
 }

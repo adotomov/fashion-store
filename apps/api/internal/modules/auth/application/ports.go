@@ -52,3 +52,17 @@ type EnsureUserInput struct {
 type UserRef struct {
 	ID uuid.UUID
 }
+
+// RegistrationNotification describes a newly registered account.
+type RegistrationNotification struct {
+	UserID   uuid.UUID
+	Email    string
+	FullName string
+}
+
+// Notifier is told about account events worth emailing about. Implemented by an
+// adapter over the notifications module. Optional: a nil notifier sends nothing,
+// so sign-in keeps working wherever email isn't configured.
+type Notifier interface {
+	UserRegistered(ctx context.Context, n RegistrationNotification) error
+}

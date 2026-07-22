@@ -46,6 +46,8 @@ resource "google_secret_manager_secret_iam_member" "api_runtime_secrets" {
     google_secret_manager_secret.google_client_id.secret_id,
     google_secret_manager_secret.revolut_api_key.secret_id,
     google_secret_manager_secret.revolut_webhook_secret.secret_id,
+    google_secret_manager_secret.sendgrid_api_key.secret_id,
+    google_secret_manager_secret.email_webhook_verification_key.secret_id,
   ])
 
   project   = var.project_id

@@ -16,6 +16,7 @@ import { useCart } from "../features/cart/CartContext";
 import { useLanguage } from "../features/i18n/LanguageContext";
 import { useWishlist } from "../features/wishlist/WishlistContext";
 import { cn } from "../lib/utils/cn";
+import { addRecentlyViewed } from "../lib/recentlyViewed";
 import {
   type StorefrontProductDetail,
   type StorefrontVariant,
@@ -53,6 +54,7 @@ export default function ProductDetail() {
     getStorefrontProduct(slug, locale)
       .then((loaded) => {
         setProduct(loaded);
+        addRecentlyViewed(loaded.id);
         const firstVariant = loaded.variants[0];
         if (firstVariant) {
           const initial: Record<string, string> = {};

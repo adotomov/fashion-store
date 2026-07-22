@@ -9,6 +9,7 @@ export type ShopFilterState = {
   categoryIds: string[];
   catalogId?: string;
   attributeValueIds: string[];
+  onSale?: boolean;
 };
 
 export function loadShopFilterState(): ShopFilterState | null {

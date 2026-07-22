@@ -35,6 +35,9 @@ var (
 	sweeperReclaims      metric.Int64Counter
 	webhookEvents        metric.Int64Counter
 	fulfillmentErrors    metric.Int64Counter
+	emailsSent           metric.Int64Counter
+	emailsFailed         metric.Int64Counter
+	emailsSuppressed     metric.Int64Counter
 )
 
 func init() {
@@ -48,6 +51,9 @@ func init() {
 	sweeperReclaims = mustCounter(m, "checkout_sweeper_reclaims_total", "Stock reservations reclaimed by the background sweeper.")
 	webhookEvents = mustCounter(m, "webhook_events_total", "Inbound payment webhooks by type and result.")
 	fulfillmentErrors = mustCounter(m, "fulfillment_poll_errors_total", "Errors during the fulfillment tracking poll.")
+	emailsSent = mustCounter(m, "emails_sent_total", "Transactional emails accepted by the email provider.")
+	emailsFailed = mustCounter(m, "emails_failed_total", "Transactional emails that failed, by outcome.")
+	emailsSuppressed = mustCounter(m, "emails_suppressed_total", "Emails not sent because the recipient is suppressed.")
 }
 
 // mustCounter creates a counter, falling back to a no-op instrument on the
@@ -113,4 +119,21 @@ func WebhookEvent(ctx context.Context, eventType, result string) {
 // FulfillmentPollError records an error during the fulfillment tracking poll.
 func FulfillmentPollError(ctx context.Context) {
 	fulfillmentErrors.Add(ctx, 1)
+}
+
+// EmailSent records an email the provider accepted. templateKey is a bounded
+// enum (the seeded transactional template keys), never a per-recipient value.
+func EmailSent(ctx context.Context, templateKey string) {
+	emailsSent.Add(ctx, 1, metric.WithAttributes(attribute.String("template", templateKey)))
+}
+
+// EmailFailed records a failed email. outcome is a bounded enum:
+// retry | dead_letter | bounce | complaint.
+func EmailFailed(ctx context.Context, outcome string) {
+	emailsFailed.Add(ctx, 1, metric.WithAttributes(attribute.String("outcome", outcome)))
+}
+
+// EmailSuppressed records an email withheld because the address is suppressed.
+func EmailSuppressed(ctx context.Context) {
+	emailsSuppressed.Add(ctx, 1)
 }

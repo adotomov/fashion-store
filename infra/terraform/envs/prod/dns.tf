@@ -63,20 +63,69 @@ resource "google_dns_record_set" "api_dev_cname" {
   rrdatas      = ["ghs.googlehosted.com."]
 }
 
-# --- Google site verification (Search Console) ---
-# Required so the boutiqueverani@gmail.com account can create Cloud Run domain
-# mappings for dev.verani.bg / api.dev.verani.bg. Apex TXT record.
+# --- Apex TXT: site verification + SPF ---
+# DNS allows only ONE TXT record set per name, so the Search Console
+# verification string and the SPF policy must live in this single resource —
+# adding SPF as a separate apex TXT resource would conflict and clobber one of
+# them. Both strings coexist as separate rrdatas entries.
+#
+# The verification string is required so the boutiqueverani@gmail.com account
+# can create Cloud Run domain mappings for dev.verani.bg / api.dev.verani.bg.
 
-resource "google_dns_record_set" "google_site_verification" {
+# Renamed from google_site_verification when SPF joined this record set. Without
+# this, Terraform would destroy and recreate the record — briefly dropping the
+# Search Console verification that the Cloud Run domain mappings depend on.
+moved {
+  from = google_dns_record_set.google_site_verification
+  to   = google_dns_record_set.apex_txt
+}
+
+resource "google_dns_record_set" "apex_txt" {
   project      = var.project_id
   managed_zone = google_dns_managed_zone.root.name
   name         = google_dns_managed_zone.root.dns_name
   type         = "TXT"
   ttl          = 300
-  rrdatas      = ["\"google-site-verification=CNKnHx-eSyIwKLglHqWzI85yrSdco7AUY-1qzbJEzXQ\""]
+  rrdatas = [
+    "\"google-site-verification=CNKnHx-eSyIwKLglHqWzI85yrSdco7AUY-1qzbJEzXQ\"",
+    "\"${var.spf_record}\"",
+  ]
+}
+
+# --- DMARC ---
+# Starts at p=none: report-only, so a misconfiguration can be observed in the
+# aggregate reports without silently dropping real customer mail. Tighten to
+# quarantine and then reject once reports show SPF+DKIM passing consistently.
+
+resource "google_dns_record_set" "dmarc" {
+  project      = var.project_id
+  managed_zone = google_dns_managed_zone.root.name
+  name         = "_dmarc.${google_dns_managed_zone.root.dns_name}"
+  type         = "TXT"
+  ttl          = 300
+  rrdatas      = ["\"${var.dmarc_record}\""]
+}
+
+# --- SendGrid domain authentication (DKIM + branded link CNAMEs) ---
+# SendGrid generates these per account when you authenticate a sending domain,
+# so the values can't be known ahead of time. Populate sendgrid_dns_records from
+# the SendGrid console and apply; until then this creates nothing and email
+# stays disabled (see email_enabled in the dev/prod cloud_run config).
+
+resource "google_dns_record_set" "sendgrid" {
+  for_each = var.sendgrid_dns_records
+
+  project      = var.project_id
+  managed_zone = google_dns_managed_zone.root.name
+  name         = "${each.key}.${google_dns_managed_zone.root.dns_name}"
+  type         = "CNAME"
+  ttl          = 300
+  rrdatas      = [endswith(each.value, ".") ? each.value : "${each.value}."]
 }
 
 # --- Email: preserved from SuperHosting, must not break on cutover ---
+# INBOUND mail only. info@verani.bg is a SuperHosting mailbox and receives here;
+# outbound transactional mail goes via SendGrid. Do not repoint or remove this.
 
 resource "google_dns_record_set" "mx" {
   project      = var.project_id

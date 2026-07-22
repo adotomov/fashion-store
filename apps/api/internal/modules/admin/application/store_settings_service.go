@@ -13,6 +13,7 @@ import (
 type StoreSettingsService struct {
 	repo             StoreSettingsRepository
 	heroRepo         HeroSettingsRepository
+	bannerRepo       EditorialBannerRepository
 	homeSectionsRepo HomeSectionsRepository
 	storage          MediaStorage
 	bucket           string
@@ -30,6 +31,12 @@ func NewStoreSettingsService(repo StoreSettingsRepository, storage MediaStorage,
 // immediately after NewStoreSettingsService in modules.go.
 func (s *StoreSettingsService) WithHeroRepo(heroRepo HeroSettingsRepository) *StoreSettingsService {
 	s.heroRepo = heroRepo
+	return s
+}
+
+// WithEditorialBannerRepo wires the editorial-banner repository into the service.
+func (s *StoreSettingsService) WithEditorialBannerRepo(bannerRepo EditorialBannerRepository) *StoreSettingsService {
+	s.bannerRepo = bannerRepo
 	return s
 }
 
@@ -181,6 +188,64 @@ func (s *StoreSettingsService) DeleteHeroBackground(ctx context.Context) (domain
 	return s.heroRepo.SaveHeroSettings(ctx, settings)
 }
 
+func (s *StoreSettingsService) GetEditorialBanner(ctx context.Context) (domain.EditorialBanner, error) {
+	return s.bannerRepo.GetEditorialBanner(ctx)
+}
+
+func (s *StoreSettingsService) SaveEditorialBanner(ctx context.Context, banner domain.EditorialBanner) (domain.EditorialBanner, error) {
+	return s.bannerRepo.SaveEditorialBanner(ctx, banner)
+}
+
+func (s *StoreSettingsService) UploadEditorialBannerImage(ctx context.Context, filename, contentType string, content io.Reader) (domain.EditorialBanner, error) {
+	if err := s.storage.EnsureBucket(ctx, s.bucket); err != nil {
+		return domain.EditorialBanner{}, err
+	}
+	objectKey := fmt.Sprintf("editorial-banner/image/%s-%s", uuid.NewString(), filename)
+	sizeBytes, err := s.storage.Upload(ctx, s.bucket, objectKey, contentType, content)
+	if err != nil {
+		return domain.EditorialBanner{}, err
+	}
+	current, err := s.bannerRepo.GetEditorialBanner(ctx)
+	if err != nil {
+		return domain.EditorialBanner{}, err
+	}
+	if current.HasImage() {
+		_ = s.storage.Delete(ctx, *current.ImageBucket, *current.ImageObjectKey)
+	}
+	bucket := s.bucket
+	current.ImageBucket = &bucket
+	current.ImageObjectKey = &objectKey
+	current.ImageContentType = &contentType
+	current.ImageSizeBytes = &sizeBytes
+	return s.bannerRepo.SaveEditorialBanner(ctx, current)
+}
+
+func (s *StoreSettingsService) OpenEditorialBannerImage(ctx context.Context) (io.ReadCloser, string, error) {
+	banner, err := s.bannerRepo.GetEditorialBanner(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if !banner.HasImage() {
+		return nil, "", domain.ErrEditorialBannerImageNotFound
+	}
+	return s.storage.Open(ctx, *banner.ImageBucket, *banner.ImageObjectKey)
+}
+
+func (s *StoreSettingsService) DeleteEditorialBannerImage(ctx context.Context) (domain.EditorialBanner, error) {
+	banner, err := s.bannerRepo.GetEditorialBanner(ctx)
+	if err != nil {
+		return domain.EditorialBanner{}, err
+	}
+	if banner.HasImage() {
+		_ = s.storage.Delete(ctx, *banner.ImageBucket, *banner.ImageObjectKey)
+	}
+	banner.ImageBucket = nil
+	banner.ImageObjectKey = nil
+	banner.ImageContentType = nil
+	banner.ImageSizeBytes = nil
+	return s.bannerRepo.SaveEditorialBanner(ctx, banner)
+}
+
 // WithHomeSectionsRepo wires the home-sections repository into the service.
 func (s *StoreSettingsService) WithHomeSectionsRepo(repo HomeSectionsRepository) *StoreSettingsService {
 	s.homeSectionsRepo = repo
@@ -201,4 +266,15 @@ func (s *StoreSettingsService) GetSectionProductIDs(ctx context.Context, section
 
 func (s *StoreSettingsService) SetSectionProducts(ctx context.Context, sectionID string, productIDs []uuid.UUID) error {
 	return s.homeSectionsRepo.SetSectionProducts(ctx, sectionID, productIDs)
+}
+
+func (s *StoreSettingsService) GetSectionCategoryGroups(ctx context.Context, sectionID string) ([]domain.SectionCategoryGroup, error) {
+	return s.homeSectionsRepo.GetSectionCategoryGroups(ctx, sectionID)
+}
+
+// SetSectionCategoryGroups replaces the curated categories (and their picked
+// products) for a section. Callers cap the number of groups; the repository
+// writes them transactionally.
+func (s *StoreSettingsService) SetSectionCategoryGroups(ctx context.Context, sectionID string, groups []domain.SectionCategoryGroup) error {
+	return s.homeSectionsRepo.SetSectionCategoryGroups(ctx, sectionID, groups)
 }

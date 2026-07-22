@@ -51,6 +51,20 @@ type NavCategoryPromotionsGateway interface {
 	GetCategoriesWithActivePromotions(ctx context.Context, categoryIDs []uuid.UUID) (map[uuid.UUID]bool, error)
 }
 
+// SectionCategoryGroup is one admin-curated category (with its ordered,
+// hand-picked product IDs) belonging to a home section — mirrors the admin
+// module's domain type without importing it.
+type SectionCategoryGroup struct {
+	CategoryID uuid.UUID
+	ProductIDs []uuid.UUID
+}
+
+// HomeSectionCategoryGroupsGateway reads the curated category groups for a home
+// section (e.g. "best_in_category") from the admin module's store settings.
+type HomeSectionCategoryGroupsGateway interface {
+	GetSectionCategoryGroups(ctx context.Context, sectionID string) ([]SectionCategoryGroup, error)
+}
+
 // StorefrontHandler exposes read-only, public (no admin auth) endpoints
 // backing the customer-facing site: nav menu, product listings, and media
 // file serving. It composes the same services the admin handlers use, but
@@ -66,6 +80,7 @@ type StorefrontHandler struct {
 	translations       *i18napplication.TranslationService
 	promotions         StorefrontPromotionsGateway
 	navPromos          NavCategoryPromotionsGateway
+	sectionGroups      HomeSectionCategoryGroupsGateway
 }
 
 func NewStorefrontHandler(
@@ -76,6 +91,7 @@ func NewStorefrontHandler(
 	translations *i18napplication.TranslationService,
 	promotions StorefrontPromotionsGateway,
 	navPromos NavCategoryPromotionsGateway,
+	sectionGroups HomeSectionCategoryGroupsGateway,
 ) *StorefrontHandler {
 	return &StorefrontHandler{
 		productTypeService: productTypeService,
@@ -85,6 +101,7 @@ func NewStorefrontHandler(
 		translations:       translations,
 		promotions:         promotions,
 		navPromos:          navPromos,
+		sectionGroups:      sectionGroups,
 	}
 }
 
@@ -93,6 +110,7 @@ func (h *StorefrontHandler) RegisterRoutes(r chi.Router) {
 		r.Get("/nav", h.nav)
 		r.Get("/products", h.listProducts)
 		r.Get("/products/best-in-category", h.bestInCategory)
+		r.Get("/products/category-groups", h.categoryGroups)
 		r.Get("/products/{slug}", h.getProduct)
 		r.Get("/catalogs", h.listCatalogs)
 		r.Get("/facets", h.facets)
@@ -494,6 +512,138 @@ func (h *StorefrontHandler) bestInCategory(w http.ResponseWriter, r *http.Reques
 			item.PromotionLabel = &ep.Label
 		}
 		resp = append(resp, item)
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
+}
+
+type categoryGroupResponse struct {
+	CategoryID   string                      `json:"category_id"`
+	CategoryName string                      `json:"category_name"`
+	Products     []storefrontProductResponse `json:"products"`
+}
+
+// categoryGroups backs the "Best in its category" home section: the admin
+// curates up to a handful of categories, each with a hand-picked, ordered
+// product list. We return one group per configured category (in admin order),
+// each with up to `limit` active products (in admin order), localized and
+// promotion-priced like the rest of the storefront. Empty groups are omitted.
+func (h *StorefrontHandler) categoryGroups(w http.ResponseWriter, r *http.Request) {
+	sectionID := r.URL.Query().Get("section")
+	if sectionID == "" {
+		sectionID = "best_in_category"
+	}
+	limit := 10
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			limit = n
+		}
+	}
+
+	if h.sectionGroups == nil {
+		httpx.WriteJSON(w, http.StatusOK, []categoryGroupResponse{})
+		return
+	}
+	groups, err := h.sectionGroups.GetSectionCategoryGroups(r.Context(), sectionID)
+	if err != nil {
+		writeCatalogModuleError(w, err)
+		return
+	}
+	if len(groups) == 0 {
+		httpx.WriteJSON(w, http.StatusOK, []categoryGroupResponse{})
+		return
+	}
+
+	products, err := h.productService.ListProducts(r.Context())
+	if err != nil {
+		writeCatalogModuleError(w, err)
+		return
+	}
+	byID := make(map[uuid.UUID]domain.Product, len(products))
+	for _, p := range products {
+		byID[p.ID] = p
+	}
+
+	locale := localeOf(r)
+	productTranslations, err := h.translations.ListByEntityType(r.Context(), entityTypeProduct, locale)
+	if err != nil {
+		writeCatalogModuleError(w, err)
+		return
+	}
+	categoryTranslations, err := h.translations.ListByEntityType(r.Context(), entityTypeCategory, locale)
+	if err != nil {
+		writeCatalogModuleError(w, err)
+		return
+	}
+
+	categories, err := h.categoryService.ListCategories(r.Context())
+	if err != nil {
+		writeCatalogModuleError(w, err)
+		return
+	}
+	categoryNames := make(map[uuid.UUID]string, len(categories))
+	for _, c := range categories {
+		name := c.Name
+		if v, ok := categoryTranslations[c.ID]["name"]; ok {
+			name = v
+		}
+		categoryNames[c.ID] = name
+	}
+
+	// Resolve the visible (active, existing) product for each group first, so we
+	// can price all promotions in a single lookup.
+	type resolvedGroup struct {
+		categoryID uuid.UUID
+		products   []domain.Product
+	}
+	var resolved []resolvedGroup
+	basePrices := map[uuid.UUID]money.Money{}
+	for _, g := range groups {
+		var picked []domain.Product
+		for _, pid := range g.ProductIDs {
+			p, ok := byID[pid]
+			if !ok || p.Status != domain.ProductStatusActive {
+				continue
+			}
+			picked = append(picked, p)
+			basePrices[p.ID] = p.BasePrice
+			if len(picked) >= limit {
+				break
+			}
+		}
+		if len(picked) == 0 {
+			continue
+		}
+		resolved = append(resolved, resolvedGroup{categoryID: g.CategoryID, products: picked})
+	}
+
+	var promos map[uuid.UUID]EffectivePromoPrice
+	if h.promotions != nil && len(basePrices) > 0 {
+		promos, _ = h.promotions.GetEffectivePrices(r.Context(), basePrices)
+	}
+
+	resp := make([]categoryGroupResponse, 0, len(resolved))
+	for _, rg := range resolved {
+		items := make([]storefrontProductResponse, 0, len(rg.products))
+		for _, p := range rg.products {
+			item := toStorefrontProductResponse(p)
+			if v, ok := productTranslations[p.ID]["name"]; ok {
+				item.Name = v
+			}
+			if v, ok := productTranslations[p.ID]["description"]; ok {
+				item.Description = v
+			}
+			if ep, ok := promos[p.ID]; ok {
+				pr := toMoneyResponse(ep.Price)
+				item.PromotionPrice = &pr
+				item.PromotionLabel = &ep.Label
+			}
+			items = append(items, item)
+		}
+		resp = append(resp, categoryGroupResponse{
+			CategoryID:   rg.categoryID.String(),
+			CategoryName: categoryNames[rg.categoryID],
+			Products:     items,
+		})
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }

@@ -30,6 +30,29 @@ type SpeedyClient interface {
 type TrackedOrderRef struct {
 	OrderID  uuid.UUID
 	ParcelID string
+	// Customer-facing details carried alongside the parcel so the poller can
+	// email a dispatch notice without a second order lookup per parcel.
+	OrderNumber  string
+	ContactName  string
+	ContactEmail string
+	Carrier      string
+}
+
+// ShipmentNotification describes a parcel that has just entered the carrier
+// network, for the "your order is on its way" email.
+type ShipmentNotification struct {
+	OrderID        uuid.UUID
+	OrderNumber    string
+	CustomerName   string
+	CustomerEmail  string
+	Carrier        string
+	TrackingNumber string
+}
+
+// Notifier is told when a shipment reaches the customer-visible milestones
+// worth emailing about. Optional: a nil notifier sends nothing.
+type Notifier interface {
+	OrderShipped(ctx context.Context, n ShipmentNotification) error
 }
 
 // ShipmentInfoUpdate mirrors the orders module's UpdateFulfillmentInput

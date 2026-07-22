@@ -14,8 +14,11 @@ export function NewArrivals() {
   const [products, setProducts] = useState<StorefrontProduct[] | null>(null);
 
   useEffect(() => {
-    listStorefrontProducts({ limit: 8, locale })
-      .then(setProducts)
+    // A discounted (actively promoted) product belongs in the On Sale section,
+    // not here — so we exclude anything with a promotion price. We over-fetch
+    // and then trim to 8, since the exclusion happens client-side.
+    listStorefrontProducts({ limit: 24, locale })
+      .then((all) => setProducts(all.filter((p) => !p.promotion_price).slice(0, 8)))
       .catch(() => setProducts([]));
   }, [locale]);
 

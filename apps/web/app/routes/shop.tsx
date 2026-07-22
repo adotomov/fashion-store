@@ -60,6 +60,9 @@ export default function Shop() {
   const [selectedAttributeValueIds, setSelectedAttributeValueIds] = useState<string[]>(
     () => restored?.attributeValueIds ?? searchParams.getAll("attribute_value_id"),
   );
+  const [onSaleOnly, setOnSaleOnly] = useState<boolean>(
+    () => restored?.onSale ?? searchParams.get("sale") === "true",
+  );
   // A search query lives entirely in the URL (never persisted to
   // sessionStorage like the other filters) — it always reflects exactly
   // what the header search form was last submitted with.
@@ -77,6 +80,7 @@ export default function Shop() {
     setSelectedCategoryIds(searchParams.getAll("category_id"));
     setSelectedCatalogId(searchParams.get("catalog_id") ?? undefined);
     setSelectedAttributeValueIds(searchParams.getAll("attribute_value_id"));
+    setOnSaleOnly(searchParams.get("sale") === "true");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParamsKey, shouldReset]);
 
@@ -88,8 +92,9 @@ export default function Shop() {
       categoryIds: selectedCategoryIds,
       catalogId: selectedCatalogId,
       attributeValueIds: selectedAttributeValueIds,
+      onSale: onSaleOnly,
     });
-  }, [selectedTypeSlugs, selectedCategoryIds, selectedCatalogId, selectedAttributeValueIds]);
+  }, [selectedTypeSlugs, selectedCategoryIds, selectedCatalogId, selectedAttributeValueIds, onSaleOnly]);
 
   // Stable string keys so effects don't re-fire every render over a fresh
   // array reference.
@@ -115,13 +120,14 @@ export default function Shop() {
       categoryIds: selectedCategoryIds,
       catalogId: selectedCatalogId,
       attributeValueIds: selectedAttributeValueIds,
+      hasPromotion: onSaleOnly || undefined,
       q: searchQuery || undefined,
       locale,
     })
       .then(setProducts)
       .catch(() => setError(t("shop.load_error", "Could not load products.")));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryKey, selectedCatalogId, attributeKey, searchQuery, locale]);
+  }, [categoryKey, selectedCatalogId, attributeKey, onSaleOnly, searchQuery, locale]);
 
   // Only types that own at least one selected category stay "active" — lets
   // us drive both the Type and Category groups from the same source of truth.
@@ -160,6 +166,8 @@ export default function Shop() {
       }
     } else if (groupId === "category") {
       setSelectedCategoryIds((prev) => toggleInList(prev, optionId));
+    } else if (groupId === "offers") {
+      setOnSaleOnly((prev) => !prev);
     } else {
       setSelectedAttributeValueIds((prev) => toggleInList(prev, optionId));
     }
@@ -170,9 +178,16 @@ export default function Shop() {
     setSelectedCategoryIds([]);
     setSelectedCatalogId(undefined);
     setSelectedAttributeValueIds([]);
+    setOnSaleOnly(false);
   }
 
   const filterGroups: FilterGroup[] = [
+    {
+      id: "offers",
+      label: t("shop.filter_offers", "Offers"),
+      type: "checkbox",
+      options: [{ id: "on_sale", label: t("shop.filter_on_sale", "On Sale") }],
+    },
     {
       id: "type",
       label: t("shop.filter_type", "Type"),
@@ -203,6 +218,7 @@ export default function Shop() {
   ];
 
   const selected: Record<string, string[]> = {
+    offers: onSaleOnly ? ["on_sale"] : [],
     type: selectedTypeSlugs,
     category: selectedCategoryIds,
   };

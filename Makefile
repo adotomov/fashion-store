@@ -5,7 +5,8 @@ API_DIR := apps/api
 
 .PHONY: dev run-api run-worker build test lint vet \
 	migrate-up migrate-down migrate-status migrate-create \
-	devbox-up devbox-patch-migrate devbox-forward-fe devbox-forward-fe-stop
+	devbox-up devbox-patch-migrate devbox-forward-fe devbox-forward-fe-stop \
+	seed-dev-catalog
 
 dev:
 	docker compose up -d
@@ -53,3 +54,7 @@ devbox-forward-fe:
 
 devbox-forward-fe-stop:
 	./scripts/devbox-port-forward-webstore-fe-stop.sh
+
+# Demo catalog data for devbox only — never run against production.
+seed-dev-catalog:
+	./scripts/devbox-seed-catalog.sh

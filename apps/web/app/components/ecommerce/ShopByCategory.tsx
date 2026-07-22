@@ -2,9 +2,10 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 
 import { useLanguage } from "../../features/i18n/LanguageContext";
-import { type NavType, getNav, resolveImageUrl } from "../../lib/api/storefront";
+import { type NavCategory, type NavType, getNav, resolveImageUrl } from "../../lib/api/storefront";
 import { Badge } from "../ui/Badge";
-import { Eyebrow, Heading, Text } from "../ui/Text";
+import { Eyebrow, Heading } from "../ui/Text";
+import { CardSlider } from "./CardSlider";
 
 export function ShopByCategory() {
   const { locale, t } = useLanguage();
@@ -16,9 +17,9 @@ export function ShopByCategory() {
       .catch(() => setNavTypes([]));
   }, [locale]);
 
-  const categories = (navTypes ?? []).flatMap((type) => type.categories.map((category) => ({ type, category })));
+  const types = (navTypes ?? []).filter((type) => type.categories.length > 0);
 
-  if (navTypes !== null && categories.length === 0) return null;
+  if (navTypes !== null && types.length === 0) return null;
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
@@ -27,52 +28,63 @@ export function ShopByCategory() {
         {t("home.shop_by_category", "Shop by Category")}
       </Heading>
 
-      <div className="mt-8 grid grid-cols-2 gap-6 sm:grid-cols-3 lg:grid-cols-6">
-        {navTypes === null
-          ? Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="aspect-square animate-pulse rounded-sm bg-stone-100" />
-            ))
-          : categories.map(({ type, category }) => (
-              <Link
-                key={category.id}
-                to={`/shop?category_id=${category.id}`}
-                state={{ resetFilters: true }}
-                className="group flex flex-col gap-2.5"
-              >
-                {category.image_url ? (
-                  <span className="relative block aspect-square w-full overflow-hidden rounded-sm bg-stone-100">
-                    <img
-                      src={resolveImageUrl(category.image_url)}
-                      alt={category.name}
-                      className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                    />
-                    {category.has_promotion && (
-                      <span className="absolute left-1.5 top-1.5">
-                        <Badge variant="accent">{t("product.sale_badge", "Sale")}</Badge>
-                      </span>
-                    )}
-                  </span>
-                ) : (
-                  <span className="relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-sm bg-gradient-to-br from-stone-100 to-stone-200 transition-colors group-hover:from-clay-50 group-hover:to-clay-100">
-                    <span className="font-display text-3xl text-stone-400 group-hover:text-clay-500">
-                      {category.name.charAt(0).toUpperCase()}
-                    </span>
-                    {category.has_promotion && (
-                      <span className="absolute left-1.5 top-1.5">
-                        <Badge variant="accent">{t("product.sale_badge", "Sale")}</Badge>
-                      </span>
-                    )}
-                  </span>
-                )}
-                <Text size="sm" className="text-center font-medium group-hover:text-clay-600">
-                  {category.name}
-                </Text>
-                <Text size="xs" tone="muted" className="-mt-2 text-center">
-                  {type.name}
-                </Text>
-              </Link>
-            ))}
-      </div>
+      {navTypes === null ? (
+        <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <div key={i} className="aspect-square animate-pulse rounded-sm bg-stone-100" />
+          ))}
+        </div>
+      ) : (
+        <div className="mt-8 flex flex-col gap-12">
+          {types.map((type) => (
+            <CardSlider
+              key={type.id}
+              title={type.name}
+              items={type.categories}
+              getKey={(category) => category.id}
+              renderItem={(category) => <CategoryCard category={category} />}
+            />
+          ))}
+        </div>
+      )}
     </section>
+  );
+}
+
+function CategoryCard({ category }: { category: NavCategory }) {
+  const { t } = useLanguage();
+
+  return (
+    <Link
+      to={`/shop?category_id=${category.id}`}
+      state={{ resetFilters: true }}
+      className="group relative block aspect-square w-full overflow-hidden rounded-sm bg-stone-200"
+    >
+      {category.image_url ? (
+        <img
+          src={resolveImageUrl(category.image_url)}
+          alt=""
+          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+        />
+      ) : (
+        <span className="block h-full w-full bg-gradient-to-br from-stone-400 to-stone-600" />
+      )}
+
+      {/* Dimming layer — keeps the white category name legible over both real
+          photography and the gradient placeholder. */}
+      <span className="absolute inset-0 bg-stone-900/40 transition-colors group-hover:bg-stone-900/30" />
+
+      {category.has_promotion && (
+        <span className="absolute left-2 top-2">
+          <Badge variant="accent">{t("product.sale_badge", "Sale")}</Badge>
+        </span>
+      )}
+
+      <span className="absolute inset-0 flex items-center justify-center p-3">
+        <span className="text-center font-display text-xl font-medium tracking-wide text-white drop-shadow-[0_1px_6px_rgba(0,0,0,0.45)] sm:text-2xl">
+          {category.name}
+        </span>
+      </span>
+    </Link>
   );
 }

@@ -52,7 +52,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	registrars, fulfillmentService, checkoutService := buildRegistrars(bootstrapped)
+	registrars, fulfillmentService, checkoutService, notificationsService := buildRegistrars(bootstrapped)
 
 	// Emit HSTS everywhere except local dev (served over plain HTTP).
 	enableHSTS := bootstrapped.Config.App.Env != "local"
@@ -64,6 +64,10 @@ func main() {
 	// Safety net for missed/lost payment webhooks: reconcile abandoned
 	// pending_payment card orders on an interval.
 	go checkoutService.RunPaymentSweeper(ctx, checkoutapplication.DefaultPaymentSweepInterval, checkoutapplication.DefaultAbandonedPaymentTTL)
+
+	// Drains the transactional email outbox: producers only enqueue, so nothing
+	// is actually delivered until this runs.
+	go notificationsService.RunDispatcher(ctx, bootstrapped.Config.Email.DispatchInterval)
 
 	go func() {
 		log.Info("starting api server", slog.String("addr", bootstrapped.Config.HTTP.Addr))

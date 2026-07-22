@@ -38,14 +38,22 @@ func (h *StoreSettingsHandler) RegisterRoutes(r chi.Router, requireAdmin func(ht
 		r.Put("/admin/hero", h.saveHeroSettings)
 		r.Post("/admin/hero/background", h.uploadHeroBackground)
 		r.Delete("/admin/hero/background", h.deleteHeroBackground)
+		r.Get("/admin/editorial-banner", h.getEditorialBanner)
+		r.Put("/admin/editorial-banner", h.saveEditorialBanner)
+		r.Post("/admin/editorial-banner/image", h.uploadEditorialBannerImage)
+		r.Delete("/admin/editorial-banner/image", h.deleteEditorialBannerImage)
 		r.Get("/admin/home-sections", h.listHomeSections)
 		r.Put("/admin/home-sections/{sectionId}", h.saveHomeSection)
 		r.Get("/admin/home-sections/{sectionId}/products", h.getSectionProducts)
 		r.Put("/admin/home-sections/{sectionId}/products", h.setSectionProducts)
+		r.Get("/admin/home-sections/{sectionId}/category-groups", h.getSectionCategoryGroups)
+		r.Put("/admin/home-sections/{sectionId}/category-groups", h.setSectionCategoryGroups)
 	})
 	// Public routes — no admin auth required.
 	r.Get("/storefront/hero", h.getHeroSettingsPublic)
 	r.Get("/storefront/hero/background/file", h.serveHeroBackground)
+	r.Get("/storefront/editorial-banner", h.getEditorialBannerPublic)
+	r.Get("/storefront/editorial-banner/image/file", h.serveEditorialBannerImage)
 	r.Get("/storefront/home-sections", h.listHomeSectionsPublic)
 	r.Get("/storefront/home-sections/{sectionId}/product-ids", h.getSectionProductIDsPublic)
 }
@@ -325,6 +333,136 @@ func (h *StoreSettingsHandler) deleteHeroBackground(w http.ResponseWriter, r *ht
 	httpx.WriteJSON(w, http.StatusOK, toHeroSettingsResponse(settings))
 }
 
+type editorialBannerResponse struct {
+	Enabled   bool    `json:"enabled"`
+	Eyebrow   string  `json:"eyebrow"`
+	Heading   string  `json:"heading"`
+	Subtext   string  `json:"subtext"`
+	CTALabel  string  `json:"cta_label"`
+	CTAURL    string  `json:"cta_url"`
+	ImageURL  *string `json:"image_url,omitempty"`
+	UpdatedAt string  `json:"updated_at"`
+}
+
+type saveEditorialBannerRequest struct {
+	Enabled  bool   `json:"enabled"`
+	Eyebrow  string `json:"eyebrow"`
+	Heading  string `json:"heading"`
+	Subtext  string `json:"subtext"`
+	CTALabel string `json:"cta_label"`
+	CTAURL   string `json:"cta_url"`
+}
+
+func toEditorialBannerResponse(b domain.EditorialBanner) editorialBannerResponse {
+	resp := editorialBannerResponse{
+		Enabled:   b.Enabled,
+		Eyebrow:   b.Eyebrow,
+		Heading:   b.Heading,
+		Subtext:   b.Subtext,
+		CTALabel:  b.CTALabel,
+		CTAURL:    b.CTAURL,
+		UpdatedAt: b.UpdatedAt.Format(timeFormat),
+	}
+	if b.HasImage() {
+		url := "/api/v1/storefront/editorial-banner/image/file"
+		resp.ImageURL = &url
+	}
+	return resp
+}
+
+func (h *StoreSettingsHandler) getEditorialBanner(w http.ResponseWriter, r *http.Request) {
+	banner, err := h.service.GetEditorialBanner(r.Context())
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toEditorialBannerResponse(banner))
+}
+
+func (h *StoreSettingsHandler) getEditorialBannerPublic(w http.ResponseWriter, r *http.Request) {
+	banner, err := h.service.GetEditorialBanner(r.Context())
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toEditorialBannerResponse(banner))
+}
+
+func (h *StoreSettingsHandler) saveEditorialBanner(w http.ResponseWriter, r *http.Request) {
+	var req saveEditorialBannerRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "request body is invalid")
+		return
+	}
+
+	// Preserve the existing image when saving text fields only.
+	current, err := h.service.GetEditorialBanner(r.Context())
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	current.Enabled = req.Enabled
+	current.Eyebrow = req.Eyebrow
+	current.Heading = req.Heading
+	current.Subtext = req.Subtext
+	current.CTALabel = req.CTALabel
+	current.CTAURL = req.CTAURL
+
+	banner, err := h.service.SaveEditorialBanner(r.Context(), current)
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toEditorialBannerResponse(banner))
+}
+
+func (h *StoreSettingsHandler) uploadEditorialBannerImage(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(maxHeroBackgroundUploadBytes); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "could not parse multipart form")
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "missing_file", "file is required")
+		return
+	}
+	defer file.Close()
+
+	contentType := header.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	banner, err := h.service.UploadEditorialBannerImage(r.Context(), header.Filename, contentType, file)
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toEditorialBannerResponse(banner))
+}
+
+func (h *StoreSettingsHandler) serveEditorialBannerImage(w http.ResponseWriter, r *http.Request) {
+	reader, contentType, err := h.service.OpenEditorialBannerImage(r.Context())
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	defer reader.Close()
+	if contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	_, _ = io.Copy(w, reader)
+}
+
+func (h *StoreSettingsHandler) deleteEditorialBannerImage(w http.ResponseWriter, r *http.Request) {
+	banner, err := h.service.DeleteEditorialBannerImage(r.Context())
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toEditorialBannerResponse(banner))
+}
+
 // ─── Home sections ────────────────────────────────────────────────────────────
 
 type homeSectionResponse struct {
@@ -457,6 +595,82 @@ func (h *StoreSettingsHandler) setSectionProducts(w http.ResponseWriter, r *http
 	httpx.WriteJSON(w, http.StatusOK, strs)
 }
 
+// maxSectionCategories caps the "Best in its category" curation, per product
+// requirement (up to 5 categories).
+const maxSectionCategories = 5
+
+type sectionCategoryGroupPayload struct {
+	CategoryID string   `json:"category_id"`
+	ProductIDs []string `json:"product_ids"`
+}
+
+func (h *StoreSettingsHandler) getSectionCategoryGroups(w http.ResponseWriter, r *http.Request) {
+	sectionID := chi.URLParam(r, "sectionId")
+	groups, err := h.service.GetSectionCategoryGroups(r.Context(), sectionID)
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toCategoryGroupPayloads(groups))
+}
+
+func (h *StoreSettingsHandler) setSectionCategoryGroups(w http.ResponseWriter, r *http.Request) {
+	sectionID := chi.URLParam(r, "sectionId")
+	var payloads []sectionCategoryGroupPayload
+	if err := json.NewDecoder(r.Body).Decode(&payloads); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "expected array of category groups")
+		return
+	}
+	if len(payloads) > maxSectionCategories {
+		httpx.WriteError(w, http.StatusBadRequest, "too_many_categories", "at most 5 categories are allowed")
+		return
+	}
+
+	groups := make([]domain.SectionCategoryGroup, 0, len(payloads))
+	seen := map[uuid.UUID]bool{}
+	for _, p := range payloads {
+		categoryID, err := uuid.Parse(p.CategoryID)
+		if err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_category_id", "category ID is invalid: "+p.CategoryID)
+			return
+		}
+		if seen[categoryID] {
+			httpx.WriteError(w, http.StatusBadRequest, "duplicate_category", "category appears more than once: "+p.CategoryID)
+			return
+		}
+		seen[categoryID] = true
+
+		productIDs := make([]uuid.UUID, 0, len(p.ProductIDs))
+		for _, raw := range p.ProductIDs {
+			id, err := uuid.Parse(raw)
+			if err != nil {
+				httpx.WriteError(w, http.StatusBadRequest, "invalid_product_id", "product ID is invalid: "+raw)
+				return
+			}
+			productIDs = append(productIDs, id)
+		}
+		groups = append(groups, domain.SectionCategoryGroup{CategoryID: categoryID, ProductIDs: productIDs})
+	}
+
+	if err := h.service.SetSectionCategoryGroups(r.Context(), sectionID, groups); err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toCategoryGroupPayloads(groups))
+}
+
+func toCategoryGroupPayloads(groups []domain.SectionCategoryGroup) []sectionCategoryGroupPayload {
+	out := make([]sectionCategoryGroupPayload, 0, len(groups))
+	for _, g := range groups {
+		productIDs := make([]string, len(g.ProductIDs))
+		for i, id := range g.ProductIDs {
+			productIDs[i] = id.String()
+		}
+		out = append(out, sectionCategoryGroupPayload{CategoryID: g.CategoryID.String(), ProductIDs: productIDs})
+	}
+	return out
+}
+
 func writeAdminModuleError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, domain.ErrLogoNotFound):
@@ -469,6 +683,8 @@ func writeAdminModuleError(w http.ResponseWriter, err error) {
 		httpx.WriteError(w, http.StatusNotFound, "address_not_found", "store address not found")
 	case errors.Is(err, domain.ErrHeroBackgroundNotFound):
 		httpx.WriteError(w, http.StatusNotFound, "hero_background_not_found", "hero background image not found")
+	case errors.Is(err, domain.ErrEditorialBannerImageNotFound):
+		httpx.WriteError(w, http.StatusNotFound, "editorial_banner_image_not_found", "editorial banner image not found")
 	default:
 		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "an unexpected error occurred")
 	}

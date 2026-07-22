@@ -128,6 +128,54 @@ func (r *PostgresStoreSettingsRepository) SaveHeroSettings(ctx context.Context, 
 	return s, err
 }
 
+func (r *PostgresStoreSettingsRepository) GetEditorialBanner(ctx context.Context) (domain.EditorialBanner, error) {
+	var b domain.EditorialBanner
+	err := r.db.QueryRow(ctx, `
+		SELECT enabled, eyebrow, heading, subtext, cta_label, cta_url,
+		       image_bucket, image_object_key, image_content_type, image_size_bytes,
+		       updated_at
+		FROM editorial_banner_settings LIMIT 1
+	`).Scan(
+		&b.Enabled, &b.Eyebrow, &b.Heading, &b.Subtext, &b.CTALabel, &b.CTAURL,
+		&b.ImageBucket, &b.ImageObjectKey, &b.ImageContentType, &b.ImageSizeBytes,
+		&b.UpdatedAt,
+	)
+	return b, err
+}
+
+func (r *PostgresStoreSettingsRepository) SaveEditorialBanner(ctx context.Context, b domain.EditorialBanner) (domain.EditorialBanner, error) {
+	err := r.db.QueryRow(ctx, `
+		INSERT INTO editorial_banner_settings (id, enabled, eyebrow, heading, subtext,
+		    cta_label, cta_url,
+		    image_bucket, image_object_key, image_content_type, image_size_bytes,
+		    updated_at)
+		VALUES (TRUE, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+		ON CONFLICT (id) DO UPDATE SET
+		    enabled            = EXCLUDED.enabled,
+		    eyebrow            = EXCLUDED.eyebrow,
+		    heading            = EXCLUDED.heading,
+		    subtext            = EXCLUDED.subtext,
+		    cta_label          = EXCLUDED.cta_label,
+		    cta_url            = EXCLUDED.cta_url,
+		    image_bucket       = EXCLUDED.image_bucket,
+		    image_object_key   = EXCLUDED.image_object_key,
+		    image_content_type = EXCLUDED.image_content_type,
+		    image_size_bytes   = EXCLUDED.image_size_bytes,
+		    updated_at         = NOW()
+		RETURNING enabled, eyebrow, heading, subtext, cta_label, cta_url,
+		    image_bucket, image_object_key, image_content_type, image_size_bytes,
+		    updated_at
+	`,
+		b.Enabled, b.Eyebrow, b.Heading, b.Subtext, b.CTALabel, b.CTAURL,
+		b.ImageBucket, b.ImageObjectKey, b.ImageContentType, b.ImageSizeBytes,
+	).Scan(
+		&b.Enabled, &b.Eyebrow, &b.Heading, &b.Subtext, &b.CTALabel, &b.CTAURL,
+		&b.ImageBucket, &b.ImageObjectKey, &b.ImageContentType, &b.ImageSizeBytes,
+		&b.UpdatedAt,
+	)
+	return b, err
+}
+
 func (r *PostgresStoreSettingsRepository) ListHomeSections(ctx context.Context) ([]domain.HomeSection, error) {
 	rows, err := r.db.Query(ctx, `
 		SELECT id, enabled, eyebrow, heading, updated_at
@@ -197,6 +245,72 @@ func (r *PostgresStoreSettingsRepository) SetSectionProducts(ctx context.Context
 			VALUES ($1, $2, $3)
 		`, sectionID, productID, i); err != nil {
 			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+func (r *PostgresStoreSettingsRepository) GetSectionCategoryGroups(ctx context.Context, sectionID string) ([]domain.SectionCategoryGroup, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT c.category_id, p.product_id
+		FROM home_section_categories c
+		LEFT JOIN home_section_category_products p
+		       ON p.section_id = c.section_id AND p.category_id = c.category_id
+		WHERE c.section_id = $1
+		ORDER BY c.sort_order, c.category_id, p.sort_order, p.product_id
+	`, sectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	// Preserve the category order from the query while grouping products.
+	var groups []domain.SectionCategoryGroup
+	index := map[uuid.UUID]int{}
+	for rows.Next() {
+		var categoryID uuid.UUID
+		var productID *uuid.UUID
+		if err := rows.Scan(&categoryID, &productID); err != nil {
+			return nil, err
+		}
+		i, ok := index[categoryID]
+		if !ok {
+			i = len(groups)
+			index[categoryID] = i
+			groups = append(groups, domain.SectionCategoryGroup{CategoryID: categoryID})
+		}
+		if productID != nil {
+			groups[i].ProductIDs = append(groups[i].ProductIDs, *productID)
+		}
+	}
+	return groups, rows.Err()
+}
+
+func (r *PostgresStoreSettingsRepository) SetSectionCategoryGroups(ctx context.Context, sectionID string, groups []domain.SectionCategoryGroup) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+
+	// Deleting the categories cascades to home_section_category_products.
+	if _, err := tx.Exec(ctx, `DELETE FROM home_section_categories WHERE section_id = $1`, sectionID); err != nil {
+		return err
+	}
+	for ci, group := range groups {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO home_section_categories (section_id, category_id, sort_order)
+			VALUES ($1, $2, $3)
+		`, sectionID, group.CategoryID, ci); err != nil {
+			return err
+		}
+		for pi, productID := range group.ProductIDs {
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO home_section_category_products (section_id, category_id, product_id, sort_order)
+				VALUES ($1, $2, $3, $4)
+			`, sectionID, group.CategoryID, productID, pi); err != nil {
+				return err
+			}
 		}
 	}
 	return tx.Commit(ctx)

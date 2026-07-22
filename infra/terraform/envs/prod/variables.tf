@@ -127,3 +127,48 @@ variable "alert_email" {
   type        = string
   default     = ""
 }
+
+variable "spf_record" {
+  description = <<-EOT
+    Apex SPF policy, published as part of the single apex TXT record set.
+    Authorises SendGrid to send as verani.bg.
+
+    WARNING: a domain may have only ONE SPF record. If info@verani.bg (or any
+    other mailbox) ALSO sends outbound mail through SuperHosting's SMTP, that
+    provider's include: mechanism must be added here too, or those messages will
+    start failing SPF. Verify with SuperHosting before relying on this default.
+    Kept at ~all (softfail) rather than -all while DMARC is still p=none.
+  EOT
+  type        = string
+  default     = "v=spf1 include:sendgrid.net ~all"
+}
+
+variable "dmarc_record" {
+  description = "DMARC policy TXT value for _dmarc.verani.bg. Starts report-only (p=none); tighten to quarantine/reject once aggregate reports show SPF+DKIM aligned. Set a rua= mailbox to actually receive those reports."
+  type        = string
+  default     = "v=DMARC1; p=none; rua=mailto:info@verani.bg; fo=1"
+}
+
+variable "sendgrid_dns_records" {
+  description = "SendGrid domain-authentication CNAMEs, as subdomain (relative to the zone) => target. Taken from the SendGrid console after authenticating the sending domain, e.g. { \"s1._domainkey\" = \"s1.domainkey.uXXXX.wl.sendgrid.net\" }. Empty until domain authentication is done."
+  type        = map(string)
+  default     = {}
+}
+
+variable "email_enabled" {
+  description = "Inject the SendGrid API key + event-webhook verification key into the API service, switching it from the log sender to real delivery. Keep false until the secret VALUES are populated out-of-band AND the sending domain's SPF/DKIM/DMARC records resolve — sending before then lands mail in spam and harms the domain's reputation."
+  type        = bool
+  default     = false
+}
+
+variable "email_from" {
+  description = "Envelope/header From address for all outbound mail. Must be an address on a domain authenticated in SendGrid."
+  type        = string
+  default     = "info@verani.bg"
+}
+
+variable "email_from_name" {
+  description = "Display name shown alongside email_from in recipients' inboxes."
+  type        = string
+  default     = "Verani"
+}

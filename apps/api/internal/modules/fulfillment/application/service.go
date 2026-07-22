@@ -14,11 +14,19 @@ type Service struct {
 	settings SettingsRepository
 	speedy   SpeedyClient
 	orders   OrderGateway
+	notifier Notifier
 	logger   *slog.Logger
 }
 
 func NewService(settings SettingsRepository, speedy SpeedyClient, orders OrderGateway, logger *slog.Logger) *Service {
 	return &Service{settings: settings, speedy: speedy, orders: orders, logger: logger}
+}
+
+// WithNotifier attaches the customer-email notifier. Optional and chainable so
+// tracking still works where email isn't configured.
+func (s *Service) WithNotifier(notifier Notifier) *Service {
+	s.notifier = notifier
+	return s
 }
 
 func (s *Service) ListSettings(ctx context.Context) ([]domain.ProviderSettings, error) {
@@ -168,9 +176,35 @@ func (s *Service) PollPendingShipments(ctx context.Context) error {
 			if err := s.orders.SetShipmentInfo(ctx, ref.OrderID, update); err != nil {
 				s.logger.Error("failed to update order shipment status", "error", err, "order_id", ref.OrderID)
 			}
+			// Tell the customer once, when the parcel first enters the carrier
+			// network. The poll re-sees the same in-flight status every tick, so
+			// the notifier's per-order dedupe key is what makes this send once.
+			if domain.IsInFlight(status) {
+				s.notifyShipped(ctx, ref)
+			}
 		}
 	}
 	return nil
+}
+
+// notifyShipped queues the dispatch notice. Tracking updates must never fail
+// over an email, so problems are logged and swallowed.
+func (s *Service) notifyShipped(ctx context.Context, ref TrackedOrderRef) {
+	if s.notifier == nil || ref.ContactEmail == "" {
+		return
+	}
+	notification := ShipmentNotification{
+		OrderID:        ref.OrderID,
+		OrderNumber:    ref.OrderNumber,
+		CustomerName:   ref.ContactName,
+		CustomerEmail:  ref.ContactEmail,
+		Carrier:        ref.Carrier,
+		TrackingNumber: ref.ParcelID,
+	}
+	if err := s.notifier.OrderShipped(ctx, notification); err != nil {
+		s.logger.ErrorContext(ctx, "failed to queue shipping update email",
+			"error", err, "order_id", ref.OrderID)
+	}
 }
 
 // Run polls on a fixed interval until ctx is cancelled — intended to be

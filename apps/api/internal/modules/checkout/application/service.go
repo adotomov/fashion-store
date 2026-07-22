@@ -25,11 +25,32 @@ type Service struct {
 	discounts   DiscountGateway
 	invoices    InvoiceGateway
 	events      WebhookEventStore
+	notifier    OrderNotifier
 	logger      *slog.Logger
 }
 
 func NewService(cart CartGateway, inventory InventoryGateway, users UserGateway, orders OrderGateway, payments PaymentGateway, fulfillment FulfillmentGateway, discounts DiscountGateway, invoices InvoiceGateway, events WebhookEventStore, logger *slog.Logger) *Service {
 	return &Service{cart: cart, inventory: inventory, users: users, orders: orders, payments: payments, fulfillment: fulfillment, discounts: discounts, invoices: invoices, events: events, logger: logger}
+}
+
+// WithNotifier attaches the customer-email notifier. Optional and chainable so
+// checkout keeps working (silently sending nothing) where email is unconfigured.
+func (s *Service) WithNotifier(notifier OrderNotifier) *Service {
+	s.notifier = notifier
+	return s
+}
+
+// notifyOrderConfirmed queues the customer's order confirmation. Email is never
+// allowed to fail an order that is already placed and paid for, so problems are
+// logged and swallowed.
+func (s *Service) notifyOrderConfirmed(ctx context.Context, n OrderNotification) {
+	if s.notifier == nil {
+		return
+	}
+	if err := s.notifier.OrderConfirmed(ctx, n); err != nil {
+		s.logger.ErrorContext(ctx, "failed to queue order confirmation email",
+			"error", err, "order_number", n.OrderNumber)
+	}
 }
 
 // ListDeliveryMethods filters out any method whose logistics provider isn't
@@ -373,6 +394,19 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 		}
 	}
 
+	s.notifyOrderConfirmed(ctx, OrderNotification{
+		OrderID:         result.ID,
+		OrderNumber:     result.OrderNumber,
+		CustomerName:    contactName,
+		CustomerEmail:   contactEmail,
+		DeliveryMethod:  deliveryMethod.Name,
+		PaymentMethod:   input.PaymentMethod,
+		Total:           result.Total,
+		DeliveryFee:     result.DeliveryFee,
+		ShippingAddress: toOrderAddress(shippingAddr),
+		Items:           result.Items,
+	})
+
 	return PlaceOrderResult{Order: &result}, nil
 }
 
@@ -559,6 +593,26 @@ func (s *Service) FinalizePaidOrder(ctx context.Context, providerOrderID string)
 			s.logger.ErrorContext(ctx, "failed to generate invoice for order", "error", err, "order_id", ord.ID)
 		}
 	}
+
+	// Card orders are only really "placed" once payment settles, so the
+	// confirmation is sent here rather than at initiation. The dedupe key is the
+	// order id, so a redelivered webhook can't send a second copy.
+	deliveryLabel := ord.DeliveryMethod
+	if dm, ok := domain.FindDeliveryMethod(ord.DeliveryMethod); ok {
+		deliveryLabel = dm.Name
+	}
+	s.notifyOrderConfirmed(ctx, OrderNotification{
+		OrderID:         ord.ID,
+		OrderNumber:     ord.OrderNumber,
+		CustomerName:    ord.ContactName,
+		CustomerEmail:   ord.ContactEmail,
+		DeliveryMethod:  deliveryLabel,
+		PaymentMethod:   ord.PaymentMethod,
+		Total:           ord.Total,
+		DeliveryFee:     ord.DeliveryFee,
+		ShippingAddress: ord.ShippingAddress,
+		Items:           ord.Items,
+	})
 	return nil
 }
 
@@ -583,6 +637,24 @@ func (s *Service) FailPayment(ctx context.Context, providerOrderID, reason strin
 		return err
 	}
 	metrics.PaymentFailed(ctx, reason)
+
+	// Tell the customer their card didn't go through — their basket is still
+	// intact, so this is the nudge that lets them retry rather than assume the
+	// order succeeded.
+	if s.notifier != nil {
+		notification := OrderNotification{
+			OrderID:       ord.ID,
+			OrderNumber:   ord.OrderNumber,
+			CustomerName:  ord.ContactName,
+			CustomerEmail: ord.ContactEmail,
+			PaymentMethod: ord.PaymentMethod,
+			Total:         ord.Total,
+		}
+		if err := s.notifier.PaymentFailed(ctx, notification); err != nil {
+			s.logger.ErrorContext(ctx, "failed to queue payment-failed email",
+				"error", err, "order_number", ord.OrderNumber)
+		}
+	}
 	return nil
 }
 

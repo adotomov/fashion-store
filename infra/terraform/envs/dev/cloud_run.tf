@@ -138,6 +138,53 @@ resource "google_cloud_run_v2_service" "api" {
           }
         }
       }
+      # Transactional email. EMAIL_MODE stays "log" (render to the log, deliver
+      # nothing) until email_enabled is true, so the service can be applied long
+      # before SendGrid is set up and the sending domain is authenticated.
+      env {
+        name  = "EMAIL_MODE"
+        value = var.email_enabled ? "sendgrid" : "log"
+      }
+      env {
+        name  = "EMAIL_FROM"
+        value = var.email_from
+      }
+      env {
+        name  = "EMAIL_FROM_NAME"
+        value = var.email_from_name
+      }
+      env {
+        name  = "STOREFRONT_URL"
+        value = "https://${var.web_subdomain}.${var.domain_root}"
+      }
+      env {
+        name  = "PUBLIC_API_URL"
+        value = "https://${var.api_subdomain}.${var.domain_root}"
+      }
+      dynamic "env" {
+        for_each = var.email_enabled ? [1] : []
+        content {
+          name = "SENDGRID_API_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.sendgrid_api_key.secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.email_enabled ? [1] : []
+        content {
+          name = "EMAIL_WEBHOOK_VERIFICATION_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = google_secret_manager_secret.email_webhook_verification_key.secret_id
+              version = "latest"
+            }
+          }
+        }
+      }
       env {
         name = "DATABASE_URL"
         value_source {

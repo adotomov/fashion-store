@@ -17,6 +17,7 @@ type Config struct {
 	Storage       StorageConfig
 	Fulfillment   FulfillmentConfig
 	Payments      PaymentsConfig
+	Email         EmailConfig
 	Observability ObservabilityConfig
 }
 
@@ -115,6 +116,44 @@ func (c PaymentsConfig) RevolutBaseURL() string {
 	return "https://sandbox-merchant.revolut.com"
 }
 
+const (
+	// EmailModeLog renders emails and writes them to the log instead of
+	// delivering them — the default, so local/devbox runs need no SendGrid
+	// account and no real mail can escape during development.
+	EmailModeLog = "log"
+	// EmailModeSendGrid delivers through the SendGrid v3 API.
+	EmailModeSendGrid = "sendgrid"
+)
+
+// EmailConfig carries the transactional email settings. Mode selects the sender
+// implementation and SendGridAPIKey is the server-side Bearer secret. From is
+// fixed per environment (info@verani.bg) rather than chosen per message, so no
+// producer can send under an address the domain has not authenticated.
+type EmailConfig struct {
+	Mode           string
+	SendGridAPIKey string
+	FromAddress    string
+	FromName       string
+	// WebhookVerificationKey is SendGrid's base64 DER ECDSA *public* key for the
+	// Signed Event Webhook (not a shared secret — SendGrid signs, we verify).
+	// Empty means inbound events are rejected, so the endpoint fails closed.
+	WebhookVerificationKey string
+	DispatchInterval       time.Duration
+	// StorefrontURL is the public site base URL, linked from email bodies.
+	StorefrontURL string
+	// AssetBaseURL is the API's public base URL, used to turn the store logo's
+	// relative path into an absolute one a mail client can load. When empty the
+	// layout falls back to rendering the store name as text.
+	AssetBaseURL string
+}
+
+// Enabled reports whether real delivery is configured. Anything else falls back
+// to the log sender, mirroring how an absent REVOLUT_API_KEY selects the mock
+// payment gateway.
+func (c EmailConfig) Enabled() bool {
+	return c.Mode == EmailModeSendGrid && c.SendGridAPIKey != ""
+}
+
 // LoadConfig loads configuration from environment variables.
 func LoadConfig() (*Config, error) {
 	dbURL := os.Getenv("DATABASE_URL")
@@ -156,6 +195,15 @@ func LoadConfig() (*Config, error) {
 			return nil, fmt.Errorf("invalid OTEL_METRIC_EXPORT_INTERVAL: %w", err)
 		}
 		metricInterval = d
+	}
+
+	emailDispatchInterval := 15 * time.Second
+	if v := os.Getenv("EMAIL_DISPATCH_INTERVAL"); v != "" {
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			return nil, fmt.Errorf("invalid EMAIL_DISPATCH_INTERVAL: %w", err)
+		}
+		emailDispatchInterval = d
 	}
 
 	// Reuse the storage project when a dedicated GCP_PROJECT_ID is unset — both
@@ -200,6 +248,16 @@ func LoadConfig() (*Config, error) {
 			RevolutWebhookSecret: os.Getenv("REVOLUT_WEBHOOK_SECRET"),
 			RevolutAPIVersion:    os.Getenv("REVOLUT_API_VERSION"),
 		},
+		Email: EmailConfig{
+			Mode:             getEnv("EMAIL_MODE", EmailModeLog),
+			SendGridAPIKey:   os.Getenv("SENDGRID_API_KEY"),
+			FromAddress:      getEnv("EMAIL_FROM", "info@verani.bg"),
+			FromName:         getEnv("EMAIL_FROM_NAME", "Verani"),
+			WebhookVerificationKey: os.Getenv("EMAIL_WEBHOOK_VERIFICATION_KEY"),
+			DispatchInterval:       emailDispatchInterval,
+			StorefrontURL:    getEnv("STOREFRONT_URL", "http://localhost:5173"),
+			AssetBaseURL:     os.Getenv("PUBLIC_API_URL"),
+		},
 		Observability: ObservabilityConfig{
 			ProjectID:      projectID,
 			TracesEnabled:  getEnv("OTEL_TRACES_ENABLED", "false") == "true",
@@ -225,6 +283,22 @@ func LoadConfig() (*Config, error) {
 		}
 		if cfg.Payments.RevolutWebhookSecret == "" {
 			return nil, fmt.Errorf("REVOLUT_WEBHOOK_SECRET is required when APP_ENV=prod")
+		}
+	}
+
+	// Catch a half-configured email setup at boot rather than dead-lettering
+	// every message later. Email intentionally stays optional in every
+	// environment (an env with EMAIL_MODE=log simply never delivers), but asking
+	// for SendGrid without a key is always a mistake.
+	if cfg.Email.Mode != EmailModeLog && cfg.Email.Mode != EmailModeSendGrid {
+		return nil, fmt.Errorf("invalid EMAIL_MODE %q: must be %q or %q", cfg.Email.Mode, EmailModeLog, EmailModeSendGrid)
+	}
+	if cfg.Email.Mode == EmailModeSendGrid {
+		if cfg.Email.SendGridAPIKey == "" {
+			return nil, fmt.Errorf("SENDGRID_API_KEY is required when EMAIL_MODE=%q", EmailModeSendGrid)
+		}
+		if cfg.Email.FromAddress == "" {
+			return nil, fmt.Errorf("EMAIL_FROM is required when EMAIL_MODE=%q", EmailModeSendGrid)
 		}
 	}
 

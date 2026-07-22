@@ -35,6 +35,29 @@ export function setSectionProducts(sectionId: string, productIds: string[]): Pro
   });
 }
 
+// Curated category groups (the "Best in its category" section): up to 5
+// categories, each with an ordered, hand-picked product list.
+export type SectionCategoryGroup = {
+  category_id: string;
+  product_ids: string[];
+};
+
+export function getSectionCategoryGroups(sectionId: string): Promise<SectionCategoryGroup[]> {
+  return apiFetch<SectionCategoryGroup[]>(
+    `/api/v1/admin/home-sections/${encodeURIComponent(sectionId)}/category-groups`,
+  );
+}
+
+export function setSectionCategoryGroups(
+  sectionId: string,
+  groups: SectionCategoryGroup[],
+): Promise<SectionCategoryGroup[]> {
+  return apiFetch<SectionCategoryGroup[]>(
+    `/api/v1/admin/home-sections/${encodeURIComponent(sectionId)}/category-groups`,
+    { method: "PUT", body: groups },
+  );
+}
+
 // Public storefront endpoints (no auth)
 
 export function getPublicHomeSections(): Promise<HomeSectionConfig[]> {

@@ -8,4 +8,5 @@ var (
 	ErrInvalidDocumentType       = errors.New("invalid document type")
 	ErrAddressNotFound           = errors.New("store address not found")
 	ErrHeroBackgroundNotFound    = errors.New("hero background image not found")
+	ErrEditorialBannerImageNotFound = errors.New("editorial banner image not found")
 )

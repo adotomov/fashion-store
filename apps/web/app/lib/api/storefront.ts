@@ -259,3 +259,36 @@ export async function getBestInCategoryProducts(locale?: string): Promise<Storef
   );
   return raw.map(fromRawProduct);
 }
+
+export type CategoryProductGroup = {
+  category_id: string;
+  category_name: string;
+  products: StorefrontProduct[];
+};
+
+type RawCategoryProductGroup = {
+  category_id: string;
+  category_name: string;
+  products: RawStorefrontProduct[];
+};
+
+// Curated groups for the "Best in its category" section: one group per
+// admin-selected category, each with up to `limit` hand-picked products.
+export async function getCategoryProductGroups(
+  section: string,
+  opts: { locale?: string; limit?: number } = {},
+): Promise<CategoryProductGroup[]> {
+  const params = new URLSearchParams();
+  params.set("section", section);
+  if (opts.limit) params.set("limit", String(opts.limit));
+  const query = withLocale(params, opts.locale).toString();
+  const raw = await apiFetch<RawCategoryProductGroup[]>(
+    `/api/v1/storefront/products/category-groups?${query}`,
+    { auth: false },
+  );
+  return raw.map((g) => ({
+    category_id: g.category_id,
+    category_name: g.category_name,
+    products: g.products.map(fromRawProduct),
+  }));
+}

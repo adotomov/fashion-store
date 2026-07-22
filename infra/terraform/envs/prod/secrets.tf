@@ -85,3 +85,32 @@ resource "google_secret_manager_secret" "revolut_webhook_secret" {
 
   depends_on = [google_project_service.apis]
 }
+
+# SendGrid credentials for transactional email. As with Revolut, the secret
+# containers are managed here but their VALUES are added out-of-band with
+# `gcloud secrets versions add` — they come from the SendGrid console and must
+# never land in Terraform state. The API only reads them once email_enabled is
+# flipped true (see cloud_run.tf); until then it uses the log sender.
+resource "google_secret_manager_secret" "sendgrid_api_key" {
+  project   = var.project_id
+  secret_id = "fs-${var.env}-sendgrid-api-key"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# SendGrid's Signed Event Webhook verification key. Public (SendGrid signs, we
+# verify) but kept in Secret Manager so it is managed and rotated like the rest.
+resource "google_secret_manager_secret" "email_webhook_verification_key" {
+  project   = var.project_id
+  secret_id = "fs-${var.env}-email-webhook-verification-key"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.apis]
+}

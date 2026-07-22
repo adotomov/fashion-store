@@ -217,6 +217,34 @@ type OrderForFinalize struct {
 	ContactPhone     string
 	ShippingAddress  OrderAddress
 	Total            money.Money
+	DeliveryFee      money.Money
+	// Items lets the settlement path build a confirmation email with line items,
+	// the same as the pay-on-delivery path.
+	Items []OrderResultItem
+}
+
+// OrderNotification is the checkout-owned view of an order that an email needs.
+// Money is passed as-is; the adapter formats it for display.
+type OrderNotification struct {
+	OrderID         uuid.UUID
+	OrderNumber     string
+	CustomerName    string
+	CustomerEmail   string
+	DeliveryMethod  string
+	PaymentMethod   string
+	Total           money.Money
+	DeliveryFee     money.Money
+	ShippingAddress OrderAddress
+	Items           []OrderResultItem
+}
+
+// OrderNotifier is told about order events worth emailing a customer about.
+// Implemented by an adapter over the notifications module so checkout never
+// imports it. Optional: a nil notifier simply sends no mail, which keeps the
+// checkout flow working in any environment where email isn't configured.
+type OrderNotifier interface {
+	OrderConfirmed(ctx context.Context, n OrderNotification) error
+	PaymentFailed(ctx context.Context, n OrderNotification) error
 }
 
 // OrderPaymentContext mirrors the orders module's payment/refund state.

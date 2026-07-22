@@ -38,7 +38,6 @@ export default [
       route("logistics", "routes/admin/logistics.tsx"),
       route("invoices", "routes/admin/invoices.tsx"),
       route("promotions", "routes/admin/promotions.tsx"),
-      route("appearance", "routes/admin/appearance.tsx"),
       route("home", "routes/admin/home.tsx"),
     ]),
   ]),
