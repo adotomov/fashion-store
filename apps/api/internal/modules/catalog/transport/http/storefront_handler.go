@@ -391,11 +391,34 @@ func (h *StorefrontHandler) listProducts(w http.ResponseWriter, r *http.Request)
 	query := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("q")))
 	hasPromotionOnly := r.URL.Query().Get("has_promotion") == "true"
 
+	// Two mutually-exclusive windowing modes:
+	//   • limit  — legacy "first N" cap used by the curated home sections.
+	//   • page   — 1-based storefront pagination (shop grid), capped at 30/page.
+	// When page is present we must process the whole filtered set to report an
+	// accurate total, so the early cut-off only applies in limit mode.
 	limit := -1
 	if raw := r.URL.Query().Get("limit"); raw != "" {
 		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
 			limit = n
 		}
+	}
+
+	const maxStorefrontPageSize = 30
+	page := 0
+	if raw := r.URL.Query().Get("page"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 {
+			page = n
+		}
+	}
+	pageSize := maxStorefrontPageSize
+	if raw := r.URL.Query().Get("page_size"); raw != "" {
+		if n, err := strconv.Atoi(raw); err == nil && n > 0 && n < pageSize {
+			pageSize = n
+		}
+	}
+	// In page mode the running limit cut-off must be disabled so the total is exact.
+	if page > 0 {
+		limit = -1
 	}
 
 	locale := localeOf(r)
@@ -453,7 +476,32 @@ func (h *StorefrontHandler) listProducts(w http.ResponseWriter, r *http.Request)
 			break
 		}
 	}
-	httpx.WriteJSON(w, http.StatusOK, resp)
+
+	// Page mode: return the requested slice plus the full match count so the
+	// storefront can render page controls. Any other mode keeps returning the
+	// list as-is (home sections and legacy callers rely on that shape via the
+	// items field).
+	total := len(resp)
+	if page > 0 {
+		start := (page - 1) * pageSize
+		if start > total {
+			start = total
+		}
+		end := start + pageSize
+		if end > total {
+			end = total
+		}
+		resp = resp[start:end]
+	}
+	httpx.WriteJSON(w, http.StatusOK, storefrontProductListResponse{Items: resp, Total: total})
+}
+
+// storefrontProductListResponse wraps the product list with the total match
+// count for pagination. The items field always carries the (possibly sliced)
+// page of results.
+type storefrontProductListResponse struct {
+	Items []storefrontProductResponse `json:"items"`
+	Total int                         `json:"total"`
 }
 
 func (h *StorefrontHandler) bestInCategory(w http.ResponseWriter, r *http.Request) {

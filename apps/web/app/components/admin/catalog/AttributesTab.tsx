@@ -12,7 +12,9 @@ import { FormField } from "../../ui/FormField";
 import { Icon } from "../../ui/Icon";
 import { Input } from "../../ui/Input";
 import { Modal } from "../../ui/Modal";
+import { Pagination } from "../../ui/Pagination";
 import { Text } from "../../ui/Text";
+import { usePagination } from "../../../lib/usePagination";
 import {
   type Attribute,
   addAttributeValue,
@@ -28,6 +30,8 @@ const subTabs = [
   { id: "default", label: "Default" },
   { id: "custom", label: "Custom" },
 ];
+
+const PAGE_SIZE = 20;
 
 export function AttributesTab() {
   const { isReadOnly } = useAdminPermissions();
@@ -123,6 +127,8 @@ export function AttributesTab() {
 
   const defaultAttributes = (attributes ?? []).filter((a) => a.is_system);
   const customAttributes = (attributes ?? []).filter((a) => !a.is_system);
+  const defaultPager = usePagination(defaultAttributes, PAGE_SIZE);
+  const customPager = usePagination(customAttributes, PAGE_SIZE);
 
   return (
     <div className="flex flex-col gap-4">
@@ -154,8 +160,9 @@ export function AttributesTab() {
             description="Built-in attributes like Color will appear here."
           />
         ) : (
+          <>
           <div className="grid grid-cols-1 gap-4">
-            {defaultAttributes.map((attribute) =>
+            {defaultPager.pageItems.map((attribute) =>
               attribute.type === "color" ? (
                 <ColorAttributeCard
                   key={attribute.id}
@@ -181,6 +188,8 @@ export function AttributesTab() {
               ),
             )}
           </div>
+          <Pagination page={defaultPager.page} totalPages={defaultPager.totalPages} onPageChange={defaultPager.setPage} className="mt-4" />
+          </>
         )
       ) : customAttributes.length === 0 ? (
         <EmptyState
@@ -189,8 +198,9 @@ export function AttributesTab() {
           description="Create attributes like Size or Material, then add their values."
         />
       ) : (
+        <>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {customAttributes.map((attribute) => (
+          {customPager.pageItems.map((attribute) => (
             <TextAttributeCard
               key={attribute.id}
               attribute={attribute}
@@ -204,6 +214,8 @@ export function AttributesTab() {
             />
           ))}
         </div>
+        <Pagination page={customPager.page} totalPages={customPager.totalPages} onPageChange={customPager.setPage} className="mt-4" />
+        </>
       )}
 
       <Modal open={isModalOpen} onClose={() => setIsModalOpen(false)} title="Create Attribute">

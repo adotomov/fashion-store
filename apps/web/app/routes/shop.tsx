@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearchParams, useNavigate } from "react-router";
 
 import { Breadcrumbs } from "../components/ecommerce/Breadcrumbs";
@@ -19,12 +19,16 @@ import {
   type StorefrontProduct,
   getNav,
   listFacets,
-  listStorefrontProducts,
+  listStorefrontProductsPage,
   resolveImageUrl,
 } from "../lib/api/storefront";
+import { Pagination } from "../components/ui/Pagination";
 import { loadShopFilterState, saveShopFilterState } from "../lib/shopFilterState";
 
 export const handle = { title: "Shop" };
+
+// Storefront grid page size — the API caps a page at 30 regardless.
+const PAGE_SIZE = 30;
 
 export default function Shop() {
   const [searchParams] = useSearchParams();
@@ -45,6 +49,8 @@ export default function Shop() {
   const [navTypes, setNavTypes] = useState<NavType[]>([]);
   const [facets, setFacets] = useState<AttributeFacet[]>([]);
   const [products, setProducts] = useState<StorefrontProduct[] | null>(null);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
@@ -114,6 +120,15 @@ export default function Shop() {
   // array reference.
   const categoryKey = selectedCategoryIds.slice().sort().join(",");
   const attributeKey = selectedAttributeValueIds.slice().sort().join(",");
+  // One string identifying the current filter set — any change resets to page 1.
+  const filterKey = [categoryKey, selectedCatalogId ?? "", attributeKey, String(onSaleOnly), searchQuery, locale].join("|");
+  // Tracks which filterKey the fetch effect last acted on, so it can skip the
+  // now-stale request when a filter change is about to reset the page.
+  const fetchedFilterKey = useRef(filterKey);
+  // Monotonic request id: only the latest fetch's result is applied, guarding
+  // against out-of-order responses when pages are changed quickly.
+  const reqSeq = useRef(0);
+  const didMount = useRef(false);
 
   useEffect(() => {
     getNav(locale)
@@ -145,23 +160,51 @@ export default function Shop() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [categoryKey, selectedCatalogId, locale]);
 
+  // Reset to the first page whenever the filter set changes (but not on the
+  // initial mount, where page is already 1). Defined before the fetch effect
+  // so its setPage runs first in the commit.
+  useEffect(() => {
+    if (!didMount.current) {
+      didMount.current = true;
+      return;
+    }
+    setPage(1);
+  }, [filterKey]);
+
   useEffect(() => {
     setProducts(null);
     // Hold the fetch until a pending type→category expansion resolves, so we
     // never briefly query unscoped (which would flash every product).
     if (typeExpansionPending) return;
-    listStorefrontProducts({
+    // A filter just changed while off page 1: the reset effect above is about
+    // to set page = 1, which re-runs this fetch. Skip the stale in-between one.
+    if (fetchedFilterKey.current !== filterKey && page !== 1) {
+      fetchedFilterKey.current = filterKey;
+      return;
+    }
+    fetchedFilterKey.current = filterKey;
+
+    const seq = ++reqSeq.current;
+    listStorefrontProductsPage({
       categoryIds: selectedCategoryIds,
       catalogId: selectedCatalogId,
       attributeValueIds: selectedAttributeValueIds,
       hasPromotion: onSaleOnly || undefined,
       q: searchQuery || undefined,
+      page,
+      pageSize: PAGE_SIZE,
       locale,
     })
-      .then(setProducts)
-      .catch(() => setError(t("shop.load_error", "Could not load products.")));
+      .then((res) => {
+        if (seq !== reqSeq.current) return;
+        setProducts(res.items);
+        setTotal(res.total);
+      })
+      .catch(() => {
+        if (seq === reqSeq.current) setError(t("shop.load_error", "Could not load products."));
+      });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [categoryKey, selectedCatalogId, attributeKey, onSaleOnly, searchQuery, locale, typeExpansionPending]);
+  }, [filterKey, page, typeExpansionPending]);
 
   // Only types that own at least one selected category stay "active" — lets
   // us drive both the Type and Category groups from the same source of truth.
@@ -323,7 +366,7 @@ export default function Shop() {
                   {t("shop.filters", "Filters")}
                 </Button>
                 <Text size="sm" tone="muted">
-                  {products ? `${products.length} item${products.length === 1 ? "" : "s"}` : t("common.loading", "Loading…")}
+                  {products ? `${total} item${total === 1 ? "" : "s"}` : t("common.loading", "Loading…")}
                 </Text>
               </div>
 
@@ -355,6 +398,18 @@ export default function Shop() {
                     />
                   ))}
                 </div>
+              )}
+
+              {products !== null && products.length > 0 && (
+                <Pagination
+                  page={page}
+                  totalPages={Math.ceil(total / PAGE_SIZE)}
+                  onPageChange={(p) => {
+                    setPage(p);
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }}
+                  className="mt-12"
+                />
               )}
             </div>
           </div>

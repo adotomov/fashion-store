@@ -9,8 +9,10 @@ import { FormField } from "../../components/ui/FormField";
 import { Icon } from "../../components/ui/Icon";
 import { Input } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
+import { Pagination } from "../../components/ui/Pagination";
 import { Select } from "../../components/ui/Select";
 import { Text } from "../../components/ui/Text";
+import { usePagination } from "../../lib/usePagination";
 import {
   type AdminOrder,
   type AdminOrderStatus,
@@ -72,12 +74,15 @@ function formatDate(value: string): string {
   return new Date(value).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
 
+const PAGE_SIZE = 50;
+
 export default function AdminOrders() {
   const { isReadOnly } = useAdminPermissions();
   const [orders, setOrders] = useState<AdminOrder[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState("");
+  const { page, totalPages, pageItems, setPage } = usePagination(orders ?? [], PAGE_SIZE);
 
   const [fulfillmentOrder, setFulfillmentOrder] = useState<AdminOrder | null>(null);
   const [fulfillmentStatus, setFulfillmentStatus] = useState<AdminOrderStatus>("pending");
@@ -204,7 +209,7 @@ export default function AdminOrders() {
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <FormField label="Status" htmlFor="status-filter" className="w-48">
-          <Select id="status-filter" value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+          <Select id="status-filter" value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}>
             <option value="">All statuses</option>
             {statusOptions.map((s) => (
               <option key={s} value={s}>
@@ -228,6 +233,7 @@ export default function AdminOrders() {
       ) : orders.length === 0 ? (
         <EmptyState icon="invoices" title="No orders yet" description="Placed orders will show up here." />
       ) : (
+        <>
         <div className="overflow-hidden rounded-sm border border-stone-200 bg-white">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-stone-200 bg-stone-50 text-xs uppercase tracking-wide text-stone-500">
@@ -243,7 +249,7 @@ export default function AdminOrders() {
               </tr>
             </thead>
             <tbody>
-              {orders.map((order) => {
+              {pageItems.map((order) => {
                 const isExpanded = expandedId === order.id;
                 const isUnviewed = !order.viewed_by_admin_at;
                 return (
@@ -404,6 +410,8 @@ export default function AdminOrders() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-4" />
+        </>
       )}
 
       <Modal open={fulfillmentOrder !== null} onClose={() => setFulfillmentOrder(null)} title="Update Order">

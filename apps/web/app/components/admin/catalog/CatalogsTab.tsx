@@ -9,6 +9,7 @@ import { FormField } from "../../ui/FormField";
 import { Icon } from "../../ui/Icon";
 import { Input } from "../../ui/Input";
 import { Modal } from "../../ui/Modal";
+import { Pagination } from "../../ui/Pagination";
 import { Select } from "../../ui/Select";
 import { Text } from "../../ui/Text";
 import {
@@ -20,6 +21,9 @@ import {
   listCatalogs,
   updateCatalog,
 } from "../../../lib/api/catalogs";
+import { usePagination } from "../../../lib/usePagination";
+
+const PAGE_SIZE = 20;
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" });
 
@@ -36,6 +40,7 @@ export function CatalogsTab() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [translatingCatalog, setTranslatingCatalog] = useState<Catalog | null>(null);
+  const { page, totalPages, pageItems, setPage } = usePagination(catalogs ?? [], PAGE_SIZE);
 
   async function refresh() {
     try {
@@ -130,6 +135,7 @@ export function CatalogsTab() {
           description="Create your first catalog to start organizing products."
         />
       ) : (
+        <>
         <div className="overflow-hidden rounded-sm border border-stone-200 bg-white">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-stone-200 bg-stone-50 text-xs uppercase tracking-wide text-stone-500">
@@ -143,7 +149,7 @@ export function CatalogsTab() {
               </tr>
             </thead>
             <tbody>
-              {catalogs.map((catalog) => (
+              {pageItems.map((catalog) => (
                 <tr key={catalog.id} className="border-b border-stone-100 last:border-0">
                   <td className="px-4 py-3 font-mono text-xs text-stone-500" title={catalog.id}>
                     {catalog.id.slice(0, 8)}
@@ -211,6 +217,8 @@ export function CatalogsTab() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-4" />
+        </>
       )}
 
       <Modal open={isModalOpen} onClose={() => setIsModalOpen(false)} title="Create Catalog">

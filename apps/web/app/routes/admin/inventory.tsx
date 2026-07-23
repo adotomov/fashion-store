@@ -10,8 +10,10 @@ import { FormField } from "../../components/ui/FormField";
 import { Icon } from "../../components/ui/Icon";
 import { Input } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
+import { Pagination } from "../../components/ui/Pagination";
 import { Select } from "../../components/ui/Select";
 import { Text } from "../../components/ui/Text";
+import { usePagination } from "../../lib/usePagination";
 import {
   type AdminAdjustableMovementType,
   type InventoryItem,
@@ -37,11 +39,14 @@ function variantLabel(variant: ProductVariant): string {
   return variant.attributes.map((a) => a.value).join(" / ") || "Default";
 }
 
+const PAGE_SIZE = 50;
+
 export default function AdminInventory() {
   const { isReadOnly } = useAdminPermissions();
   const [searchParams, setSearchParams] = useSearchParams();
   const [items, setItems] = useState<InventoryItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { page, totalPages, pageItems, setPage } = usePagination(items ?? [], PAGE_SIZE);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [variantOptions, setVariantOptions] = useState<
@@ -116,10 +121,18 @@ export default function AdminInventory() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Jump to the page holding a deep-linked (highlighted) item so it's visible.
+  useEffect(() => {
+    if (!highlightItemId || !items) return;
+    const idx = items.findIndex((it) => it.id === highlightItemId);
+    if (idx >= 0) setPage(Math.floor(idx / PAGE_SIZE) + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [highlightItemId, items]);
+
   useEffect(() => {
     if (!highlightItemId || !items) return;
     highlightedRowRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [highlightItemId, items]);
+  }, [highlightItemId, items, page]);
 
   async function openCreateModal() {
     setSelectedVariantId("");
@@ -239,6 +252,7 @@ export default function AdminInventory() {
           description="Assign a SKU to a product variant to start tracking stock."
         />
       ) : (
+        <>
         <div className="overflow-hidden rounded-sm border border-stone-200 bg-white">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-stone-200 bg-stone-50 text-xs uppercase tracking-wide text-stone-500">
@@ -253,7 +267,7 @@ export default function AdminInventory() {
               </tr>
             </thead>
             <tbody>
-              {items.map((item) => (
+              {pageItems.map((item) => (
                 <tr
                   key={item.id}
                   ref={item.id === highlightItemId ? highlightedRowRef : undefined}
@@ -287,6 +301,8 @@ export default function AdminInventory() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-4" />
+        </>
       )}
 
       <Modal

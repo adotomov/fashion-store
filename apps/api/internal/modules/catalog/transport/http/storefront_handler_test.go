@@ -115,14 +115,17 @@ func TestStorefrontHTTP_ProductsAndFacetsFilters(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("list products: expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	var products []struct {
-		ID string `json:"id"`
+	var productPage struct {
+		Items []struct {
+			ID string `json:"id"`
+		} `json:"items"`
+		Total int `json:"total"`
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &products); err != nil {
+	if err := json.Unmarshal(rec.Body.Bytes(), &productPage); err != nil {
 		t.Fatalf("decode products: %v", err)
 	}
-	if len(products) != 2 {
-		t.Errorf("expected 2 products for category A OR B, got %d", len(products))
+	if len(productPage.Items) != 2 || productPage.Total != 2 {
+		t.Errorf("expected 2 products for category A OR B, got %d (total %d)", len(productPage.Items), productPage.Total)
 	}
 
 	// Attribute filter: only product A has the Size=S variant.
@@ -132,11 +135,11 @@ func TestStorefrontHTTP_ProductsAndFacetsFilters(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("list products by attribute: expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &products); err != nil {
+	if err := json.Unmarshal(rec.Body.Bytes(), &productPage); err != nil {
 		t.Fatalf("decode products: %v", err)
 	}
-	if len(products) != 1 || products[0].ID != productInA.ID.String() {
-		t.Errorf("expected only product A for Size=S, got %v", products)
+	if len(productPage.Items) != 1 || productPage.Items[0].ID != productInA.ID.String() {
+		t.Errorf("expected only product A for Size=S, got %v", productPage.Items)
 	}
 
 	// Facets scoped to category A should include the Size attribute/value.

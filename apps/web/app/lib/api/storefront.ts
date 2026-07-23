@@ -74,6 +74,10 @@ export type StorefrontProductFilters = {
   locale?: string;
   productIds?: string[];
   hasPromotion?: boolean;
+  // 1-based page. When set, the endpoint returns a single page (≤30 items)
+  // plus the full match count in `total`.
+  page?: number;
+  pageSize?: number;
 };
 
 function buildProductFilterParams(filters: StorefrontProductFilters): URLSearchParams {
@@ -85,16 +89,40 @@ function buildProductFilterParams(filters: StorefrontProductFilters): URLSearchP
   if (filters.limit) params.set("limit", String(filters.limit));
   for (const id of filters.productIds ?? []) params.append("product_id", id);
   if (filters.hasPromotion) params.set("has_promotion", "true");
+  if (filters.page) params.set("page", String(filters.page));
+  if (filters.pageSize) params.set("page_size", String(filters.pageSize));
   return withLocale(params, filters.locale);
 }
 
-export async function listStorefrontProducts(filters: StorefrontProductFilters = {}): Promise<StorefrontProduct[]> {
+// The list endpoint always returns an envelope; `items` is the (possibly
+// paginated) page and `total` is the full match count.
+type RawStorefrontProductPage = {
+  items: RawStorefrontProduct[];
+  total: number;
+};
+
+export type StorefrontProductPage = {
+  items: StorefrontProduct[];
+  total: number;
+};
+
+// Paginated variant: pass `page` (1-based) to get one page plus the total
+// match count, for rendering page controls.
+export async function listStorefrontProductsPage(
+  filters: StorefrontProductFilters = {},
+): Promise<StorefrontProductPage> {
   const query = buildProductFilterParams(filters).toString();
-  const raw = await apiFetch<RawStorefrontProduct[]>(
+  const raw = await apiFetch<RawStorefrontProductPage>(
     `/api/v1/storefront/products${query ? `?${query}` : ""}`,
     { auth: false },
   );
-  return raw.map(fromRawProduct);
+  return { items: (raw.items ?? []).map(fromRawProduct), total: raw.total ?? 0 };
+}
+
+// Convenience wrapper for callers that only need the items (curated home
+// sections, recently-viewed, etc.) — unwraps the envelope.
+export async function listStorefrontProducts(filters: StorefrontProductFilters = {}): Promise<StorefrontProduct[]> {
+  return (await listStorefrontProductsPage(filters)).items;
 }
 
 export type StorefrontMedia = {

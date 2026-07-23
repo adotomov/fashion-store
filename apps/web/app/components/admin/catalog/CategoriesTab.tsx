@@ -9,8 +9,10 @@ import { FormField } from "../../ui/FormField";
 import { Icon } from "../../ui/Icon";
 import { Input } from "../../ui/Input";
 import { Modal } from "../../ui/Modal";
+import { Pagination } from "../../ui/Pagination";
 import { Select } from "../../ui/Select";
 import { Text } from "../../ui/Text";
+import { usePagination } from "../../../lib/usePagination";
 import {
   type Category,
   createCategory,
@@ -22,6 +24,8 @@ import {
   uploadCategoryThumbnail,
 } from "../../../lib/api/categories";
 import { type ProductType, listProductTypes } from "../../../lib/api/product-types";
+
+const PAGE_SIZE = 20;
 
 export function CategoriesTab() {
   const { isReadOnly } = useAdminPermissions();
@@ -41,6 +45,7 @@ export function CategoriesTab() {
   const [isThumbnailBusy, setIsThumbnailBusy] = useState(false);
   const [thumbnailError, setThumbnailError] = useState<string | null>(null);
   const thumbnailInputRef = useRef<HTMLInputElement>(null);
+  const { page, totalPages, pageItems, setPage } = usePagination(categories ?? [], PAGE_SIZE);
 
   async function refresh() {
     try {
@@ -212,6 +217,7 @@ export function CategoriesTab() {
       ) : categories.length === 0 ? (
         <EmptyState icon="catalog" title="No categories yet" description="Create your first category." />
       ) : (
+        <>
         <div className="overflow-hidden rounded-sm border border-stone-200 bg-white">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-stone-200 bg-stone-50 text-xs uppercase tracking-wide text-stone-500">
@@ -225,7 +231,7 @@ export function CategoriesTab() {
               </tr>
             </thead>
             <tbody>
-              {categories.map((category) => (
+              {pageItems.map((category) => (
                 <tr key={category.id} className="border-b border-stone-100 last:border-0">
                   <td className="px-4 py-3 font-medium text-stone-900">{category.name}</td>
                   <td className="px-4 py-3 font-mono text-xs text-stone-600">
@@ -264,6 +270,8 @@ export function CategoriesTab() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-4" />
+        </>
       )}
 
       <Modal

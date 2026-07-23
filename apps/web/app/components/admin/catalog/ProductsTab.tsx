@@ -10,9 +10,13 @@ import { FormField } from "../../ui/FormField";
 import { Icon } from "../../ui/Icon";
 import { Input } from "../../ui/Input";
 import { Modal } from "../../ui/Modal";
+import { Pagination } from "../../ui/Pagination";
 import { Price } from "../../ui/Price";
 import { Text } from "../../ui/Text";
 import { type Product, createProduct, deleteProduct, listProducts } from "../../../lib/api/products";
+import { usePagination } from "../../../lib/usePagination";
+
+const PAGE_SIZE = 20;
 
 const dateFormatter = new Intl.DateTimeFormat("en-US", { dateStyle: "medium", timeStyle: "short" });
 
@@ -35,6 +39,7 @@ export function ProductsTab() {
   const [newName, setNewName] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const { page, totalPages, pageItems, setPage } = usePagination(products ?? [], PAGE_SIZE);
 
   async function refresh() {
     try {
@@ -107,6 +112,7 @@ export function ProductsTab() {
       ) : products.length === 0 ? (
         <EmptyState icon="catalog" title="No products yet" description="Create your first product to get started." />
       ) : (
+        <>
         <div className="overflow-hidden rounded-sm border border-stone-200 bg-white">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-stone-200 bg-stone-50 text-xs uppercase tracking-wide text-stone-500">
@@ -120,7 +126,7 @@ export function ProductsTab() {
               </tr>
             </thead>
             <tbody>
-              {products.map((product) => (
+              {pageItems.map((product) => (
                 <tr
                   key={product.id}
                   onClick={() => navigate(`/admin/products/${product.id}`)}
@@ -153,6 +159,8 @@ export function ProductsTab() {
             </tbody>
           </table>
         </div>
+        <Pagination page={page} totalPages={totalPages} onPageChange={setPage} className="mt-4" />
+        </>
       )}
 
       <Modal open={isModalOpen} onClose={() => setIsModalOpen(false)} title="Create Product">

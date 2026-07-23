@@ -8,6 +8,7 @@ import { Card } from "../../components/ui/Card";
 import { FormField } from "../../components/ui/FormField";
 import { Input } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
+import { Pagination } from "../../components/ui/Pagination";
 import { Select } from "../../components/ui/Select";
 import { Tabs } from "../../components/ui/Tabs";
 import { Eyebrow, Text } from "../../components/ui/Text";
@@ -44,7 +45,7 @@ const TABS = [
   { id: "tax", label: "Tax" },
 ];
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 50;
 
 function formatDate(iso: string) {
   return new Date(iso).toLocaleDateString("bg-BG", { dateStyle: "medium" });
@@ -245,17 +246,11 @@ function InvoicesTab() {
         )}
       </Card>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-center gap-3">
-          <Button variant="ghost" size="sm" disabled={currentPage === 1} onClick={() => setOffset(offset - PAGE_SIZE)}>
-            ← Previous
-          </Button>
-          <Text size="sm" tone="muted">Page {currentPage} of {totalPages}</Text>
-          <Button variant="ghost" size="sm" disabled={currentPage === totalPages} onClick={() => setOffset(offset + PAGE_SIZE)}>
-            Next →
-          </Button>
-        </div>
-      )}
+      <Pagination
+        page={currentPage}
+        totalPages={totalPages}
+        onPageChange={(p) => setOffset((p - 1) * PAGE_SIZE)}
+      />
 
       {stornoModal && (
         <Modal open title="Issue credit note" onClose={() => setStornoModal(null)}>
