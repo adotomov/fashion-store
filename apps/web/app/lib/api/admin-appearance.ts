@@ -21,8 +21,7 @@ export function getHeroSettings(): Promise<HeroSettings> {
 export function saveHeroSettings(data: SaveHeroSettingsInput): Promise<HeroSettings> {
   return apiFetch<HeroSettings>("/api/v1/admin/hero", {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: data,
   });
 }
 
@@ -73,8 +72,7 @@ export function saveEditorialBanner(
 ): Promise<EditorialBannerSettings> {
   return apiFetch<EditorialBannerSettings>("/api/v1/admin/editorial-banner", {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(data),
+    body: data,
   });
 }
 
