@@ -26,7 +26,7 @@ env:
   VITE_API_BASE_URL: https://api.verani.bg
   # Give prod its own OAuth client with https://verani.bg as an authorized JS
   # origin, then set its client id here.
-  VITE_GOOGLE_CLIENT_ID: 673528779465-pajifaekv8l1odrbd8mpbglo351d7r15.apps.googleusercontent.com
+  VITE_GOOGLE_CLIENT_ID: 399593875435-vkfiip6lrhh9r5d8a5jv7s3rnpc88djn.apps.googleusercontent.com
   # Prod talks to the Revolut LIVE account, so the widget must run in prod mode.
   # Without this the Dockerfile default ("sandbox") would silently ship a
   # sandbox widget to production.

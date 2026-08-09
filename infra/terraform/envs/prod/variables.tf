@@ -29,9 +29,9 @@ variable "api_subdomain" {
 }
 
 variable "google_client_id" {
-  description = "Google OAuth client ID used for sign-in in prod. Reuses the existing client by default; give prod its own client and add https://verani.bg as an authorized JS origin."
+  description = "Google OAuth client ID used for sign-in in prod. Dedicated prod Web-application client (project verani-webstore-prod) with https://verani.bg + https://www.verani.bg as authorized JS origins. Must match VITE_GOOGLE_CLIENT_ID in deploy-prod.yml — the backend validates the ID token's audience against this."
   type        = string
-  default     = "673528779465-pajifaekv8l1odrbd8mpbglo351d7r15.apps.googleusercontent.com"
+  default     = "399593875435-vkfiip6lrhh9r5d8a5jv7s3rnpc88djn.apps.googleusercontent.com"
 }
 
 variable "github_repo" {
