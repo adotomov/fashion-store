@@ -96,6 +96,17 @@ const (
 	RevolutModeProd    = "prod"
 )
 
+// AppEnvProd is the APP_ENV value that marks a live production deployment.
+const AppEnvProd = "prod"
+
+// RevolutEnabled reports whether the Revolut gateway is active. The checkout
+// module treats a present API key as the enable signal, falling back to the
+// mock gateway when it is empty (see modules.go), so credential-strictness
+// keys off the same signal rather than off APP_ENV alone.
+func (c PaymentsConfig) RevolutEnabled() bool {
+	return c.RevolutAPIKey != ""
+}
+
 // PaymentsConfig carries the Revolut Merchant credentials and environment
 // selector. Mode picks sandbox vs live endpoints; APIKey is the server-side
 // Bearer secret; WebhookSecret verifies inbound webhook signatures. When
@@ -271,18 +282,19 @@ func LoadConfig() (*Config, error) {
 		return nil, fmt.Errorf("invalid REVOLUT_MODE %q: must be %q or %q", cfg.Payments.RevolutMode, RevolutModeSandbox, RevolutModeProd)
 	}
 
-	// Fail closed in production: never let a prod deploy come up pointed at the
-	// Revolut sandbox, or without the credentials needed to charge and to
-	// verify webhooks. Mirrors the fail-closed CORS stance for prod.
-	if cfg.App.Env == RevolutModeProd {
+	// Fail closed in production, but only once Revolut is actually enabled.
+	// The prod instance must be able to boot before its live payment secrets
+	// are populated (revolut_enabled=false injects no API key), so strictness
+	// keys off RevolutEnabled — the same present-API-key signal the checkout
+	// module uses to pick the real gateway over the mock — rather than off
+	// APP_ENV alone. When enabled in prod we never let it come up pointed at
+	// the Revolut sandbox, or without the secret needed to verify webhooks.
+	if cfg.App.Env == AppEnvProd && cfg.Payments.RevolutEnabled() {
 		if cfg.Payments.RevolutMode != RevolutModeProd {
-			return nil, fmt.Errorf("REVOLUT_MODE must be %q when APP_ENV=prod", RevolutModeProd)
-		}
-		if cfg.Payments.RevolutAPIKey == "" {
-			return nil, fmt.Errorf("REVOLUT_API_KEY is required when APP_ENV=prod")
+			return nil, fmt.Errorf("REVOLUT_MODE must be %q when APP_ENV=prod and Revolut is enabled", RevolutModeProd)
 		}
 		if cfg.Payments.RevolutWebhookSecret == "" {
-			return nil, fmt.Errorf("REVOLUT_WEBHOOK_SECRET is required when APP_ENV=prod")
+			return nil, fmt.Errorf("REVOLUT_WEBHOOK_SECRET is required when APP_ENV=prod and Revolut is enabled")
 		}
 	}
 
