@@ -1,10 +1,12 @@
 # Production Readiness — fashion-store (verani.bg)
 
-Status: **planning**. Current state = GCP **dev** environment fully built via Terraform
-(`infra/terraform/envs/dev`): Cloud Run (api + webstore-fe), Cloud SQL Postgres 16,
-Secret Manager, Cloud Storage, Artifact Registry, Cloud DNS zone, GitHub Actions via
-Workload Identity Federation. This doc tracks what's needed to stand up **prod** and the
-security posture going into it.
+Status: **LIVE** (prod cutover 2026-08-09). `verani.bg` serves the storefront through the
+external HTTPS LB + Cloud Armor; api on `api.verani.bg`; Google sign-in, Revolut payments,
+and the WAF are all enforcing. Both GCP envs are built via Terraform — dev
+(`infra/terraform/envs/dev`: Cloud Run api + webstore-fe, Cloud SQL Postgres 16, Secret
+Manager, Cloud Storage, Artifact Registry, Cloud DNS, GitHub Actions via WIF) and prod
+(`infra/terraform/envs/prod`: same + HTTPS LB, Cloud Armor, HA Cloud SQL). Remaining items
+are the `[~]`/`[ ]` entries in the checklist below (post-launch verification + hardening).
 
 ---
 
@@ -32,13 +34,13 @@ protected / needs-work.
 
 | Pri | Gap | Detail & fix |
 |---|---|---|
-| **High** | CORS fails **open** | In `CORS()`, an empty allowlist reflects **any** `Origin` **with** `Access-Control-Allow-Credentials: true`. Prod must always set `CORS_ALLOWED_ORIGINS` (it does via TF), but the code should fail *closed* — deny when the list is empty — so a misconfig can't silently open it. |
-| **High** | No rate limiting | Nothing throttles `/auth/*` (login/refresh) or any endpoint → brute-force / abuse / credential-stuffing surface. Add app-level limiter (e.g. `golang.org/x/time/rate` per-IP on auth routes) and/or Cloud Armor rate rules. |
-| **High** | No WAF in front of Cloud Run | api + web are `allUsers`-invokable directly. Put an external HTTPS Load Balancer + **Cloud Armor** in front for WAF (OWASP rules), rate limiting, geo/IP controls. |
-| **Med** | No security response headers | Missing HSTS, `X-Content-Type-Options: nosniff`, `X-Frame-Options`/CSP, `Referrer-Policy`, `Permissions-Policy`. Add a small headers middleware in `internal/app`. |
-| **Med** | No request body size cap | No `http.MaxBytesReader` — large-payload memory DoS. Add a global max body middleware (JSON endpoints only need a few KB; media upload route gets a higher explicit cap). |
+| ✅ Done | CORS fails **open** | **Resolved** — `CORS()` now denies when the allowlist is empty (fail-closed); prod sets `CORS_ALLOWED_ORIGINS` via TF. |
+| ✅ Done | No rate limiting | **Resolved** — app per-IP token bucket on `/auth/*`, **and** Cloud Armor per-IP 600/min at the LB (`loadbalancer.tf` rule 1000). |
+| ✅ Done | No WAF in front of Cloud Run | **Resolved** — external HTTPS LB + **Cloud Armor** live in front of both Cloud Run services; OWASP SQLi/XSS at sensitivity 1, per-IP rate limit, LB request logging on. Ingress locked to internal-LB-only. |
+| ✅ Done | No security response headers | **Resolved** — `SecurityHeaders` middleware (HSTS, nosniff, frame, referrer, CSP). |
+| ✅ Done | No request body size cap | **Resolved** — `MaxBodyBytes` (16 MiB) global cap. |
 | **Med** | Session hardening (deferred set) | 30-day TTL is long; no refresh-token **rotation with reuse detection**; no "list/revoke my sessions" endpoint; token stored in `localStorage` (XSS-exfiltratable). See `auth-token-security-followups` memory. Shorten TTL + add session-revoke endpoint for prod; httpOnly-cookie migration is a bigger, separate decision. |
-| **Med** | Payments / PCI scope | `card_online` payment method exists but **no PSP (Stripe) integration is wired** yet (no webhook, no PaymentIntent). Confirm **no raw card data touches our servers** before prod. When Stripe is added: verify webhook signatures, keep keys in Secret Manager, use a separate prod webhook endpoint. |
+| **Med** | Payments / PCI scope | **Revolut Merchant is integrated** (embedded widget, webhook + signature verification, refunds, sweeper — no raw card data touches our servers). It ships **disabled**: `revolut_enabled=false` injects no live key, so checkout falls back to the **mock gateway**. Boot no longer requires prod Revolut creds when `APP_ENV=prod` — strictness keys off `PaymentsConfig.RevolutEnabled()` (present API key), so prod comes up before secrets are populated. **Do not take real orders until enabled** (mock fakes payment success). To go live: populate the `revolut_api_key` + `revolut_webhook_secret` secret versions, build the FE with `VITE_REVOLUT_ENV`, register the webhook, then flip `revolut_enabled=true` — at which point the fail-closed guard re-engages (rejects boot unless `REVOLUT_MODE=prod` + webhook secret present). See `revolut-payments-integration` memory (Phase 5). |
 | **Low** | Dependency scanning | No automated `govulncheck` / `npm audit` / Dependabot in CI. Add before prod and run on a schedule. |
 | **Low** | `AUTH_SIGNING_SECRET` | Generated & injected but the opaque-token scheme may not use it — audit and remove if dead, or document its use. |
 
@@ -164,31 +166,43 @@ A single push to `main` therefore auto-ships dev and *queues* prod behind the ap
 
 ## Pre-launch checklist (condensed)
 
+Status legend: [x] done · [~] needs your confirmation before it can be ticked · [ ] still open.
+
 **Security**
 - [x] CORS fails closed on empty allowlist *(done — `internal/app/middleware.go`)*
-- [x] Rate limiting on auth *(done — per-IP token bucket on `/auth`; Cloud Armor still TODO for cross-instance)*
+- [x] Rate limiting on auth *(app per-IP token bucket on `/auth`; **plus** Cloud Armor per-IP 600/min at the LB — `loadbalancer.tf` rule 1000)*
 - [x] Security-header middleware (HSTS, nosniff, frame, referrer, CSP) *(done — `SecurityHeaders`)*
 - [x] Request body size cap *(done — `MaxBodyBytes`, 16 MiB)*
-- [ ] Shorten session TTL + add session-revoke endpoint
-- [ ] Confirm no raw card data server-side (PCI)
+- [ ] Shorten session TTL + add session-revoke endpoint *(still deferred — `auth-token-security-followups`)*
+- [x] No raw card data server-side (PCI) *(Revolut embedded widget — PAN never hits our servers)*
+- [x] Prod boots with Revolut **disabled** (mock gateway); fail-closed guard re-engages on enable *(`config.go` `RevolutEnabled()`)*
+- [x] Revolut go-live: live key + webhook secret in Secret Manager, webhook registered, `revolut_enabled=true`, `VITE_REVOLUT_ENV=prod` built *(2026-08-09)*
+- [~] **One real test transaction settled** end-to-end (charge → webhook → order flips to `paid`) — confirm before taking customer money
 - [ ] `govulncheck` + `npm audit` / Dependabot in CI
-- [ ] Cloud Armor / WAF in front of Cloud Run
+- [x] Cloud Armor / WAF in front of Cloud Run *(live; SQLi/XSS tuned to sensitivity 1 after JWT false-positives 403'd the auth POST; LB request logging enabled — `loadbalancer.tf`)*
 
 **Infra**
-- [ ] Separate prod GCP project *(project created + billing — manual)*
-- [x] `envs/prod` Terraform authored (validates) — *apply is manual*; module extraction deferred
+- [x] Separate prod GCP project *(`verani-webstore-prod`, live)*
+- [x] `envs/prod` Terraform applied *(module extraction still deferred)*
 - [x] Cloud SQL HA + backups + PITR + deletion protection *(prod `sql.tf`)*
 - [x] Invoices bucket private, separate from media *(prod `storage.tf`, reserved)*
 - [x] min instances ≥ 1; prod secrets generated in Secret Manager *(prod `cloud_run.tf`/`secrets.tf`)*
 - [x] Gated prod deploy workflow (separate WIF) *(`deploy-prod.yml` + prod `wif.tf`)*
-- [ ] LB-only ingress verified end-to-end after apply
+- [x] LB-only ingress verified end-to-end *(apex/www/api serve through the Google LB; Cloud Run ingress = internal-LB-only)*
+- [x] LB + Cloud Armor request logging enabled *(both backends, `sample_rate=1.0`; lower after launch)*
+- [x] First admin seeded *(manual `INSERT INTO user_roles … 'admin'` on prod Cloud SQL — one-off; future admins via the app)*
 
 **Domain / SSL**
 - [x] Store placement decided — **apex takeover** (verani.bg = store)
 - [x] Authoritative DNS zone authored with all records incl. MX *(prod `dns.tf`)*
-- [ ] verani.bg verified in Search Console *(manual — needed for dev domain mappings)*
-- [x] Managed SSL cert authored (LB, apex+www+api) — *goes ACTIVE after DNS resolves*
+- [~] verani.bg verified in Search Console *(OAuth consent screen published with verani.bg as authorized domain + login works, which implies it — confirm the Search Console property shows verified)*
+- [x] Managed SSL cert ACTIVE *(https serving on apex+www+api)*
 - [x] HTTP→HTTPS redirect (LB) + HSTS header (app) *(prod `loadbalancer.tf` + `SecurityHeaders`)*
-- [ ] Add store origins to Google OAuth authorized JS origins *(manual)*
+- [x] Dedicated prod Google OAuth client + store JS origins *(client `399593875435-…`, origins verani.bg + www; `variables.tf` + `deploy-prod.yml`; published, login working)*
 - [x] `VITE_API_BASE_URL` + `CORS_ALLOWED_ORIGINS` set to prod/dev hosts *(workflows + `cloud_run.tf`)*
-- [ ] Nameserver cutover at SuperHosting *(manual, after records confirmed)*
+- [x] DNS live for verani.bg → prod LB *(apex resolves to the Google LB; nameserver cutover / records effective)*
+
+**Logistics (Speedy)**
+- [x] `SPEEDY_MODE=real` in prod *(`cloud_run.tf`)*
+- [~] Speedy provider credentials entered in **Admin → Logistics** *(username/password/client_system_id/service IDs — DB-stored, not Terraform; confirm entered)*
+- [~] One real shipment created + tracking polled *(confirm before fulfilling customer orders)*

@@ -143,3 +143,66 @@ resource "google_monitoring_alert_policy" "api_uptime" {
   notification_channels = local.notification_channels
   depends_on            = [google_project_service.apis]
 }
+
+# Email deliverability. Bounces and spam complaints are the two signals that
+# destroy a sending domain's reputation, and they are invisible until customers
+# start reporting missing order confirmations — so alert on any sustained rate
+# rather than waiting for a threshold. Gated off until the custom OTel metric
+# emails_failed_total has been observed on the generic_task resource (Cloud
+# Monitoring rejects an alert on a metric+resource pair it has never seen), same
+# as dev — flip email_alerts_enabled once it has data.
+resource "google_monitoring_alert_policy" "email_bounces" {
+  count        = var.email_alerts_enabled ? 1 : 0
+  project      = var.project_id
+  display_name = "Email bounces / complaints (${var.env})"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "bounce or complaint rate > 0"
+    condition_threshold {
+      filter          = "resource.type=\"generic_task\" AND metric.type=\"custom.googleapis.com/opentelemetry/emails_failed_total\" AND (metric.labels.outcome=\"bounce\" OR metric.labels.outcome=\"complaint\")"
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "300s"
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_RATE"
+      }
+      trigger {
+        count = 1
+      }
+    }
+  }
+
+  notification_channels = local.notification_channels
+  depends_on            = [google_project_service.apis]
+}
+
+# A dead-lettered email is a customer who never got their order confirmation.
+# Retries are expected and not alerted on; exhausting them is not.
+resource "google_monitoring_alert_policy" "email_dead_letters" {
+  count        = var.email_alerts_enabled ? 1 : 0
+  project      = var.project_id
+  display_name = "Emails dead-lettered (${var.env})"
+  combiner     = "OR"
+
+  conditions {
+    display_name = "dead-letter rate > 0"
+    condition_threshold {
+      filter          = "resource.type=\"generic_task\" AND metric.type=\"custom.googleapis.com/opentelemetry/emails_failed_total\" AND metric.labels.outcome=\"dead_letter\""
+      comparison      = "COMPARISON_GT"
+      threshold_value = 0
+      duration        = "300s"
+      aggregations {
+        alignment_period   = "300s"
+        per_series_aligner = "ALIGN_RATE"
+      }
+      trigger {
+        count = 1
+      }
+    }
+  }
+
+  notification_channels = local.notification_channels
+  depends_on            = [google_project_service.apis]
+}

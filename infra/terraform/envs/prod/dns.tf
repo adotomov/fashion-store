@@ -106,6 +106,23 @@ resource "google_dns_record_set" "dmarc" {
   rrdatas      = ["\"${var.dmarc_record}\""]
 }
 
+# --- Google Workspace DKIM ---
+# Signs outbound human mail sent as info@verani.bg via Workspace, so it aligns
+# under DMARC. Selector "google" is Workspace's default. The 2048-bit key is
+# longer than a single 255-char TXT character-string, so it is published as two
+# quoted strings in one record — resolvers concatenate them with no separator.
+# This is a public key, so it lives inline like the site-verification string.
+resource "google_dns_record_set" "workspace_dkim" {
+  project      = var.project_id
+  managed_zone = google_dns_managed_zone.root.name
+  name         = "google._domainkey.${google_dns_managed_zone.root.dns_name}"
+  type         = "TXT"
+  ttl          = 300
+  rrdatas = [
+    "\"v=DKIM1; k=rsa; p=MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAqippy2iB94ppg/h3lR9U/Of6v1YF2wmGv2qd2oLgtuWUc7PKmJTDyiCfZrRkn28GJe5V6NuyHoeWl3P2y/GBtpoaYlJ1Bl50qwQd5N4SejVdDZDsyfm1nCsfpmOEOPzUe0A5rSGwMVEo/mIiwR4OWOXyw7DJ\" \"BIIMJejbwyUH5rTfMd3DntWpD7ExkFEsI0nXOeqgXhNRulafXyhhyG3Mlc49oNNSqMLBXVdT1tLOdJAwVPUwnD2+XonLTXJ+Hs1I8PwnYaaSGGBsYkZZ0ulFLKIbmRbnhJnG3dyBGX193+7nvJCl1QkBFmYYqnBxAxCA4CEJF1qkizVRUHxpgPzN5QIDAQAB\"",
+  ]
+}
+
 # --- SendGrid domain authentication (DKIM + branded link CNAMEs) ---
 # SendGrid generates these per account when you authenticate a sending domain,
 # so the values can't be known ahead of time. Populate sendgrid_dns_records from
@@ -123,9 +140,13 @@ resource "google_dns_record_set" "sendgrid" {
   rrdatas      = [endswith(each.value, ".") ? each.value : "${each.value}."]
 }
 
-# --- Email: preserved from SuperHosting, must not break on cutover ---
-# INBOUND mail only. info@verani.bg is a SuperHosting mailbox and receives here;
-# outbound transactional mail goes via SendGrid. Do not repoint or remove this.
+# --- Email: inbound routed to Google Workspace ---
+# INBOUND mail only. info@verani.bg is a Google Workspace mailbox
+# (boutiqueverani@gmail.com) and receives here. Migrated off SuperHosting's
+# mx2.bgdns.net on the Workspace switch — the SuperHosting mailbox no longer
+# receives. Outbound transactional mail still goes via SendGrid; outbound human
+# mail goes via Workspace (both send as info@verani.bg — see the SPF record).
+# The single-record form (smtp.google.com) is the modern Workspace MX.
 
 resource "google_dns_record_set" "mx" {
   project      = var.project_id
@@ -133,5 +154,5 @@ resource "google_dns_record_set" "mx" {
   name         = google_dns_managed_zone.root.dns_name
   type         = "MX"
   ttl          = 300
-  rrdatas      = ["20 mx2.bgdns.net."]
+  rrdatas      = ["1 smtp.google.com."]
 }

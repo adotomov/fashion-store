@@ -48,15 +48,19 @@ resource "google_compute_security_policy" "armor" {
   name    = "fs-${var.env}-armor"
 
   # OWASP CRS preconfigured rules: block obvious SQLi and XSS.
+  # Sensitivity 1 (paranoia level 1) = only the highest-confidence signatures.
+  # The default sensitivity (evaluatePreconfiguredExpr, all paranoia levels) is
+  # heavily false-positive-prone — it blocks benign browser traffic (cookies,
+  # Referer, query params that merely look SQL/XSS-ish) with a 403.
   rule {
     action   = "deny(403)"
     priority = 900
     match {
       expr {
-        expression = "evaluatePreconfiguredExpr('sqli-v33-stable') || evaluatePreconfiguredExpr('xss-v33-stable')"
+        expression = "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 1}) || evaluatePreconfiguredWaf('xss-v33-stable', {'sensitivity': 1})"
       }
     }
-    description = "OWASP CRS: SQLi + XSS"
+    description = "OWASP CRS: SQLi + XSS (sensitivity 1)"
   }
 
   # Per-IP rate limit: 600 requests / minute, 429 over the threshold.
@@ -103,6 +107,14 @@ resource "google_compute_backend_service" "api" {
   load_balancing_scheme = "EXTERNAL_MANAGED"
   security_policy       = google_compute_security_policy.armor.id
 
+  # Full-sample LB + Cloud Armor request logging. Needed to see which WAF rule
+  # denies a request (the armor decision only lands in Logging when this is on).
+  # Sample rate can be lowered after launch once traffic volume grows.
+  log_config {
+    enable      = true
+    sample_rate = 1.0
+  }
+
   backend {
     group = google_compute_region_network_endpoint_group.api.id
   }
@@ -113,6 +125,11 @@ resource "google_compute_backend_service" "web" {
   name                  = "backend-web-${var.env}"
   load_balancing_scheme = "EXTERNAL_MANAGED"
   security_policy       = google_compute_security_policy.armor.id
+
+  log_config {
+    enable      = true
+    sample_rate = 1.0
+  }
 
   backend {
     group = google_compute_region_network_endpoint_group.web.id

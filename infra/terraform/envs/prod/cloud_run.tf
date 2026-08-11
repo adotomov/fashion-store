@@ -177,7 +177,7 @@ resource "google_cloud_run_v2_service" "api" {
         }
       }
       dynamic "env" {
-        for_each = var.email_enabled ? [1] : []
+        for_each = var.email_webhook_enabled ? [1] : []
         content {
           name = "EMAIL_WEBHOOK_VERIFICATION_KEY"
           value_source {

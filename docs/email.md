@@ -83,6 +83,50 @@ mirroring how `revolut_enabled` gates the payment credentials.
 
 ---
 
+## Domain mail setup (verani.bg)
+
+`verani.bg` is **registered at SuperHosting.bg**, but SuperHosting only acts as
+registrar — DNS is delegated to **Google Cloud DNS**. The authoritative zone
+lives in the **prod** project and holds every record; it is managed by Terraform
+in [`infra/terraform/envs/prod/dns.tf`](../infra/terraform/envs/prod/dns.tf).
+Change mail DNS **there**, not in the SuperHosting panel (which no longer serves
+the zone).
+
+There are **two independent senders and one inbox**, all on the same address:
+
+| Concern | Handled by | Notes |
+|---|---|---|
+| **Inbound** `info@verani.bg` | **Google Workspace** | Mailbox is `boutiqueverani@gmail.com` configured as `info@verani.bg`. Migrated off SuperHosting on 2026-08-09 — the SuperHosting mailbox no longer receives. |
+| **Outbound — human mail** | **Google Workspace** send-as | Replies, manual correspondence. |
+| **Outbound — transactional** | **SendGrid** | The app pipeline documented in this file. Kept separate because Workspace caps at ~2k/day and prohibits bulk. |
+
+Both senders send **From `info@verani.bg`**, so both must be authorised — that's
+what the SPF and DKIM records below are for.
+
+### The DNS records
+
+| Record | Name | Value | Purpose |
+|---|---|---|---|
+| `MX` | `verani.bg` | `1 smtp.google.com.` | Inbound → Google Workspace |
+| `TXT` (SPF) | `verani.bg` | `v=spf1 include:_spf.google.com include:sendgrid.net ~all` | Authorises **both** Workspace and SendGrid. Shares the apex TXT set with the Google site-verification string (DNS permits one TXT set per name). |
+| `TXT` (DKIM — Workspace) | `google._domainkey.verani.bg` | `v=DKIM1; k=rsa; p=…` | Signs Workspace mail so it aligns under DMARC. 2048-bit key → published as **two character-strings** in one record (over the 255-char TXT limit; resolvers concatenate them). |
+| `CNAME`s (DKIM — SendGrid) | per `sendgrid_dns_records` | SendGrid-generated | SendGrid domain authentication (DKIM + branded links). Empty until the sending domain is authenticated. |
+| `TXT` (DMARC) | `_dmarc.verani.bg` | `v=DMARC1; p=none; …` | Report-only for now; tighten to quarantine/reject once reports show SPF+DKIM aligned. |
+
+**Verifying a change** (TTL is 300s):
+
+```sh
+dig +short MX verani.bg
+dig +short TXT verani.bg
+dig +short TXT google._domainkey.verani.bg
+```
+
+To confirm alignment end-to-end, send from Gmail (as `info@verani.bg`) to an
+outside address and check the received headers (**Show original**): SPF, DKIM
+(`d=verani.bg`) and DMARC should all pass.
+
+---
+
 ## Enabling it (first-time setup)
 
 Order matters — **do not enable sending before DNS authentication resolves**, or
@@ -96,10 +140,7 @@ early mail lands in spam and damages the domain's reputation.
    - Confirm `spf_record` — see the warning below.
    - `_dmarc` starts at `p=none`.
    - ⚠️ **Do not touch the `MX` record.** `info@verani.bg` *receives* at
-     SuperHosting; SendGrid only sends.
-   - ⚠️ If the nameserver migration to Cloud DNS hasn't happened yet, these
-     records must be added at **SuperHosting** instead — the Cloud DNS zone
-     isn't authoritative until cutover.
+     Google Workspace (see "Domain mail setup" above); SendGrid only sends.
 4. **Populate secrets** (values never go in Terraform state):
    ```sh
    gcloud secrets versions add fs-dev-sendgrid-api-key --data-file=-
@@ -117,10 +158,10 @@ A domain may publish only **one** SPF record, and it lives in the same apex TXT
 record set as the Google site verification (DNS permits one TXT set per name —
 this is why they share a resource in `dns.tf`).
 
-The default is `v=spf1 include:sendgrid.net ~all`. **If any mailbox also sends
-outbound through SuperHosting's SMTP, their `include:` must be added too**, or
-that mail starts failing SPF. Confirm with SuperHosting before relying on the
-default.
+The default is `v=spf1 include:_spf.google.com include:sendgrid.net ~all` —
+`_spf.google.com` for Workspace send-as, `sendgrid.net` for transactional mail.
+**Any additional provider that sends as `verani.bg` must have its `include:`
+added too**, or that mail starts failing SPF.
 
 ---
 

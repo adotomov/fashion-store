@@ -106,6 +106,11 @@ func mergeData(vars map[string]any, b domain.Branding) map[string]any {
 	data["SupportEmail"] = b.SupportEmail
 	data["PostalAddress"] = b.PostalAddress
 	data["Year"] = time.Now().Year()
+	// Preheader is the hidden inbox-preview line. Templates may set it in their
+	// payload; default it so the layout never renders "<no value>" for the key.
+	if _, ok := data["Preheader"]; !ok {
+		data["Preheader"] = ""
+	}
 	return data
 }
 
@@ -149,44 +154,71 @@ func renderLayout(content htmltemplate.HTML, data map[string]any) (string, error
 	return buf.String(), nil
 }
 
-// emailLayout is the shared chrome around every email. Styling is deliberately
-// simple and mostly inline: many mail clients strip <style> blocks, so anything
-// that must survive (colours, spacing on the container) is set inline.
+// emailLayout is the shared chrome around every email. The look is an editorial
+// boutique style: a serif wordmark and headings on a warm ivory canvas, a single
+// white card, and refined tables/panels. Typography and colour live in a <style>
+// block for the modern clients that keep it; anything that must not break when a
+// client strips <style> (the container, the CTA buttons, the panels, the totals
+// rule) is also inlined in the fragments, so the email degrades gracefully.
 var emailLayout = htmltemplate.Must(htmltemplate.New("layout").Parse(`<!doctype html>
 <html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="x-apple-disable-message-reformatting">
 <title>{{.StoreName}}</title>
 <style>
-  body { margin:0; padding:0; background:#f5f5f4; }
-  h1 { font-size:20px; font-weight:600; color:#1c1917; margin:0 0 16px; }
-  p { margin:0 0 14px; }
-  a.btn { display:inline-block; background:#1c1917; color:#ffffff !important; text-decoration:none;
-          padding:11px 20px; border-radius:4px; font-weight:500; }
-  table.items { width:100%; border-collapse:collapse; margin:18px 0; }
-  table.items th { border-bottom:1px solid #e7e5e4; padding:8px 0; font-size:12px;
-                   text-transform:uppercase; letter-spacing:.04em; color:#78716c; }
-  table.items td { border-bottom:1px solid #f5f5f4; padding:8px 0; }
-  table.items tr.total td { border-bottom:none; padding-top:12px; }
+  body,table,td,a { -webkit-text-size-adjust:100%; -ms-text-size-adjust:100%; }
+  table,td { mso-table-lspace:0pt; mso-table-rspace:0pt; }
+  img { border:0; line-height:100%; outline:none; text-decoration:none; -ms-interpolation-mode:bicubic; }
+  body { margin:0; padding:0; width:100%; background:#f4f1ec; }
+
+  .wordmark { font-family:Georgia,'Times New Roman',serif; font-size:22px; letter-spacing:.28em;
+              text-transform:uppercase; color:#1c1917; }
+  h1 { font-family:Georgia,'Times New Roman',serif; font-weight:400; font-size:24px; line-height:1.28;
+       color:#1c1917; margin:0 0 18px; }
+  p  { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+       font-size:15px; line-height:1.65; color:#44403c; margin:0 0 16px; }
+  .eyebrow { font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+             font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:#a8a29e; margin:0 0 14px; }
+  .muted { color:#78716c; font-size:13px; line-height:1.6; }
+
+  table.items { width:100%; border-collapse:collapse; margin:6px 0 4px;
+                font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif; }
+  table.items th { text-align:left; font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+                   color:#a8a29e; font-weight:600; padding:0 0 10px; border-bottom:1px solid #ece7e0; }
+  table.items td { font-size:15px; color:#292524; padding:12px 0; border-bottom:1px solid #f4f1ec; vertical-align:top; }
+  table.items td.num { text-align:right; white-space:nowrap; }
+  table.items .variant { color:#a8a29e; font-size:13px; }
+  table.items tr.sub td { border-bottom:none; color:#78716c; padding:5px 0; }
+  table.items tr.total td { border-top:2px solid #1c1917; border-bottom:none; padding-top:14px;
+                            font-size:17px; font-weight:700; color:#1c1917; }
+
+  @media only screen and (max-width:600px){
+    .px { padding-left:24px !important; padding-right:24px !important; }
+    h1 { font-size:22px !important; }
+  }
 </style>
 </head>
-<body style="margin:0;padding:0;background:#f5f5f4;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f4;padding:24px 12px;">
-<tr><td align="center">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
-         style="max-width:600px;background:#ffffff;border-radius:6px;overflow:hidden;
-                font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
-                font-size:15px;line-height:1.55;color:#292524;">
-    <tr><td align="center" style="padding:24px 32px 8px;border-bottom:1px solid #f5f5f4;">
-      {{if .LogoURL}}<img src="{{.LogoURL}}" alt="{{.StoreName}}" height="32" style="height:32px;width:auto;display:block;">
-      {{else}}<span style="font-size:20px;font-weight:600;letter-spacing:.04em;color:#1c1917;">{{.StoreName}}</span>{{end}}
+<body style="margin:0;padding:0;background:#f4f1ec;">
+<div style="display:none;max-height:0;overflow:hidden;mso-hide:all;font-size:1px;line-height:1px;color:#f4f1ec;opacity:0;">{{.Preheader}}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f1ec;">
+<tr><td align="center" style="padding:30px 12px;">
+  <table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:600px;max-width:600px;">
+    <tr><td align="center" style="padding:6px 0 24px;">
+      {{if .LogoURL}}<img src="{{.LogoURL}}" alt="{{.StoreName}}" height="34" style="height:34px;width:auto;display:block;">
+      {{else}}<span class="wordmark" style="font-family:Georgia,'Times New Roman',serif;font-size:22px;letter-spacing:.28em;text-transform:uppercase;color:#1c1917;">{{.StoreName}}</span>{{end}}
     </td></tr>
-    <tr><td style="padding:28px 32px 8px;">{{.Content}}</td></tr>
-    <tr><td style="padding:20px 32px 28px;border-top:1px solid #f5f5f4;color:#a8a29e;font-size:12px;line-height:1.6;">
-      {{if .SupportEmail}}<div>Questions? <a href="mailto:{{.SupportEmail}}" style="color:#78716c;">{{.SupportEmail}}</a></div>{{end}}
-      {{if .PostalAddress}}<div>{{.PostalAddress}}</div>{{end}}
-      <div>&copy; {{.Year}} {{.StoreName}}</div>
+    <tr><td>
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
+             style="background:#ffffff;border:1px solid #ece7e0;border-radius:8px;overflow:hidden;">
+        <tr><td class="px" style="padding:40px;">{{.Content}}</td></tr>
+      </table>
+    </td></tr>
+    <tr><td class="px" style="padding:22px 40px 6px;">
+      {{if .SupportEmail}}<p class="muted" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#78716c;font-size:13px;line-height:1.6;margin:0 0 6px;">Questions? Reach us at <a href="mailto:{{.SupportEmail}}" style="color:#78716c;">{{.SupportEmail}}</a></p>{{end}}
+      {{if .PostalAddress}}<p class="muted" style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#78716c;font-size:13px;line-height:1.6;margin:0 0 6px;">{{.PostalAddress}}</p>{{end}}
+      <p style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#c4bcb0;font-size:12px;margin:0;">&copy; {{.Year}} {{.StoreName}}</p>
     </td></tr>
   </table>
 </td></tr>

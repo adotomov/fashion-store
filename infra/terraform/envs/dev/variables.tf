@@ -123,7 +123,19 @@ variable "revolut_enabled" {
 }
 
 variable "email_enabled" {
-  description = "Inject the SendGrid API key + event-webhook verification key into the API service, switching it from the log sender to real delivery. Keep false until the secret VALUES are populated out-of-band AND the sending domain's SPF/DKIM/DMARC records resolve — sending before then lands mail in spam and harms the domain's reputation."
+  description = "Inject the SendGrid API key + event-webhook verification key into the API service, switching it from the log sender to real delivery. Defaults true now that the sending domain's SPF/DKIM/DMARC records resolve and the fs-dev-sendgrid-* secrets are populated — kept sticky (like revolut_enabled on dev) so a bare `terraform apply` can't silently revert to the log sender. Both secret containers MUST have a value version or the Cloud Run deploy fails on the secret_key_ref lookup."
+  type        = bool
+  default     = true
+}
+
+variable "email_webhook_enabled" {
+  description = "Inject the SendGrid Signed Event Webhook verification key so /webhooks/sendgrid can validate inbound delivery events (bounces/complaints). Deliberately independent of email_enabled: outbound sending only needs the API key, so this stays false until the event webhook is actually configured and the fs-dev-email-webhook-verification-key secret has a value — otherwise the Cloud Run deploy would fail resolving that secret_key_ref."
+  type        = bool
+  default     = false
+}
+
+variable "email_alerts_enabled" {
+  description = "Create the two email-deliverability alert policies (bounce/complaint and dead-letter). Off by default: they bind to the custom OTel metric emails_failed_total on the generic_task resource, which Cloud Monitoring only accepts once that metric+resource pair has been observed. Turn on after the API has exported the metric at least once (confirm the resource type in Metrics Explorer first)."
   type        = bool
   default     = false
 }
