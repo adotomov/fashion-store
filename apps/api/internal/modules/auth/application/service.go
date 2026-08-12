@@ -72,6 +72,7 @@ func (s *Service) LoginWithGoogle(ctx context.Context, idToken string) (*LoginRe
 		user, err := s.provisioner.EnsureUser(ctx, EnsureUserInput{
 			Email:    identity.Email,
 			FullName: identity.FullName,
+			Locale:   identity.Locale,
 		})
 		if err != nil {
 			return nil, err
@@ -104,6 +105,7 @@ func (s *Service) LoginWithGoogle(ctx context.Context, idToken string) (*LoginRe
 			UserID:   userID,
 			Email:    identity.Email,
 			FullName: identity.FullName,
+			Locale:   identity.Locale,
 		}
 		if err := s.notifier.UserRegistered(ctx, notification); err != nil && s.logger != nil {
 			s.logger.ErrorContext(ctx, "failed to queue welcome email",

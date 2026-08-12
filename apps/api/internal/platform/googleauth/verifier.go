@@ -28,11 +28,16 @@ func (v *Verifier) Verify(ctx context.Context, idToken string) (application.Goog
 	email, _ := payload.Claims["email"].(string)
 	emailVerified, _ := payload.Claims["email_verified"].(bool)
 	name, _ := payload.Claims["name"].(string)
+	// Google includes `locale` (BCP-47, e.g. "en-GB", "bg") when the account has
+	// a language set and the profile scope is granted. Often present, but treated
+	// as optional — an empty locale just means we fall back to geo/browser/store.
+	locale, _ := payload.Claims["locale"].(string)
 
 	return application.GoogleIdentity{
 		Subject:       payload.Subject,
 		Email:         email,
 		EmailVerified: emailVerified,
 		FullName:      name,
+		Locale:        locale,
 	}, nil
 }

@@ -13,6 +13,9 @@ type profileResponse struct {
 	FullName string   `json:"full_name"`
 	Phone    string   `json:"phone"`
 	Roles    []string `json:"roles"`
+	// Locale is the account's preferred language, so the storefront can display
+	// in it (signed-in account language wins over geo detection).
+	Locale string `json:"locale"`
 }
 
 func toProfileResponse(u *domain.User) profileResponse {
@@ -26,6 +29,7 @@ func toProfileResponse(u *domain.User) profileResponse {
 		FullName: u.FullName,
 		Phone:    u.Phone,
 		Roles:    roles,
+		Locale:   u.Locale,
 	}
 }
 

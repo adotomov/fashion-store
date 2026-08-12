@@ -266,10 +266,18 @@ export type Language = {
   name: string;
   is_default: boolean;
   enabled: boolean;
+  country_code?: string;
 };
 
 export function listEnabledLanguages(): Promise<Language[]> {
   return apiFetch<Language[]>("/api/v1/storefront/languages", { auth: false });
+}
+
+// getResolvedLocale asks the API which language to show this visitor, from their
+// location (a load-balancer geo header) and browser Accept-Language, falling back
+// to the store default. Used only when the visitor hasn't made an explicit choice.
+export function getResolvedLocale(): Promise<{ locale: string }> {
+  return apiFetch<{ locale: string }>("/api/v1/storefront/locale", { auth: false });
 }
 
 export function getUiStrings(locale?: string): Promise<Record<string, string>> {

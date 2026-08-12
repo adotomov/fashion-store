@@ -17,8 +17,10 @@ func NewPostgresLanguageRepository(db *pgxpool.Pool) *PostgresLanguageRepository
 	return &PostgresLanguageRepository{db: db}
 }
 
+const languageColumns = `code, name, is_default, enabled, COALESCE(country_code, '')`
+
 func (r *PostgresLanguageRepository) List(ctx context.Context) ([]domain.Language, error) {
-	rows, err := r.db.Query(ctx, `SELECT code, name, is_default, enabled FROM store_languages ORDER BY is_default DESC, name`)
+	rows, err := r.db.Query(ctx, `SELECT `+languageColumns+` FROM store_languages ORDER BY is_default DESC, name`)
 	if err != nil {
 		return nil, err
 	}
@@ -27,7 +29,7 @@ func (r *PostgresLanguageRepository) List(ctx context.Context) ([]domain.Languag
 	var out []domain.Language
 	for rows.Next() {
 		var l domain.Language
-		if err := rows.Scan(&l.Code, &l.Name, &l.IsDefault, &l.Enabled); err != nil {
+		if err := rows.Scan(&l.Code, &l.Name, &l.IsDefault, &l.Enabled, &l.CountryCode); err != nil {
 			return nil, err
 		}
 		out = append(out, l)
@@ -36,23 +38,43 @@ func (r *PostgresLanguageRepository) List(ctx context.Context) ([]domain.Languag
 }
 
 func (r *PostgresLanguageRepository) Get(ctx context.Context, code string) (*domain.Language, error) {
-	row := r.db.QueryRow(ctx, `SELECT code, name, is_default, enabled FROM store_languages WHERE code = $1`, code)
+	row := r.db.QueryRow(ctx, `SELECT `+languageColumns+` FROM store_languages WHERE code = $1`, code)
 	return scanLanguage(row)
 }
 
 func (r *PostgresLanguageRepository) Create(ctx context.Context, lang domain.Language) (*domain.Language, error) {
 	row := r.db.QueryRow(ctx, `
-		INSERT INTO store_languages (code, name, is_default, enabled)
-		VALUES ($1, $2, $3, $4)
-		RETURNING code, name, is_default, enabled`,
-		lang.Code, lang.Name, lang.IsDefault, lang.Enabled)
+		INSERT INTO store_languages (code, name, is_default, enabled, country_code)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING `+languageColumns,
+		lang.Code, lang.Name, lang.IsDefault, lang.Enabled, lang.CountryCode)
 	return scanLanguage(row)
 }
 
 func (r *PostgresLanguageRepository) SetEnabled(ctx context.Context, code string, enabled bool) (*domain.Language, error) {
 	row := r.db.QueryRow(ctx, `
 		UPDATE store_languages SET enabled = $2 WHERE code = $1
-		RETURNING code, name, is_default, enabled`, code, enabled)
+		RETURNING `+languageColumns, code, enabled)
+	return scanLanguage(row)
+}
+
+// SetDefault makes exactly one language the default in a single statement — true
+// for the target row, false for every other — so there is never zero or two.
+func (r *PostgresLanguageRepository) SetDefault(ctx context.Context, code string) (*domain.Language, error) {
+	tag, err := r.db.Exec(ctx, `UPDATE store_languages SET is_default = (code = $1)`, code)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, domain.ErrLanguageNotFound
+	}
+	return r.Get(ctx, code)
+}
+
+func (r *PostgresLanguageRepository) SetCountry(ctx context.Context, code, countryCode string) (*domain.Language, error) {
+	row := r.db.QueryRow(ctx, `
+		UPDATE store_languages SET country_code = $2 WHERE code = $1
+		RETURNING `+languageColumns, code, countryCode)
 	return scanLanguage(row)
 }
 
@@ -63,7 +85,7 @@ func (r *PostgresLanguageRepository) Delete(ctx context.Context, code string) er
 
 func scanLanguage(row pgx.Row) (*domain.Language, error) {
 	var l domain.Language
-	if err := row.Scan(&l.Code, &l.Name, &l.IsDefault, &l.Enabled); err != nil {
+	if err := row.Scan(&l.Code, &l.Name, &l.IsDefault, &l.Enabled, &l.CountryCode); err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, domain.ErrLanguageNotFound
 		}

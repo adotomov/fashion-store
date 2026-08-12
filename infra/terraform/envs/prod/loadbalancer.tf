@@ -107,6 +107,11 @@ resource "google_compute_backend_service" "api" {
   load_balancing_scheme = "EXTERNAL_MANAGED"
   security_policy       = google_compute_security_policy.armor.id
 
+  # Tag each request with the client's ISO-3166 country so the API can resolve a
+  # visitor's language by location (the /storefront/locale endpoint reads this).
+  # Only present in prod (behind the LB); dev/local fall back to Accept-Language.
+  custom_request_headers = ["X-Client-Geo-Region:{client_region}"]
+
   # Full-sample LB + Cloud Armor request logging. Needed to see which WAF rule
   # denies a request (the armor decision only lands in Logging when this is on).
   # Sample rate can be lowered after launch once traffic volume grows.
@@ -125,6 +130,10 @@ resource "google_compute_backend_service" "web" {
   name                  = "backend-web-${var.env}"
   load_balancing_scheme = "EXTERNAL_MANAGED"
   security_policy       = google_compute_security_policy.armor.id
+
+  # Same client-country tag as the API backend, for parity and any future
+  # server-side locale resolution on the web tier.
+  custom_request_headers = ["X-Client-Geo-Region:{client_region}"]
 
   log_config {
     enable      = true

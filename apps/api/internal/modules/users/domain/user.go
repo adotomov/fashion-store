@@ -20,6 +20,9 @@ type User struct {
 	Email     string
 	FullName  string
 	Phone     string
+	// Locale is the account's preferred language (primary subtag, e.g. "bg"),
+	// captured from the Google account at sign-in. Empty = no preference.
+	Locale    string
 	Roles     []Role
 	CreatedAt time.Time
 	UpdatedAt time.Time

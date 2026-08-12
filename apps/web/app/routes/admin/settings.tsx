@@ -21,6 +21,8 @@ import {
   addLanguage,
   deleteLanguage,
   listLanguages,
+  setDefaultLanguage,
+  setLanguageCountry,
   setLanguageEnabled,
 } from "../../lib/api/languages";
 import {
@@ -750,13 +752,16 @@ function MarkdownPreview({ content }: { content: string }) {
 function LanguagesTab() {
   const { isReadOnly } = useAdminPermissions();
   const [languages, setLanguages] = useState<Language[]>([]);
+  const [countryDrafts, setCountryDrafts] = useState<Record<string, string>>({});
   const [code, setCode] = useState("");
   const [name, setName] = useState("");
   const [isAdding, setIsAdding] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function refresh() {
-    setLanguages(await listLanguages());
+    const langs = await listLanguages();
+    setLanguages(langs);
+    setCountryDrafts(Object.fromEntries(langs.map((l) => [l.code, l.country_code ?? ""])));
   }
 
   useEffect(() => {
@@ -789,6 +794,16 @@ function LanguagesTab() {
     await refresh();
   }
 
+  async function handleSetDefault(lang: Language) {
+    await setDefaultLanguage(lang.code);
+    await refresh();
+  }
+
+  async function handleSetCountry(lang: Language) {
+    await setLanguageCountry(lang.code, (countryDrafts[lang.code] ?? "").trim().toUpperCase());
+    await refresh();
+  }
+
   return (
     <div className="flex flex-col gap-8">
       <section>
@@ -801,32 +816,64 @@ function LanguagesTab() {
           ) : (
             <ul className="flex flex-col gap-3">
               {languages.map((lang) => (
-                <li key={lang.code} className="flex items-center justify-between gap-3 border-b border-stone-100 pb-3 last:border-0 last:pb-0">
-                  <div className="flex items-center gap-2">
-                    <Text size="sm" className="font-medium">
-                      {lang.name}
-                    </Text>
-                    <Badge variant="neutral">{lang.code.toUpperCase()}</Badge>
-                    {lang.is_default && <Badge variant="brand">Default</Badge>}
+                <li key={lang.code} className="flex flex-col gap-2 border-b border-stone-100 pb-3 last:border-0 last:pb-0">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Text size="sm" className="font-medium">
+                        {lang.name}
+                      </Text>
+                      <Badge variant="neutral">{lang.code.toUpperCase()}</Badge>
+                      {lang.is_default && <Badge variant="brand">Default</Badge>}
+                      {lang.country_code && <Badge variant="neutral">Geo: {lang.country_code}</Badge>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {lang.enabled && !lang.is_default && (
+                        <Button variant="ghost" size="sm" type="button" disabled={isReadOnly} onClick={() => handleSetDefault(lang)}>
+                          Set default
+                        </Button>
+                      )}
+                      {!lang.is_default && (
+                        <Button variant="ghost" size="sm" type="button" disabled={isReadOnly} onClick={() => handleToggle(lang)}>
+                          {lang.enabled ? "Disable" : "Enable"}
+                        </Button>
+                      )}
+                      {!lang.is_default && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          type="button"
+                          disabled={isReadOnly}
+                          onClick={() => handleDelete(lang)}
+                          className="text-danger-600 hover:bg-danger-50"
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    {!lang.is_default && (
-                      <Button variant="ghost" size="sm" type="button" disabled={isReadOnly} onClick={() => handleToggle(lang)}>
-                        {lang.enabled ? "Disable" : "Enable"}
-                      </Button>
-                    )}
-                    {!lang.is_default && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        type="button"
-                        disabled={isReadOnly}
-                        onClick={() => handleDelete(lang)}
-                        className="text-danger-600 hover:bg-danger-50"
-                      >
-                        Remove
-                      </Button>
-                    )}
+                    <Text size="xs" tone="muted">
+                      Show to visitors from
+                    </Text>
+                    <Input
+                      value={countryDrafts[lang.code] ?? ""}
+                      onChange={(e) => setCountryDrafts((d) => ({ ...d, [lang.code]: e.target.value.toUpperCase() }))}
+                      placeholder="BG"
+                      className="w-20"
+                      disabled={isReadOnly}
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      type="button"
+                      disabled={isReadOnly || (countryDrafts[lang.code] ?? "") === (lang.country_code ?? "")}
+                      onClick={() => handleSetCountry(lang)}
+                    >
+                      Save
+                    </Button>
+                    <Text size="xs" tone="muted">
+                      ISO country code — leave blank to disable geo targeting.
+                    </Text>
                   </div>
                 </li>
               ))}

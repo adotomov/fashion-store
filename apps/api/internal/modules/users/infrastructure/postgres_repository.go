@@ -92,7 +92,7 @@ func scanCountBreakdown(rows pgx.Rows) ([]application.CountBreakdown, error) {
 
 func (r *PostgresRepository) FindByID(ctx context.Context, id uuid.UUID) (*domain.User, error) {
 	row := r.db.QueryRow(ctx, `
-		SELECT id, email, COALESCE(full_name, ''), COALESCE(phone, ''), created_at, updated_at
+		SELECT id, email, COALESCE(full_name, ''), COALESCE(phone, ''), COALESCE(locale, ''), created_at, updated_at
 		FROM users WHERE id = $1`, id)
 
 	user, err := scanUser(row)
@@ -111,7 +111,7 @@ func (r *PostgresRepository) FindByID(ctx context.Context, id uuid.UUID) (*domai
 
 func (r *PostgresRepository) FindByEmail(ctx context.Context, email string) (*domain.User, error) {
 	row := r.db.QueryRow(ctx, `
-		SELECT id, email, COALESCE(full_name, ''), COALESCE(phone, ''), created_at, updated_at
+		SELECT id, email, COALESCE(full_name, ''), COALESCE(phone, ''), COALESCE(locale, ''), created_at, updated_at
 		FROM users WHERE lower(email) = lower($1)`, email)
 
 	user, err := scanUser(row)
@@ -136,10 +136,10 @@ func (r *PostgresRepository) Create(ctx context.Context, input application.Creat
 	defer tx.Rollback(ctx)
 
 	row := tx.QueryRow(ctx, `
-		INSERT INTO users (email, full_name)
-		VALUES ($1, $2)
-		RETURNING id, email, COALESCE(full_name, ''), COALESCE(phone, ''), created_at, updated_at`,
-		input.Email, input.FullName)
+		INSERT INTO users (email, full_name, locale)
+		VALUES ($1, $2, $3)
+		RETURNING id, email, COALESCE(full_name, ''), COALESCE(phone, ''), COALESCE(locale, ''), created_at, updated_at`,
+		input.Email, input.FullName, input.Locale)
 
 	user, err := scanUser(row)
 	if err != nil {
@@ -165,7 +165,7 @@ func (r *PostgresRepository) Update(ctx context.Context, user domain.User) (*dom
 	row := r.db.QueryRow(ctx, `
 		UPDATE users SET full_name = $2, phone = $3, updated_at = NOW()
 		WHERE id = $1
-		RETURNING id, email, COALESCE(full_name, ''), COALESCE(phone, ''), created_at, updated_at`,
+		RETURNING id, email, COALESCE(full_name, ''), COALESCE(phone, ''), COALESCE(locale, ''), created_at, updated_at`,
 		user.ID, user.FullName, user.Phone)
 
 	updated, err := scanUser(row)
@@ -205,7 +205,7 @@ func (r *PostgresRepository) List(ctx context.Context, filter application.ListUs
 	}
 
 	rows, err := r.db.Query(ctx, `
-		SELECT id, email, COALESCE(full_name, ''), COALESCE(phone, ''), created_at, updated_at
+		SELECT id, email, COALESCE(full_name, ''), COALESCE(phone, ''), COALESCE(locale, ''), created_at, updated_at
 		FROM users
 		WHERE $1 = '' OR full_name ILIKE $2 OR email ILIKE $2
 		ORDER BY created_at DESC
@@ -282,7 +282,7 @@ func (r *PostgresRepository) rolesFor(ctx context.Context, userID uuid.UUID) ([]
 
 func scanUser(row pgx.Row) (*domain.User, error) {
 	var u domain.User
-	err := row.Scan(&u.ID, &u.Email, &u.FullName, &u.Phone, &u.CreatedAt, &u.UpdatedAt)
+	err := row.Scan(&u.ID, &u.Email, &u.FullName, &u.Phone, &u.Locale, &u.CreatedAt, &u.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrUserNotFound
 	}

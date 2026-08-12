@@ -12,6 +12,8 @@ type LanguageRepository interface {
 	Get(ctx context.Context, code string) (*domain.Language, error)
 	Create(ctx context.Context, lang domain.Language) (*domain.Language, error)
 	SetEnabled(ctx context.Context, code string, enabled bool) (*domain.Language, error)
+	SetDefault(ctx context.Context, code string) (*domain.Language, error)
+	SetCountry(ctx context.Context, code, countryCode string) (*domain.Language, error)
 	Delete(ctx context.Context, code string) error
 }
 
@@ -58,10 +60,36 @@ func (s *LanguageService) SetEnabled(ctx context.Context, code string, enabled b
 	if err != nil {
 		return nil, err
 	}
-	if lang.IsDefault && !enabled {
+	// The English base (the fallback for every other locale) and the current
+	// default display language must never be turned off.
+	if !enabled && (lang.Code == domain.DefaultLocale || lang.IsDefault) {
 		return nil, domain.ErrCannotModifyDefaultLocale
 	}
 	return s.repo.SetEnabled(ctx, code, enabled)
+}
+
+// SetDefault makes an enabled language the store's default display language.
+func (s *LanguageService) SetDefault(ctx context.Context, code string) (*domain.Language, error) {
+	code = strings.ToLower(strings.TrimSpace(code))
+	lang, err := s.repo.Get(ctx, code)
+	if err != nil {
+		return nil, err
+	}
+	if !lang.Enabled {
+		return nil, domain.ErrLanguageNotEnabled
+	}
+	return s.repo.SetDefault(ctx, code)
+}
+
+// SetCountry sets (or clears, when empty) the ISO-3166 country a language is
+// geo-served to, so a request's region can resolve to it.
+func (s *LanguageService) SetCountry(ctx context.Context, code, countryCode string) (*domain.Language, error) {
+	code = strings.ToLower(strings.TrimSpace(code))
+	countryCode = strings.ToUpper(strings.TrimSpace(countryCode))
+	if _, err := s.repo.Get(ctx, code); err != nil {
+		return nil, err
+	}
+	return s.repo.SetCountry(ctx, code, countryCode)
 }
 
 func (s *LanguageService) Delete(ctx context.Context, code string) error {
@@ -69,7 +97,7 @@ func (s *LanguageService) Delete(ctx context.Context, code string) error {
 	if err != nil {
 		return err
 	}
-	if lang.IsDefault {
+	if lang.Code == domain.DefaultLocale || lang.IsDefault {
 		return domain.ErrCannotModifyDefaultLocale
 	}
 	return s.repo.Delete(ctx, code)

@@ -74,6 +74,7 @@ func (a *userProvisionerAdapter) EnsureUser(ctx context.Context, input authappli
 	user, err := a.users.EnsureUser(ctx, usersapplication.CreateUserInput{
 		Email:    input.Email,
 		FullName: input.FullName,
+		Locale:   i18ndomain.NormalizeLanguage(input.Locale),
 	})
 	if err != nil {
 		return authapplication.UserRef{}, err
@@ -128,6 +129,10 @@ func (a *authNotifierAdapter) UserRegistered(ctx context.Context, n authapplicat
 		TemplateKey: notificationsdomain.TemplateWelcome,
 		ToEmail:     n.Email,
 		ToName:      n.FullName,
+		// Welcome the customer in their Google account's language when we have it;
+		// an empty locale falls back to the store locale inside the notifications
+		// service.
+		Locale: i18ndomain.NormalizeLanguage(n.Locale),
 		// Keyed on the user so an account can only ever be welcomed once, even if
 		// the identity row were somehow recreated.
 		DedupeKey: notificationsdomain.TemplateWelcome + ":" + n.UserID.String(),
@@ -141,6 +146,7 @@ func (a *authNotifierAdapter) UserRegistered(ctx context.Context, n authapplicat
 // the notifications module, queueing the dispatch notice for a shipped parcel.
 type fulfillmentNotifierAdapter struct {
 	notifications *notificationsapplication.Service
+	users         *usersapplication.Service
 }
 
 func (a *fulfillmentNotifierAdapter) OrderShipped(ctx context.Context, n fulfillmentapplication.ShipmentNotification) error {
@@ -152,6 +158,7 @@ func (a *fulfillmentNotifierAdapter) OrderShipped(ctx context.Context, n fulfill
 		TemplateKey: notificationsdomain.TemplateShippingUpdate,
 		ToEmail:     n.CustomerEmail,
 		ToName:      n.CustomerName,
+		Locale:      a.users.LocaleByEmail(ctx, n.CustomerEmail),
 		// Keyed on the order: the tracking poll re-sees the in-flight status on
 		// every tick, and this is what stops it mailing on each one.
 		DedupeKey: notificationsdomain.TemplateShippingUpdate + ":" + n.OrderID.String(),
@@ -180,6 +187,7 @@ func speedyTrackingURL(trackingNumber string) string {
 // order, keeping both out of the checkout service.
 type checkoutNotifierAdapter struct {
 	notifications *notificationsapplication.Service
+	users         *usersapplication.Service
 }
 
 func (a *checkoutNotifierAdapter) OrderConfirmed(ctx context.Context, n checkoutapplication.OrderNotification) error {
@@ -201,6 +209,7 @@ func (a *checkoutNotifierAdapter) OrderConfirmed(ctx context.Context, n checkout
 		TemplateKey: notificationsdomain.TemplateOrderConfirmation,
 		ToEmail:     n.CustomerEmail,
 		ToName:      n.CustomerName,
+		Locale:      a.users.LocaleByEmail(ctx, n.CustomerEmail),
 		// Keyed on the order, so the pay-on-delivery path, a webhook retry and
 		// the payment sweeper can all reach here without sending twice.
 		DedupeKey: notificationsdomain.TemplateOrderConfirmation + ":" + n.OrderID.String(),
@@ -222,6 +231,7 @@ func (a *checkoutNotifierAdapter) PaymentFailed(ctx context.Context, n checkouta
 		TemplateKey: notificationsdomain.TemplatePaymentFailed,
 		ToEmail:     n.CustomerEmail,
 		ToName:      n.CustomerName,
+		Locale:      a.users.LocaleByEmail(ctx, n.CustomerEmail),
 		DedupeKey:   notificationsdomain.TemplatePaymentFailed + ":" + n.OrderID.String(),
 		Vars: map[string]any{
 			"CustomerName": n.CustomerName,
@@ -991,7 +1001,7 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 	}
 	fulfillmentOrderGateway := &fulfillmentOrderGatewayAdapter{orders: ordersService}
 	fulfillmentService := fulfillmentapplication.NewService(fulfillmentSettingsRepo, fulfillmentSpeedyClient, fulfillmentOrderGateway, a.Logger).
-		WithNotifier(&fulfillmentNotifierAdapter{notifications: notificationsService})
+		WithNotifier(&fulfillmentNotifierAdapter{notifications: notificationsService, users: usersService})
 	fulfillmentHandler := fulfillmenthttp.NewHandler(fulfillmentService, a.Config.Fulfillment.SpeedyMode == app.SpeedyModeFake)
 	fulfillmentModule := fulfillmenthttp.NewModule(fulfillmentHandler, requireAdmin)
 
@@ -1026,7 +1036,7 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 	checkoutDiscountGateway := &checkoutDiscountGatewayAdapter{promotions: promotionsService}
 	checkoutWebhookStore := checkoutinfra.NewPostgresWebhookEventStore(a.DB)
 	checkoutService := checkoutapplication.NewService(checkoutCartGateway, checkoutInventoryGateway, checkoutUserGateway, checkoutOrderGateway, checkoutPaymentGateway, checkoutFulfillmentGateway, checkoutDiscountGateway, deferredInvoices, checkoutWebhookStore, a.Logger).
-		WithNotifier(&checkoutNotifierAdapter{notifications: notificationsService})
+		WithNotifier(&checkoutNotifierAdapter{notifications: notificationsService, users: usersService})
 	checkoutHandler := checkouthttp.NewHandler(checkoutService, a.Config.Payments.RevolutWebhookSecret)
 	checkoutModule := checkouthttp.NewModule(checkoutHandler, authhttp.OptionalAuth(authService), requireAdmin)
 

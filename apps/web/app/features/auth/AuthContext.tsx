@@ -4,6 +4,7 @@ import { mergeGuestCartIntoUser } from "../../lib/api/cart";
 import { apiFetch } from "../../lib/api/client";
 import { clearToken, getToken, setToken } from "../../lib/auth/session";
 import { clearCartToken } from "../../lib/cart/session";
+import { useLanguage } from "../i18n/LanguageContext";
 import { PhoneSetupGate } from "./PhoneSetupGate";
 
 export type Profile = {
@@ -12,6 +13,7 @@ export type Profile = {
   full_name: string;
   phone: string;
   roles: string[];
+  locale?: string;
 };
 
 type AuthContextValue = {
@@ -39,6 +41,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [phoneSetupRequired, setPhoneSetupRequired] = useState(false);
+  const { applyAccountLocale } = useLanguage();
+
+  // A signed-in user's account language wins over geo/browser detection (but not
+  // over an explicit manual choice — applyAccountLocale enforces that).
+  useEffect(() => {
+    if (profile?.locale) applyAccountLocale(profile.locale);
+  }, [profile?.locale, applyAccountLocale]);
 
   async function loadProfile() {
     if (!getToken()) {

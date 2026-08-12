@@ -45,6 +45,17 @@ func (s *Service) EnsureUser(ctx context.Context, input CreateUserInput) (*domai
 	return s.repo.Create(ctx, input)
 }
 
+// LocaleByEmail returns the stored preferred locale for the account with this
+// email, or empty when there is no such user or no preference. Used to send a
+// customer's transactional email in their own language.
+func (s *Service) LocaleByEmail(ctx context.Context, email string) string {
+	user, err := s.repo.FindByEmail(ctx, email)
+	if err != nil || user == nil {
+		return ""
+	}
+	return user.Locale
+}
+
 func (s *Service) GetProfile(ctx context.Context, userID uuid.UUID) (*domain.User, error) {
 	return s.repo.FindByID(ctx, userID)
 }

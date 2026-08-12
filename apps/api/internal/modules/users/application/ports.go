@@ -41,6 +41,9 @@ type OrderCounter interface {
 type CreateUserInput struct {
 	Email    string
 	FullName string
+	// Locale is the account's preferred language (primary subtag, e.g. "bg"),
+	// set on first sign-in from the Google account. Empty leaves it unset.
+	Locale string
 }
 
 type ListUsersFilter struct {

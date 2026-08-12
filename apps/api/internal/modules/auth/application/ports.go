@@ -20,6 +20,9 @@ type GoogleIdentity struct {
 	Email         string
 	EmailVerified bool
 	FullName      string
+	// Locale is the raw BCP-47 locale from the Google account (e.g. "en-GB",
+	// "bg"), when present. Normalised to a language subtag downstream.
+	Locale string
 }
 
 // IdentityRepository persists external auth identities and links them to
@@ -47,6 +50,9 @@ type UserProvisioner interface {
 type EnsureUserInput struct {
 	Email    string
 	FullName string
+	// Locale is the raw Google account locale, recorded on the user when the
+	// account is first provisioned. Normalised by the provisioner adapter.
+	Locale string
 }
 
 type UserRef struct {
@@ -58,6 +64,9 @@ type RegistrationNotification struct {
 	UserID   uuid.UUID
 	Email    string
 	FullName string
+	// Locale is the raw Google account locale, used to send the welcome email in
+	// the new customer's own language (normalised by the notifier adapter).
+	Locale string
 }
 
 // Notifier is told about account events worth emailing about. Implemented by an
