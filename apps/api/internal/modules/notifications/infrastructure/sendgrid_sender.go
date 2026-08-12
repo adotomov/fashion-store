@@ -13,12 +13,13 @@ import (
 )
 
 const (
-	// EU data residency. The SendGrid account/subuser is provisioned in the EU
-	// region, so mail must be submitted to the EU regional host — submitting an
-	// EU-resident key to the global api.sendgrid.com host is rejected. This is the
-	// hand-rolled equivalent of the SDK's sendgrid.SetDataResidency(req, "eu"),
-	// which does nothing more than swap this base host to api.eu.sendgrid.com.
-	sendGridEndpoint = "https://api.eu.sendgrid.com/v3/mail/send"
+	// SendGrid's global (US) API host. Our account is a standard/global SendGrid
+	// account, so mail is submitted here. This is NOT EU data residency: that
+	// requires an EU-regional SendGrid account/subuser and the api.eu.sendgrid.com
+	// host (the SDK's SetDataResidency(req, "eu")). This key is global, so the EU
+	// host rejects it with 401 — switch this host only if the account is migrated
+	// to EU residency.
+	sendGridEndpoint = "https://api.sendgrid.com/v3/mail/send"
 	sendGridTimeout  = 20 * time.Second
 )
 
