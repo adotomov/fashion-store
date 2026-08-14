@@ -25,9 +25,10 @@ import {
 } from "../../lib/api/checkout";
 import { ApiError } from "../../lib/api/client";
 import { RevolutPaymentStep } from "./RevolutPaymentStep";
-import { type Office, listOffices } from "../../lib/api/admin-logistics";
+import { AddressForm, type StructuredAddress, emptyStructuredAddress, isStructuredAddressComplete } from "../../components/address/AddressForm";
+import { Combobox, type ComboboxOption } from "../../components/ui/Combobox";
+import { type Office, searchOffices, searchSites } from "../../lib/api/logistics";
 import { type Address, listAddresses } from "../../lib/api/users";
-import { COUNTRIES } from "../../lib/data/countries";
 import { formatMoneyDual } from "../../lib/money/money";
 import { useAuth } from "../auth/AuthContext";
 import { useCart } from "../cart/CartContext";
@@ -36,27 +37,35 @@ import { useStoreBranding } from "../store-settings/StoreSettingsContext";
 
 type Step = "details" | "delivery" | "payment" | "confirmation";
 
-const emptyAddress: CheckoutAddress = {
-  recipient_name: "",
-  phone: "",
-  line1: "",
-  line2: "",
-  city: "",
-  region: "",
-  postal_code: "",
-  country_code: "",
-};
+const emptyAddress: CheckoutAddress = emptyStructuredAddress;
+
+// officeTypeFor maps a delivery method to the Speedy location type its picker
+// searches, or null for door delivery (which uses the shipping address). Speedy
+// Office pickup uses "OFFICE"; EasyBox lockers use "APT".
+function officeTypeFor(method: DeliveryMethodCode | null): "OFFICE" | "APT" | null {
+  if (method === "speedy_office") return "OFFICE";
+  if (method === "easybox") return "APT";
+  return null;
+}
 
 function addressFromSaved(a: Address): CheckoutAddress {
   return {
     recipient_name: a.recipient_name,
     phone: a.phone,
-    line1: a.line1,
-    line2: a.line2,
+    country_code: a.country_code || "BG",
+    country_id: a.country_id || 100,
+    site_id: a.site_id,
     city: a.city,
-    region: a.region,
-    postal_code: a.postal_code,
-    country_code: a.country_code,
+    post_code: a.post_code,
+    complex_id: a.complex_id,
+    complex_name: a.complex_name,
+    street_id: a.street_id,
+    street_name: a.street_name,
+    street_no: a.street_no,
+    block_no: a.block_no,
+    entrance_no: a.entrance_no,
+    floor_no: a.floor_no,
+    apartment_no: a.apartment_no,
   };
 }
 
@@ -106,6 +115,11 @@ export function CheckoutFlow() {
   const [offices, setOffices] = useState<Office[] | null>(null);
   const [officeId, setOfficeId] = useState<string>("");
   const [officesError, setOfficesError] = useState<string | null>(null);
+  // The city the locker picker searches in — defaults to the shipping address's
+  // city but the shopper can change it independently (they may collect from a
+  // locker in a different town). Held separately so it doesn't mutate the
+  // shipping address.
+  const [officeSite, setOfficeSite] = useState<{ id: number; name: string }>({ id: 0, name: "" });
 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethodCode | null>(null);
   // Set once an online-card order is created and awaiting widget payment.
@@ -183,21 +197,29 @@ export function CheckoutFlow() {
       .catch(() => setSavedAddresses([]));
   }, [isAuthenticated, profile]);
 
+  // When an office/locker step opens, default its city to the resolved shipping city.
   useEffect(() => {
-    if (deliveryMethod !== "easybox" || !shippingAddress.city.trim()) {
+    if (officeTypeFor(deliveryMethod) && officeSite.id === 0 && shippingAddress.site_id > 0) {
+      setOfficeSite({ id: shippingAddress.site_id, name: shippingAddress.city });
+    }
+  }, [deliveryMethod, shippingAddress.site_id, shippingAddress.city, officeSite.id]);
+
+  useEffect(() => {
+    const officeType = officeTypeFor(deliveryMethod);
+    if (!officeType || officeSite.id === 0) {
       setOffices(null);
       setOfficeId("");
       return;
     }
     setOffices(null);
     setOfficesError(null);
-    listOffices("speedy", shippingAddress.city, "APT")
+    searchOffices(officeSite.id, officeType)
       .then((result) => {
         setOffices(result);
         setOfficeId((current) => (result.some((o) => o.id === current) ? current : ""));
       })
-      .catch(() => setOfficesError(t("checkout.load_lockers_error", "Could not load lockers for this city.")));
-  }, [deliveryMethod, shippingAddress.city]);
+      .catch(() => setOfficesError(t("checkout.load_offices_error", "Could not load pickup points for this city.")));
+  }, [deliveryMethod, officeSite.id]);
 
   // Payment options depend on the delivery method (a locker can't take cash,
   // a courier has no locker terminal). Clear a selection that no longer fits
@@ -211,6 +233,26 @@ export function CheckoutFlow() {
   const subtotal = cart?.subtotal ?? { amount: 0, currency: "EUR" };
   const selectedDeliveryMethod = deliveryMethods?.find((m) => m.code === deliveryMethod) ?? null;
   const allowedPaymentMethods = selectedDeliveryMethod?.payment_methods ?? [];
+
+  // Copy for the pickup-point picker, which serves both Speedy offices and
+  // EasyBox lockers depending on the chosen delivery method.
+  const pickupType = officeTypeFor(deliveryMethod);
+  const pickupCopy =
+    pickupType === "OFFICE"
+      ? {
+          choose: t("checkout.choose_office", "Choose an office"),
+          pickCity: t("checkout.pick_city_for_offices", "Pick a city to see nearby offices."),
+          loading: t("checkout.loading_offices", "Loading offices…"),
+          none: t("checkout.no_offices_found", "No offices found for this city."),
+          select: t("checkout.select_office", "Select an office"),
+        }
+      : {
+          choose: t("checkout.choose_locker", "Choose a locker"),
+          pickCity: t("checkout.pick_city_for_lockers", "Pick a city to see nearby lockers."),
+          loading: t("checkout.loading_lockers", "Loading lockers…"),
+          none: t("checkout.no_lockers_found", "No lockers found for this city."),
+          select: t("checkout.select_locker", "Select a locker"),
+        };
   const discountAmount = appliedDiscount
     ? Math.round(subtotal.amount * (appliedDiscount.value_percent / 100))
     : 0;
@@ -282,17 +324,13 @@ export function CheckoutFlow() {
       setDetailsError(t("checkout.contact_required_error", "Full name, email and phone number are required."));
       return false;
     }
-    if (!shippingAddress.line1.trim() || !shippingAddress.city.trim() ||
-      !shippingAddress.postal_code.trim() || shippingAddress.country_code.trim().length !== 2) {
-      setDetailsError(t("checkout.shipping_required_error", "A complete shipping address with a country is required."));
+    if (!isStructuredAddressComplete(shippingAddress)) {
+      setDetailsError(t("checkout.shipping_required_error", "Select a city, neighbourhood and street for the shipping address."));
       return false;
     }
-    if (!billingSameAsShipping) {
-      if (!billingAddress.line1.trim() || !billingAddress.city.trim() ||
-        !billingAddress.postal_code.trim() || billingAddress.country_code.trim().length !== 2) {
-        setDetailsError(t("checkout.billing_required_error", "A complete billing address with a country is required."));
-        return false;
-      }
+    if (!billingSameAsShipping && !isStructuredAddressComplete(billingAddress)) {
+      setDetailsError(t("checkout.billing_required_error", "Select a city, neighbourhood and street for the billing address."));
+      return false;
     }
     setDetailsError(null);
     return true;
@@ -336,7 +374,7 @@ export function CheckoutFlow() {
         shipping_address: withRecipient(shippingAddress),
         billing_address: withRecipient(billingSameAsShipping ? shippingAddress : billingAddress),
         delivery_method: deliveryMethod,
-        delivery_office_id: deliveryMethod === "easybox" ? officeId : undefined,
+        delivery_office_id: officeTypeFor(deliveryMethod) ? officeId : undefined,
         payment_method: paymentMethod,
         discount_code: appliedDiscount?.code,
       });
@@ -487,7 +525,7 @@ export function CheckoutFlow() {
                 <Select id="saved-address" value={selectedSavedAddressId} onChange={(e) => selectSavedAddress(e.target.value)}>
                   {savedAddresses.map((a) => (
                     <option key={a.id} value={a.id}>
-                      {a.label || a.recipient_name} — {a.line1}, {a.city}
+                      {a.label || a.recipient_name} — {[a.street_name, a.street_no].filter(Boolean).join(" ")}, {a.city}
                     </option>
                   ))}
                   <option value="">{t("checkout.enter_new_address", "Enter a new address")}</option>
@@ -496,7 +534,9 @@ export function CheckoutFlow() {
             )}
 
             {(!isAuthenticated || savedAddresses.length === 0 || selectedSavedAddressId === "") && (
-              <AddressFields className="mt-6" address={shippingAddress} onChange={setShippingAddress} />
+              <div className="mt-6">
+                <AddressForm value={shippingAddress} onChange={setShippingAddress} idPrefix="ship" />
+              </div>
             )}
 
             <label className="mt-6 flex items-center gap-2 text-sm text-stone-700">
@@ -512,7 +552,9 @@ export function CheckoutFlow() {
             {!billingSameAsShipping && (
               <>
                 <Text className="mt-4 font-medium">{t("checkout.billing_address", "Billing address")}</Text>
-                <AddressFields className="mt-2" address={billingAddress} onChange={setBillingAddress} />
+                <div className="mt-2">
+                  <AddressForm value={billingAddress} onChange={setBillingAddress} idPrefix="bill" />
+                </div>
               </>
             )}
 
@@ -552,35 +594,50 @@ export function CheckoutFlow() {
               ))}
             </div>
 
-            {deliveryMethod === "easybox" && (
-              <FormField label={t("checkout.choose_locker", "Choose a locker")} htmlFor="easybox-office" className="mt-4">
-                {officesError ? (
-                  <Text size="sm" tone="danger">
-                    {officesError}
-                  </Text>
-                ) : !shippingAddress.city.trim() ? (
-                  <Text size="sm" tone="muted">
-                    {t("checkout.enter_city_for_lockers", "Enter a shipping city to see nearby lockers.")}
-                  </Text>
-                ) : offices === null ? (
-                  <Text size="sm" tone="muted">
-                    {t("checkout.loading_lockers", "Loading lockers…")}
-                  </Text>
-                ) : offices.length === 0 ? (
-                  <Text size="sm" tone="muted">
-                    {t("checkout.no_lockers_found", "No lockers found for this city.")}
-                  </Text>
-                ) : (
-                  <Select id="easybox-office" value={officeId} onChange={(e) => setOfficeId(e.target.value)}>
-                    <option value="">{t("checkout.select_locker", "Select a locker")}</option>
-                    {offices.map((o) => (
-                      <option key={o.id} value={o.id}>
-                        {o.name}
-                      </option>
-                    ))}
-                  </Select>
-                )}
-              </FormField>
+            {pickupType && (
+              <div className="mt-4 flex flex-col gap-4">
+                <FormField label={t("checkout.pickup_city", "City")} htmlFor="pickup-city">
+                  <Combobox
+                    id="pickup-city"
+                    value={officeSite.name}
+                    placeholder={t("address.city_placeholder", "Start typing a city…")}
+                    emptyText={t("address.no_cities", "No cities found")}
+                    onValueChange={(text) => setOfficeSite({ id: 0, name: text })}
+                    onSearch={async (q) =>
+                      (await searchSites(q)).map<ComboboxOption>((s) => ({ id: s.id, label: s.name, sublabel: s.region }))
+                    }
+                    onSelect={(opt) => setOfficeSite({ id: Number(opt.id), name: opt.label })}
+                  />
+                </FormField>
+                <FormField label={pickupCopy.choose} htmlFor="pickup-office">
+                  {officesError ? (
+                    <Text size="sm" tone="danger">
+                      {officesError}
+                    </Text>
+                  ) : officeSite.id === 0 ? (
+                    <Text size="sm" tone="muted">
+                      {pickupCopy.pickCity}
+                    </Text>
+                  ) : offices === null ? (
+                    <Text size="sm" tone="muted">
+                      {pickupCopy.loading}
+                    </Text>
+                  ) : offices.length === 0 ? (
+                    <Text size="sm" tone="muted">
+                      {pickupCopy.none}
+                    </Text>
+                  ) : (
+                    <Select id="pickup-office" value={officeId} onChange={(e) => setOfficeId(e.target.value)}>
+                      <option value="">{pickupCopy.select}</option>
+                      {offices.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          {o.name}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
+                </FormField>
+              </div>
             )}
 
             <div className="mt-6 flex justify-between">
@@ -589,7 +646,7 @@ export function CheckoutFlow() {
               </Button>
               <Button
                 variant="primary"
-                disabled={!deliveryMethod || (deliveryMethod === "easybox" && !officeId)}
+                disabled={!deliveryMethod || (pickupType !== null && !officeId)}
                 onClick={() => setStep("payment")}
               >
                 {t("checkout.continue_to_payment", "Continue to Payment")}
@@ -935,48 +992,3 @@ function OrderSummary({ order, totalLabel }: { order: PlacedOrder; totalLabel: s
   );
 }
 
-function AddressFields({
-  address,
-  onChange,
-  className,
-}: {
-  address: CheckoutAddress;
-  onChange: (a: CheckoutAddress) => void;
-  className?: string;
-}) {
-  const { t } = useLanguage();
-
-  function update<K extends keyof CheckoutAddress>(key: K, value: CheckoutAddress[K]) {
-    onChange({ ...address, [key]: value });
-  }
-
-  return (
-    <div className={`grid grid-cols-1 gap-4 sm:grid-cols-2 ${className ?? ""}`}>
-      <FormField label={t("common.address_line1", "Address line 1")} htmlFor="addr-line1" className="sm:col-span-2">
-        <Input id="addr-line1" value={address.line1} onChange={(e) => update("line1", e.target.value)} />
-      </FormField>
-      <FormField label={t("common.address_line2", "Address line 2")} htmlFor="addr-line2" hint={t("common.optional", "Optional")} className="sm:col-span-2">
-        <Input id="addr-line2" value={address.line2} onChange={(e) => update("line2", e.target.value)} />
-      </FormField>
-      <FormField label={t("common.city", "City")} htmlFor="addr-city">
-        <Input id="addr-city" value={address.city} onChange={(e) => update("city", e.target.value)} />
-      </FormField>
-      <FormField label={t("common.region", "Region / State")} htmlFor="addr-region" hint={t("common.optional", "Optional")}>
-        <Input id="addr-region" value={address.region} onChange={(e) => update("region", e.target.value)} />
-      </FormField>
-      <FormField label={t("common.postal_code", "Postal code")} htmlFor="addr-postal-code">
-        <Input id="addr-postal-code" value={address.postal_code} onChange={(e) => update("postal_code", e.target.value)} />
-      </FormField>
-      <FormField label={t("common.country", "Country")} htmlFor="addr-country-code">
-        <Select id="addr-country-code" value={address.country_code} onChange={(e) => update("country_code", e.target.value)}>
-          <option value="">{t("common.select_country", "Select a country")}</option>
-          {COUNTRIES.map((country) => (
-            <option key={country.code} value={country.code}>
-              {country.name}
-            </option>
-          ))}
-        </Select>
-      </FormField>
-    </div>
-  );
-}

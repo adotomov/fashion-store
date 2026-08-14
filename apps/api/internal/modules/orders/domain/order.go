@@ -46,16 +46,28 @@ const (
 
 // OrderAddress snapshots a shipping or billing address as it was at order
 // time, independent of the customer's saved address book (which can change
-// after the order is placed).
+// after the order is placed). Addresses are Speedy-resolved: the city,
+// complex (кв./жк.) and street are carried as Speedy location codes plus their
+// display names, so the shipment can be created from the snapshot without
+// re-resolving typed text. Bulgaria only for now (CountryCode "BG", ID 100).
 type OrderAddress struct {
 	RecipientName string
 	Phone         string
-	Line1         string
-	Line2         string
-	City          string
-	Region        string
-	PostalCode    string
-	CountryCode   string
+
+	CountryCode string
+	CountryID   int64
+	SiteID      int64
+	City        string
+	PostCode    string
+	ComplexID   int64
+	ComplexName string
+	StreetID    int64
+	StreetName  string
+	StreetNo    string
+	BlockNo     string
+	EntranceNo  string
+	FloorNo     string
+	ApartmentNo string
 }
 
 // OrderPayment records the state of a Revolut card payment for a card_online
@@ -133,6 +145,9 @@ type Order struct {
 	DeliveryFee    money.Money
 	PaymentMethod  string
 	Payment        *OrderPayment
+	// ParcelWeightGrams is the shipping weight summed from the order's SKUs at
+	// order time (0 when no SKU had a weight set).
+	ParcelWeightGrams int
 
 	Carrier          *string
 	TrackingNumber   *string

@@ -12,10 +12,15 @@ func TestPaymentMethodAllowedFor(t *testing.T) {
 		{DeliveryMethodSpeedy, PaymentMethodCashOnDelivery, true},
 		{DeliveryMethodSpeedy, PaymentMethodCardOnline, true},
 		{DeliveryMethodSpeedy, PaymentMethodCardOnEasyBox, false},
-		// A locker has no courier to take cash; card only.
-		{DeliveryMethodEasyBox, PaymentMethodCashOnDelivery, false},
+		// Office pickup behaves like courier: cash at the office or online.
+		{DeliveryMethodSpeedyOffice, PaymentMethodCashOnDelivery, true},
+		{DeliveryMethodSpeedyOffice, PaymentMethodCardOnline, true},
+		{DeliveryMethodSpeedyOffice, PaymentMethodCardOnEasyBox, false},
+		// A locker settles on delivery (Speedy COD at the locker) or online;
+		// the legacy terminal option is no longer offered.
+		{DeliveryMethodEasyBox, PaymentMethodCashOnDelivery, true},
 		{DeliveryMethodEasyBox, PaymentMethodCardOnline, true},
-		{DeliveryMethodEasyBox, PaymentMethodCardOnEasyBox, true},
+		{DeliveryMethodEasyBox, PaymentMethodCardOnEasyBox, false},
 		// Unknown delivery method allows nothing.
 		{"pigeon", PaymentMethodCashOnDelivery, false},
 	}
@@ -27,7 +32,7 @@ func TestPaymentMethodAllowedFor(t *testing.T) {
 }
 
 func TestPaymentMethodsForOnlyReturnsValidMethods(t *testing.T) {
-	for _, delivery := range []string{DeliveryMethodSpeedy, DeliveryMethodEasyBox} {
+	for _, delivery := range []string{DeliveryMethodSpeedy, DeliveryMethodSpeedyOffice, DeliveryMethodEasyBox} {
 		methods := PaymentMethodsFor(delivery)
 		if len(methods) == 0 {
 			t.Errorf("PaymentMethodsFor(%q) returned no methods", delivery)

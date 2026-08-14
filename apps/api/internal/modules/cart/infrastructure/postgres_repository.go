@@ -37,6 +37,7 @@ const cartItemsQuery = `
 	                 FROM variant_attribute_values vav
 	                 JOIN attribute_values av ON av.id = vav.attribute_value_id
 	                 WHERE vav.variant_id = v.id), ''),
+	       v.weight_grams,
 	       ci.quantity, ci.created_at, ci.updated_at
 	FROM cart_items ci
 	JOIN product_variants v ON v.id = ci.variant_id
@@ -66,6 +67,7 @@ func (r *PostgresRepository) loadItems(ctx context.Context, cartID uuid.UUID) ([
 			&item.ID, &item.VariantID, &item.ProductID, &item.ProductName, &item.ProductSlug,
 			&baseAmount, &baseCurrency, &overrideAmount, &overrideCurrency,
 			&item.ImageMediaID, &tracked, &item.AvailableQuantity, &item.VariantLabel,
+			&item.WeightGrams,
 			&item.Quantity, &item.CreatedAt, &item.UpdatedAt,
 		); err != nil {
 			return nil, err

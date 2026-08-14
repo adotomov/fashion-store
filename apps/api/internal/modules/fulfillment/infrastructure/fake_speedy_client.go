@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/adotomov/fashion-store/apps/api/internal/modules/fulfillment/application"
+	"github.com/adotomov/fashion-store/apps/api/internal/shared/money"
 )
 
 // FakeSpeedyClient is a local stand-in for the real Speedy Web API, selected
@@ -68,6 +69,21 @@ func (c *FakeSpeedyClient) CreateShipment(ctx context.Context, req application.C
 	}, nil
 }
 
+// Calculate returns a canned price per requested service so the shipping-cost
+// quote flow can be exercised in dev — a flat base plus a per-kg component,
+// nudged by the service id so the services don't all price identically.
+func (c *FakeSpeedyClient) Calculate(ctx context.Context, req application.CalculateRequest) ([]application.CalculationResult, error) {
+	results := make([]application.CalculationResult, 0, len(req.ServiceIDs))
+	for _, id := range req.ServiceIDs {
+		minor := int64(300) + id%100 + int64(req.WeightKg*100)
+		results = append(results, application.CalculationResult{
+			ServiceID: id,
+			Amount:    money.Money{AmountMinor: minor, Currency: "EUR"},
+		})
+	}
+	return results, nil
+}
+
 // Track derives each parcel's latest operation from its embedded creation
 // time. Parcel IDs that aren't in the fake format are skipped, so a database
 // left over from real-mode use doesn't cause spurious updates.
@@ -90,20 +106,69 @@ func (c *FakeSpeedyClient) Track(ctx context.Context, creds application.Credenti
 }
 
 // SearchOffices returns a small fixed catalogue so the checkout office/locker
-// picker has something to render. The city is echoed into the names and the
-// requested type is honoured; nothing is looked up remotely.
-func (c *FakeSpeedyClient) SearchOffices(ctx context.Context, creds application.Credentials, city, officeType string) ([]application.Office, error) {
+// picker has something to render. The requested type is honoured; nothing is
+// looked up remotely.
+func (c *FakeSpeedyClient) SearchOffices(ctx context.Context, creds application.Credentials, siteID int64, name, officeType string) ([]application.Office, error) {
 	if officeType == "" {
 		officeType = "APT"
 	}
-	if city == "" {
-		city = "Sofia"
+	kind := "Office"
+	if officeType == "APT" {
+		kind = "Locker"
 	}
-	return []application.Office{
-		{ID: "1", Name: fmt.Sprintf("%s Central (DEV)", city), Type: officeType},
-		{ID: "2", Name: fmt.Sprintf("%s Mall (DEV)", city), Type: officeType},
-		{ID: "3", Name: fmt.Sprintf("%s Station (DEV)", city), Type: officeType},
-	}, nil
+	all := []application.Office{
+		{ID: "1", Name: fmt.Sprintf("Central %s (DEV)", kind), Type: officeType},
+		{ID: "2", Name: fmt.Sprintf("Mall %s (DEV)", kind), Type: officeType},
+		{ID: "3", Name: fmt.Sprintf("Station %s (DEV)", kind), Type: officeType},
+	}
+	return filterByName(all, name, func(o application.Office) string { return o.Name }), nil
+}
+
+// fakeSites is a tiny canned catalogue of Bulgarian cities so profile/checkout
+// typeahead resolves without a real Speedy account under SPEEDY_MODE=fake.
+var fakeSites = []application.Site{
+	{ID: 68134, Name: "Sofia", Type: "gr.", Municipality: "Stolichna", Region: "Sofia (stolitsa)", PostCode: "1000"},
+	{ID: 10135, Name: "Plovdiv", Type: "gr.", Municipality: "Plovdiv", Region: "Plovdiv", PostCode: "4000"},
+	{ID: 10007, Name: "Varna", Type: "gr.", Municipality: "Varna", Region: "Varna", PostCode: "9000"},
+	{ID: 10003, Name: "Burgas", Type: "gr.", Municipality: "Burgas", Region: "Burgas", PostCode: "8000"},
+}
+
+func (c *FakeSpeedyClient) SearchSites(ctx context.Context, creds application.Credentials, name string) ([]application.Site, error) {
+	return filterByName(fakeSites, name, func(s application.Site) string { return s.Name }), nil
+}
+
+func (c *FakeSpeedyClient) SearchComplexes(ctx context.Context, creds application.Credentials, siteID int64, name string) ([]application.Complex, error) {
+	all := []application.Complex{
+		{ID: 1, Name: "Mladost 1", Type: "zh.k."},
+		{ID: 2, Name: "Lyulin 3", Type: "zh.k."},
+		{ID: 3, Name: "Lozenets", Type: "kv."},
+	}
+	return filterByName(all, name, func(x application.Complex) string { return x.Name }), nil
+}
+
+func (c *FakeSpeedyClient) SearchStreets(ctx context.Context, creds application.Credentials, siteID int64, name string) ([]application.Street, error) {
+	all := []application.Street{
+		{ID: 100, Name: "Vitosha", Type: "bul."},
+		{ID: 101, Name: "Cherni vrah", Type: "bul."},
+		{ID: 102, Name: "Alabin", Type: "ul."},
+	}
+	return filterByName(all, name, func(s application.Street) string { return s.Name }), nil
+}
+
+// filterByName narrows a canned slice by a case-insensitive name-fragment
+// match, mirroring how the real Location API ranks by the supplied name.
+func filterByName[T any](items []T, name string, nameOf func(T) string) []T {
+	q := strings.ToLower(strings.TrimSpace(name))
+	if q == "" {
+		return items
+	}
+	out := make([]T, 0, len(items))
+	for _, it := range items {
+		if strings.Contains(strings.ToLower(nameOf(it)), q) {
+			out = append(out, it)
+		}
+	}
+	return out
 }
 
 func fakeOperationForAge(age time.Duration) (int, string) {

@@ -16,17 +16,27 @@ export function updateProfile(input: Partial<{ full_name: string; phone: string 
   return apiFetch<Profile>("/api/v1/me", { method: "PATCH", body: input });
 }
 
+// A Speedy-resolved saved address: city/complex/street carry Speedy location
+// codes (…_id) plus display names; house details are free text. Bulgaria only.
 export type Address = {
   id: string;
   label: string;
   recipient_name: string;
   phone: string;
-  line1: string;
-  line2: string;
-  city: string;
-  region: string;
-  postal_code: string;
   country_code: string;
+  country_id: number;
+  site_id: number;
+  city: string;
+  post_code: string;
+  complex_id: number;
+  complex_name: string;
+  street_id: number;
+  street_name: string;
+  street_no: string;
+  block_no: string;
+  entrance_no: string;
+  floor_no: string;
+  apartment_no: string;
   is_default: boolean;
 };
 
@@ -38,12 +48,20 @@ export type AddressInput = {
   label: string;
   recipient_name: string;
   phone: string;
-  line1: string;
-  line2: string;
-  city: string;
-  region: string;
-  postal_code: string;
   country_code: string;
+  country_id: number;
+  site_id: number;
+  city: string;
+  post_code: string;
+  complex_id: number;
+  complex_name: string;
+  street_id: number;
+  street_name: string;
+  street_no: string;
+  block_no: string;
+  entrance_no: string;
+  floor_no: string;
+  apartment_no: string;
   is_default: boolean;
 };
 
@@ -51,7 +69,9 @@ export function createAddress(input: AddressInput): Promise<Address> {
   return apiFetch<Address>("/api/v1/me/addresses", { method: "POST", body: input });
 }
 
-export function updateAddress(id: string, input: Partial<AddressInput>): Promise<Address> {
+// Update replaces the whole address (a resolved address is atomic), so callers
+// send the full input.
+export function updateAddress(id: string, input: AddressInput): Promise<Address> {
   return apiFetch<Address>(`/api/v1/me/addresses/${id}`, { method: "PATCH", body: input });
 }
 

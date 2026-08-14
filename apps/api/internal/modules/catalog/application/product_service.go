@@ -158,6 +158,10 @@ func (s *ProductService) AddVariant(ctx context.Context, productID uuid.UUID, in
 	variant := domain.ProductVariant{
 		ProductID:     productID,
 		PriceOverride: input.PriceOverride,
+		WeightGrams:   input.WeightGrams,
+		LengthCM:      input.LengthCM,
+		WidthCM:       input.WidthCM,
+		HeightCM:      input.HeightCM,
 	}
 	return s.repo.CreateVariant(ctx, variant, input.AttributeValueIDs)
 }
@@ -177,6 +181,11 @@ func (s *ProductService) UpdateVariant(ctx context.Context, variantID uuid.UUID,
 	} else if input.PriceOverride != nil {
 		variant.PriceOverride = input.PriceOverride
 	}
+
+	variant.WeightGrams = input.WeightGrams
+	variant.LengthCM = input.LengthCM
+	variant.WidthCM = input.WidthCM
+	variant.HeightCM = input.HeightCM
 
 	return s.repo.UpdateVariant(ctx, *variant, input.AttributeValueIDs)
 }

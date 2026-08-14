@@ -80,12 +80,20 @@ type addressResponse struct {
 	Label         string `json:"label"`
 	RecipientName string `json:"recipient_name"`
 	Phone         string `json:"phone"`
-	Line1         string `json:"line1"`
-	Line2         string `json:"line2"`
-	City          string `json:"city"`
-	Region        string `json:"region"`
-	PostalCode    string `json:"postal_code"`
 	CountryCode   string `json:"country_code"`
+	CountryID     int64  `json:"country_id"`
+	SiteID        int64  `json:"site_id"`
+	City          string `json:"city"`
+	PostCode      string `json:"post_code"`
+	ComplexID     int64  `json:"complex_id"`
+	ComplexName   string `json:"complex_name"`
+	StreetID      int64  `json:"street_id"`
+	StreetName    string `json:"street_name"`
+	StreetNo      string `json:"street_no"`
+	BlockNo       string `json:"block_no"`
+	EntranceNo    string `json:"entrance_no"`
+	FloorNo       string `json:"floor_no"`
+	ApartmentNo   string `json:"apartment_no"`
 	IsDefault     bool   `json:"is_default"`
 }
 
@@ -95,12 +103,20 @@ func toAddressResponse(a domain.Address) addressResponse {
 		Label:         a.Label,
 		RecipientName: a.RecipientName,
 		Phone:         a.Phone,
-		Line1:         a.Line1,
-		Line2:         a.Line2,
-		City:          a.City,
-		Region:        a.Region,
-		PostalCode:    a.PostalCode,
 		CountryCode:   a.CountryCode,
+		CountryID:     a.CountryID,
+		SiteID:        a.SiteID,
+		City:          a.City,
+		PostCode:      a.PostCode,
+		ComplexID:     a.ComplexID,
+		ComplexName:   a.ComplexName,
+		StreetID:      a.StreetID,
+		StreetName:    a.StreetName,
+		StreetNo:      a.StreetNo,
+		BlockNo:       a.BlockNo,
+		EntranceNo:    a.EntranceNo,
+		FloorNo:       a.FloorNo,
+		ApartmentNo:   a.ApartmentNo,
 		IsDefault:     a.IsDefault,
 	}
 }

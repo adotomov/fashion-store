@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 
+import { AddressForm, type StructuredAddress, emptyStructuredAddress, isStructuredAddressComplete } from "../../components/address/AddressForm";
 import { EmptyState } from "../../components/admin/EmptyState";
 import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -9,11 +10,9 @@ import { FormField } from "../../components/ui/FormField";
 import { Icon } from "../../components/ui/Icon";
 import { Input } from "../../components/ui/Input";
 import { Modal } from "../../components/ui/Modal";
-import { Select } from "../../components/ui/Select";
 import { Text } from "../../components/ui/Text";
 import { useAuth } from "../../features/auth/AuthContext";
 import { useLanguage } from "../../features/i18n/LanguageContext";
-import { COUNTRIES } from "../../lib/data/countries";
 import {
   type Address,
   type AddressInput,
@@ -25,18 +24,42 @@ import {
 
 export const handle = { title: "Addresses" };
 
-const emptyForm: AddressInput = {
-  label: "",
-  recipient_name: "",
-  phone: "",
-  line1: "",
-  line2: "",
-  city: "",
-  region: "",
-  postal_code: "",
-  country_code: "",
-  is_default: false,
-};
+// structuredFromAddress lifts the Speedy-structured fields out of a saved
+// Address into the shape the form edits.
+function structuredFromAddress(a: Address): StructuredAddress {
+  return {
+    recipient_name: a.recipient_name,
+    phone: a.phone,
+    country_code: a.country_code || "BG",
+    country_id: a.country_id || 100,
+    site_id: a.site_id,
+    city: a.city,
+    post_code: a.post_code,
+    complex_id: a.complex_id,
+    complex_name: a.complex_name,
+    street_id: a.street_id,
+    street_name: a.street_name,
+    street_no: a.street_no,
+    block_no: a.block_no,
+    entrance_no: a.entrance_no,
+    floor_no: a.floor_no,
+    apartment_no: a.apartment_no,
+  };
+}
+
+// formatAddressLines renders a saved address for the card, skipping empties.
+function formatAddressLines(a: Address): string[] {
+  const street = [a.street_name, a.street_no].filter(Boolean).join(" ");
+  const detail = [
+    a.block_no && `bl. ${a.block_no}`,
+    a.floor_no && `fl. ${a.floor_no}`,
+    a.apartment_no && `ap. ${a.apartment_no}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const cityLine = [a.post_code, a.city].filter(Boolean).join(" ");
+  return [street, a.complex_name, detail, cityLine].filter((line): line is string => Boolean(line && line.trim()));
+}
 
 export default function Addresses() {
   const { t } = useLanguage();
@@ -45,7 +68,9 @@ export default function Addresses() {
   const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingAddress, setEditingAddress] = useState<Address | null>(null);
-  const [form, setForm] = useState<AddressInput>(emptyForm);
+  const [addr, setAddr] = useState<StructuredAddress>(emptyStructuredAddress);
+  const [label, setLabel] = useState("");
+  const [isDefault, setIsDefault] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -63,44 +88,35 @@ export default function Addresses() {
 
   function openCreateModal() {
     setEditingAddress(null);
-    setForm(emptyForm);
+    setAddr(emptyStructuredAddress);
+    setLabel("");
+    setIsDefault(false);
     setSaveError(null);
     setIsModalOpen(true);
   }
 
   function openEditModal(address: Address) {
     setEditingAddress(address);
-    setForm({
-      label: address.label,
-      recipient_name: address.recipient_name,
-      phone: address.phone,
-      line1: address.line1,
-      line2: address.line2,
-      city: address.city,
-      region: address.region,
-      postal_code: address.postal_code,
-      country_code: address.country_code,
-      is_default: address.is_default,
-    });
+    setAddr(structuredFromAddress(address));
+    setLabel(address.label);
+    setIsDefault(address.is_default);
     setSaveError(null);
     setIsModalOpen(true);
   }
 
-  function update<K extends keyof AddressInput>(key: K, value: AddressInput[K]) {
-    setForm((prev) => ({ ...prev, [key]: value }));
-  }
-
   async function handleSave() {
-    if (!form.line1.trim() || !form.city.trim() || !form.postal_code.trim()) {
-      setSaveError(t("account.addresses.required_error", "Address line 1, city, and postal code are required."));
+    if (!isStructuredAddressComplete(addr)) {
+      setSaveError(t("account.addresses.required_error", "City, neighbourhood and street are required."));
       return;
     }
     setIsSaving(true);
     setSaveError(null);
     const payload: AddressInput = {
-      ...form,
+      ...addr,
       recipient_name: profile?.full_name ?? "",
       phone: profile?.phone ?? "",
+      label,
+      is_default: isDefault,
     };
     try {
       if (editingAddress) {
@@ -183,13 +199,9 @@ export default function Addresses() {
               </div>
               <div className="mt-3 flex flex-col gap-0.5 text-sm text-stone-600">
                 <span>{address.recipient_name}</span>
-                <span>{address.line1}</span>
-                {address.line2 && <span>{address.line2}</span>}
-                <span>
-                  {address.city}
-                  {address.region ? `, ${address.region}` : ""} {address.postal_code}
-                </span>
-                <span>{address.country_code}</span>
+                {formatAddressLines(address).map((line, i) => (
+                  <span key={i}>{line}</span>
+                ))}
                 {address.phone && <span className="mt-1">{address.phone}</span>}
               </div>
             </Card>
@@ -205,46 +217,16 @@ export default function Addresses() {
             </Text>
           )}
           <FormField label={t("account.addresses.label", "Label")} htmlFor="address-label" hint={t("account.addresses.label_hint", "Optional, e.g. Home or Office")}>
-            <Input id="address-label" value={form.label} onChange={(e) => update("label", e.target.value)} placeholder="Home" />
+            <Input id="address-label" value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Home" />
           </FormField>
-          <FormField label={t("common.address_line1", "Address line 1")} htmlFor="address-line1">
-            <Input id="address-line1" value={form.line1} onChange={(e) => update("line1", e.target.value)} autoFocus />
-          </FormField>
-          <FormField label={t("common.address_line2", "Address line 2")} htmlFor="address-line2" hint={t("common.optional", "Optional")}>
-            <Input id="address-line2" value={form.line2} onChange={(e) => update("line2", e.target.value)} />
-          </FormField>
-          <div className="grid grid-cols-2 gap-4">
-            <FormField label={t("common.city", "City")} htmlFor="address-city">
-              <Input id="address-city" value={form.city} onChange={(e) => update("city", e.target.value)} />
-            </FormField>
-            <FormField label={t("common.region", "Region / State")} htmlFor="address-region" hint={t("common.optional", "Optional")}>
-              <Input id="address-region" value={form.region} onChange={(e) => update("region", e.target.value)} />
-            </FormField>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <FormField label={t("common.postal_code", "Postal code")} htmlFor="address-postal-code">
-              <Input id="address-postal-code" value={form.postal_code} onChange={(e) => update("postal_code", e.target.value)} />
-            </FormField>
-            <FormField label={t("common.country", "Country")} htmlFor="address-country-code">
-              <Select
-                id="address-country-code"
-                value={form.country_code}
-                onChange={(e) => update("country_code", e.target.value)}
-              >
-                <option value="">{t("common.select_country", "Select a country")}</option>
-                {COUNTRIES.map((country) => (
-                  <option key={country.code} value={country.code}>
-                    {country.name}
-                  </option>
-                ))}
-              </Select>
-            </FormField>
-          </div>
+
+          <AddressForm value={addr} onChange={setAddr} idPrefix="account-addr" />
+
           <Checkbox
             id="address-is-default"
             label={t("account.addresses.set_default", "Set as default address")}
-            checked={form.is_default}
-            onChange={(e) => update("is_default", e.target.checked)}
+            checked={isDefault}
+            onChange={(e) => setIsDefault(e.target.checked)}
           />
         </div>
 

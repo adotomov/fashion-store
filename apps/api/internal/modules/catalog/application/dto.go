@@ -82,6 +82,11 @@ type CatalogStats struct {
 type CreateVariantInput struct {
 	AttributeValueIDs []uuid.UUID
 	PriceOverride     *money.Money
+	// Physical shipping attributes (grams / centimetres). Zero = not set.
+	WeightGrams int
+	LengthCM    int
+	WidthCM     int
+	HeightCM    int
 }
 
 type UpdateVariantInput struct {
@@ -90,6 +95,12 @@ type UpdateVariantInput struct {
 	AttributeValueIDs  []uuid.UUID
 	PriceOverride      *money.Money
 	ClearPriceOverride bool
+	// The editor re-submits the full variant, so these plain values always
+	// replace the stored weight/dimensions.
+	WeightGrams int
+	LengthCM    int
+	WidthCM     int
+	HeightCM    int
 }
 
 type CreateMediaInput struct {

@@ -21,13 +21,38 @@ export type AdminOrderStatus =
 export type AdminOrderAddress = {
   recipient_name: string;
   phone: string;
-  line1: string;
-  line2: string;
-  city: string;
-  region: string;
-  postal_code: string;
   country_code: string;
+  country_id: number;
+  site_id: number;
+  city: string;
+  post_code: string;
+  complex_id: number;
+  complex_name: string;
+  street_id: number;
+  street_name: string;
+  street_no: string;
+  block_no: string;
+  entrance_no: string;
+  floor_no: string;
+  apartment_no: string;
 };
+
+// formatAdminOrderAddress renders a structured order address into readable
+// lines for the admin order detail, skipping empty parts.
+export function formatAdminOrderAddressLines(a: AdminOrderAddress): string[] {
+  const street = [a.street_name, a.street_no].filter(Boolean).join(" ");
+  const detail = [
+    a.block_no && `bl. ${a.block_no}`,
+    a.floor_no && `fl. ${a.floor_no}`,
+    a.apartment_no && `ap. ${a.apartment_no}`,
+  ]
+    .filter(Boolean)
+    .join(", ");
+  const cityLine = [a.post_code, a.city].filter(Boolean).join(" ");
+  return [street, a.complex_name, detail, cityLine, a.country_code].filter(
+    (line): line is string => Boolean(line && String(line).trim()),
+  );
+}
 
 export type AdminOrderPayment = {
   provider: string;

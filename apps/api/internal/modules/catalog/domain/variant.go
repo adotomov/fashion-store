@@ -12,7 +12,14 @@ type ProductVariant struct {
 	ID            uuid.UUID
 	ProductID     uuid.UUID
 	PriceOverride *money.Money
-	Attributes    []AttributeValue
+	// Physical shipping attributes, set per SKU. Used to compute a parcel's
+	// weight when asking Speedy for shipping costs. Zero means "not set".
+	// Weight is in grams; dimensions in centimetres.
+	WeightGrams int
+	LengthCM    int
+	WidthCM     int
+	HeightCM    int
+	Attributes  []AttributeValue
 	// InventoryItemID and QuantityAvailable are read-only enrichment from the
 	// inventory module (joined at the SQL level, same as the cart module
 	// does) — nil/nil means no inventory item has been assigned to this

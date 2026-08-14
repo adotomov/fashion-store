@@ -11,15 +11,27 @@ import (
 )
 
 type Service struct {
-	settings SettingsRepository
-	speedy   SpeedyClient
-	orders   OrderGateway
-	notifier Notifier
-	logger   *slog.Logger
+	settings  SettingsRepository
+	speedy    SpeedyClient
+	orders    OrderGateway
+	notifier  Notifier
+	logger    *slog.Logger
+	locations *locationCache
 }
 
+// locationCacheTTL is how long resolved Speedy location lookups are trusted.
+// Location data changes on the order of days, so a long TTL is safe and keeps
+// typeahead snappy.
+const locationCacheTTL = 12 * time.Hour
+
 func NewService(settings SettingsRepository, speedy SpeedyClient, orders OrderGateway, logger *slog.Logger) *Service {
-	return &Service{settings: settings, speedy: speedy, orders: orders, logger: logger}
+	return &Service{
+		settings:  settings,
+		speedy:    speedy,
+		orders:    orders,
+		logger:    logger,
+		locations: newLocationCache(locationCacheTTL),
+	}
 }
 
 // WithNotifier attaches the customer-email notifier. Optional and chainable so
@@ -71,15 +83,68 @@ func (s *Service) IsEnabled(ctx context.Context, provider string) bool {
 	return st.Enabled
 }
 
-func (s *Service) SearchOffices(ctx context.Context, provider, city, officeType string) ([]Office, error) {
+// enabledCreds resolves a provider's live credentials, rejecting a disabled or
+// missing provider. Shared by every Speedy read path (office/location search).
+func (s *Service) enabledCreds(ctx context.Context, provider string) (Credentials, error) {
 	st, err := s.settings.Get(ctx, provider)
+	if err != nil {
+		return Credentials{}, err
+	}
+	if st == nil || !st.Enabled {
+		return Credentials{}, domain.ErrProviderDisabled
+	}
+	return credsFromConfig(st.Config), nil
+}
+
+// SearchOffices lists Speedy offices ("OFFICE") or EasyBox lockers ("APT"),
+// optionally scoped to a site and/or name fragment. Results are cached in
+// memory keyed by type + site + query.
+func (s *Service) SearchOffices(ctx context.Context, provider string, siteID int64, name, officeType string) ([]Office, error) {
+	creds, err := s.enabledCreds(ctx, provider)
 	if err != nil {
 		return nil, err
 	}
-	if st == nil || !st.Enabled {
-		return nil, domain.ErrProviderDisabled
+	key := locationCacheKey("office:"+officeType, siteID, name)
+	return cachedLookup(s.locations, key, time.Now(), func() ([]Office, error) {
+		return s.speedy.SearchOffices(ctx, creds, siteID, name, officeType)
+	})
+}
+
+// SearchSites resolves populated places (cities/towns) by name fragment for
+// the address typeahead.
+func (s *Service) SearchSites(ctx context.Context, provider, query string) ([]Site, error) {
+	creds, err := s.enabledCreds(ctx, provider)
+	if err != nil {
+		return nil, err
 	}
-	return s.speedy.SearchOffices(ctx, credsFromConfig(st.Config), city, officeType)
+	key := locationCacheKey("site", 0, query)
+	return cachedLookup(s.locations, key, time.Now(), func() ([]Site, error) {
+		return s.speedy.SearchSites(ctx, creds, query)
+	})
+}
+
+// SearchComplexes lists residential complexes (кв./жк.) within a site.
+func (s *Service) SearchComplexes(ctx context.Context, provider string, siteID int64, query string) ([]Complex, error) {
+	creds, err := s.enabledCreds(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+	key := locationCacheKey("complex", siteID, query)
+	return cachedLookup(s.locations, key, time.Now(), func() ([]Complex, error) {
+		return s.speedy.SearchComplexes(ctx, creds, siteID, query)
+	})
+}
+
+// SearchStreets lists streets within a site.
+func (s *Service) SearchStreets(ctx context.Context, provider string, siteID int64, query string) ([]Street, error) {
+	creds, err := s.enabledCreds(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+	key := locationCacheKey("street", siteID, query)
+	return cachedLookup(s.locations, key, time.Now(), func() ([]Street, error) {
+		return s.speedy.SearchStreets(ctx, creds, siteID, query)
+	})
 }
 
 // CreateShipmentForOrder builds and submits a Speedy shipment for a
@@ -95,11 +160,25 @@ func (s *Service) CreateShipmentForOrder(ctx context.Context, input CreateShipme
 		return ShipmentResult{}, domain.ErrProviderDisabled
 	}
 
+	// Pick the Speedy service ID for the chosen delivery shape. Office and
+	// locker each have their own configured service; both fall back to the
+	// courier service if unset (office pickup is often the same courier service
+	// with an office destination).
 	serviceID := st.Config[domain.SpeedyConfigDefaultCourierServiceID]
-	if input.DeliveryMethod == "easybox" {
+	switch input.DeliveryMethod {
+	case "speedy_office":
+		if office := st.Config[domain.SpeedyConfigDefaultOfficeServiceID]; office != "" {
+			serviceID = office
+		}
+	case "easybox":
 		serviceID = st.Config[domain.SpeedyConfigDefaultLockerServiceID]
 	}
-	weight := parseFloatDefault(st.Config[domain.SpeedyConfigDefaultParcelWeightKg], 1.0)
+	// Use the real per-order parcel weight; fall back to the provider's
+	// configured default when the order carried no SKU weights.
+	weight := input.WeightKg
+	if weight <= 0 {
+		weight = parseFloatDefault(st.Config[domain.SpeedyConfigDefaultParcelWeightKg], 1.0)
+	}
 
 	return s.speedy.CreateShipment(ctx, CreateShipmentRequest{
 		Creds:          credsFromConfig(st.Config),
@@ -109,17 +188,95 @@ func (s *Service) CreateShipmentForOrder(ctx context.Context, input CreateShipme
 			ContactName: input.ContactName,
 			Phone:       input.Phone,
 			Email:       input.Email,
-			City:        input.City,
-			PostalCode:  input.PostalCode,
-			Line1:       input.Line1,
-			Line2:       input.Line2,
-			CountryCode: input.CountryCode,
+			CountryID:   input.CountryID,
+			SiteID:      input.SiteID,
+			ComplexID:   input.ComplexID,
+			StreetID:    input.StreetID,
+			StreetNo:    input.StreetNo,
+			BlockNo:     input.BlockNo,
+			EntranceNo:  input.EntranceNo,
+			FloorNo:     input.FloorNo,
+			ApartmentNo: input.ApartmentNo,
 			OfficeID:    input.OfficeID,
 		},
 		CODAmount:  input.CODAmount,
 		RequireCOD: input.RequireCOD,
 		Ref1:       input.Ref1,
 	})
+}
+
+// deliveryMethod codes as used by the checkout module. Duplicated as string
+// literals here (rather than importing checkout) to keep the module boundary —
+// the same approach CreateShipmentForOrder already takes.
+const (
+	deliveryMethodSpeedy       = "speedy"
+	deliveryMethodSpeedyOffice = "speedy_office"
+	deliveryMethodEasyBox      = "easybox"
+)
+
+// CalculateShippingCosts prices every configured Speedy delivery service for a
+// parcel of weightKg to the given destination site, in a single /calculate
+// call, and returns one quote per delivery method that Speedy could price. Used
+// to record what shipping would cost per order (never shown to anyone). A zero
+// weight or no configured services yields no quotes.
+func (s *Service) CalculateShippingCosts(ctx context.Context, provider string, siteID int64, weightKg float64) ([]ShippingCostQuote, error) {
+	st, err := s.settings.Get(ctx, provider)
+	if err != nil {
+		return nil, err
+	}
+	if st == nil || !st.Enabled {
+		return nil, domain.ErrProviderDisabled
+	}
+
+	// Map each configured service id to the delivery method(s) it fulfils. A
+	// single service can back several methods (office falls back to courier).
+	courier := st.Config[domain.SpeedyConfigDefaultCourierServiceID]
+	office := st.Config[domain.SpeedyConfigDefaultOfficeServiceID]
+	if office == "" {
+		office = courier
+	}
+	locker := st.Config[domain.SpeedyConfigDefaultLockerServiceID]
+
+	methodsByService := map[string][]string{}
+	addService := func(serviceID, method string) {
+		if serviceID != "" {
+			methodsByService[serviceID] = append(methodsByService[serviceID], method)
+		}
+	}
+	addService(courier, deliveryMethodSpeedy)
+	addService(office, deliveryMethodSpeedyOffice)
+	addService(locker, deliveryMethodEasyBox)
+
+	serviceIDs := make([]int64, 0, len(methodsByService))
+	for id := range methodsByService {
+		n, err := strconv.ParseInt(id, 10, 64)
+		if err != nil {
+			continue
+		}
+		serviceIDs = append(serviceIDs, n)
+	}
+	if len(serviceIDs) == 0 || weightKg <= 0 {
+		return nil, nil
+	}
+
+	results, err := s.speedy.Calculate(ctx, CalculateRequest{
+		Creds:      credsFromConfig(st.Config),
+		SiteID:     siteID,
+		WeightKg:   weightKg,
+		ServiceIDs: serviceIDs,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	quotes := make([]ShippingCostQuote, 0, len(results))
+	for _, r := range results {
+		idStr := strconv.FormatInt(r.ServiceID, 10)
+		for _, method := range methodsByService[idStr] {
+			quotes = append(quotes, ShippingCostQuote{DeliveryMethod: method, ServiceID: idStr, Amount: r.Amount})
+		}
+	}
+	return quotes, nil
 }
 
 // PollPendingShipments asks Speedy for the latest tracking operation of

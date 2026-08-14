@@ -43,6 +43,9 @@ type stubSpeedyClient struct {
 	createResult   application.ShipmentResult
 	lastTrackBatch []string
 	trackResult    []application.TrackedParcel
+	searchCalls      int
+	lastSiteID       int64
+	lastCalculateReq application.CalculateRequest
 }
 
 func (c *stubSpeedyClient) CreateShipment(_ context.Context, req application.CreateShipmentRequest) (application.ShipmentResult, error) {
@@ -55,8 +58,39 @@ func (c *stubSpeedyClient) Track(_ context.Context, _ application.Credentials, p
 	return c.trackResult, nil
 }
 
-func (c *stubSpeedyClient) SearchOffices(context.Context, application.Credentials, string, string) ([]application.Office, error) {
-	return nil, nil
+func (c *stubSpeedyClient) Calculate(_ context.Context, req application.CalculateRequest) ([]application.CalculationResult, error) {
+	c.lastCalculateReq = req
+	results := make([]application.CalculationResult, 0, len(req.ServiceIDs))
+	for _, id := range req.ServiceIDs {
+		results = append(results, application.CalculationResult{
+			ServiceID: id,
+			Amount:    money.Money{AmountMinor: 500 + id, Currency: "EUR"},
+		})
+	}
+	return results, nil
+}
+
+func (c *stubSpeedyClient) SearchOffices(_ context.Context, _ application.Credentials, siteID int64, name, officeType string) ([]application.Office, error) {
+	c.searchCalls++
+	c.lastSiteID = siteID
+	return []application.Office{{ID: "o1", Name: name + " " + officeType, Type: officeType}}, nil
+}
+
+func (c *stubSpeedyClient) SearchSites(_ context.Context, _ application.Credentials, name string) ([]application.Site, error) {
+	c.searchCalls++
+	return []application.Site{{ID: 68134, Name: name}}, nil
+}
+
+func (c *stubSpeedyClient) SearchComplexes(_ context.Context, _ application.Credentials, siteID int64, name string) ([]application.Complex, error) {
+	c.searchCalls++
+	c.lastSiteID = siteID
+	return []application.Complex{{ID: 1, Name: name}}, nil
+}
+
+func (c *stubSpeedyClient) SearchStreets(_ context.Context, _ application.Credentials, siteID int64, name string) ([]application.Street, error) {
+	c.searchCalls++
+	c.lastSiteID = siteID
+	return []application.Street{{ID: 100, Name: name}}, nil
 }
 
 type stubOrderGateway struct {
@@ -125,6 +159,118 @@ func TestCreateShipmentForOrder_BuildsRequestFromSettings(t *testing.T) {
 	}
 	if !speedy.lastCreateReq.RequireCOD || speedy.lastCreateReq.CODAmount.AmountMinor != 1999 {
 		t.Errorf("expected COD required with amount 1999, got %+v", speedy.lastCreateReq)
+	}
+}
+
+func TestCreateShipmentForOrder_UsesRealWeightOverConfigDefault(t *testing.T) {
+	settings := &stubSettingsRepo{settings: map[string]domain.ProviderSettings{
+		domain.ProviderSpeedy: {
+			Provider: domain.ProviderSpeedy,
+			Enabled:  true,
+			Config: map[string]string{
+				domain.SpeedyConfigDefaultCourierServiceID: "505",
+				domain.SpeedyConfigDefaultParcelWeightKg:   "2.5",
+			},
+		},
+	}}
+	speedy := &stubSpeedyClient{}
+	service := newTestService(settings, speedy, &stubOrderGateway{})
+
+	// A real per-order weight overrides the configured default...
+	if _, err := service.CreateShipmentForOrder(context.Background(), application.CreateShipmentInput{
+		Provider: domain.ProviderSpeedy, DeliveryMethod: "speedy", WeightKg: 0.8,
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if speedy.lastCreateReq.ParcelWeightKg != 0.8 {
+		t.Errorf("expected real weight 0.8, got %v", speedy.lastCreateReq.ParcelWeightKg)
+	}
+
+	// ...but a zero weight falls back to the configured default.
+	if _, err := service.CreateShipmentForOrder(context.Background(), application.CreateShipmentInput{
+		Provider: domain.ProviderSpeedy, DeliveryMethod: "speedy", WeightKg: 0,
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if speedy.lastCreateReq.ParcelWeightKg != 2.5 {
+		t.Errorf("expected fallback weight 2.5, got %v", speedy.lastCreateReq.ParcelWeightKg)
+	}
+}
+
+func TestCalculateShippingCosts_MapsResultsToMethodsWithOfficeFallback(t *testing.T) {
+	settings := &stubSettingsRepo{settings: map[string]domain.ProviderSettings{
+		domain.ProviderSpeedy: {
+			Provider: domain.ProviderSpeedy,
+			Enabled:  true,
+			Config: map[string]string{
+				domain.SpeedyConfigUsername:                "api-user",
+				domain.SpeedyConfigPassword:                "secret",
+				domain.SpeedyConfigDefaultCourierServiceID: "505",
+				// office service id left unset → falls back to the courier service.
+				domain.SpeedyConfigDefaultLockerServiceID: "508",
+			},
+		},
+	}}
+	speedy := &stubSpeedyClient{}
+	service := newTestService(settings, speedy, &stubOrderGateway{})
+
+	quotes, err := service.CalculateShippingCosts(context.Background(), domain.ProviderSpeedy, 68134, 1.2)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Only the two distinct service ids (courier 505, locker 508) are priced,
+	// with the real weight passed through.
+	if len(speedy.lastCalculateReq.ServiceIDs) != 2 {
+		t.Fatalf("expected 2 distinct service ids, got %v", speedy.lastCalculateReq.ServiceIDs)
+	}
+	if speedy.lastCalculateReq.WeightKg != 1.2 {
+		t.Errorf("expected weight 1.2 passed through, got %v", speedy.lastCalculateReq.WeightKg)
+	}
+	if speedy.lastCalculateReq.SiteID != 68134 {
+		t.Errorf("expected site 68134, got %v", speedy.lastCalculateReq.SiteID)
+	}
+
+	// The courier service backs both door and office methods (office fell back),
+	// so we get three quotes: speedy, speedy_office (both service 505) and easybox (508).
+	byMethod := map[string]money.Money{}
+	for _, q := range quotes {
+		byMethod[q.DeliveryMethod] = q.Amount
+	}
+	if len(quotes) != 3 {
+		t.Fatalf("expected 3 quotes, got %d (%+v)", len(quotes), quotes)
+	}
+	if byMethod["speedy"].AmountMinor != 505+500 {
+		t.Errorf("expected speedy quote from service 505, got %+v", byMethod["speedy"])
+	}
+	if byMethod["speedy_office"].AmountMinor != 505+500 {
+		t.Errorf("expected speedy_office quote from fallback service 505, got %+v", byMethod["speedy_office"])
+	}
+	if byMethod["easybox"].AmountMinor != 508+500 {
+		t.Errorf("expected easybox quote from service 508, got %+v", byMethod["easybox"])
+	}
+}
+
+func TestCalculateShippingCosts_ZeroWeightYieldsNoQuotes(t *testing.T) {
+	settings := &stubSettingsRepo{settings: map[string]domain.ProviderSettings{
+		domain.ProviderSpeedy: {
+			Provider: domain.ProviderSpeedy,
+			Enabled:  true,
+			Config:   map[string]string{domain.SpeedyConfigDefaultCourierServiceID: "505"},
+		},
+	}}
+	speedy := &stubSpeedyClient{}
+	service := newTestService(settings, speedy, &stubOrderGateway{})
+
+	quotes, err := service.CalculateShippingCosts(context.Background(), domain.ProviderSpeedy, 68134, 0)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(quotes) != 0 {
+		t.Fatalf("expected no quotes for zero weight, got %+v", quotes)
+	}
+	if len(speedy.lastCalculateReq.ServiceIDs) != 0 {
+		t.Errorf("expected Calculate not to be called for zero weight")
 	}
 }
 

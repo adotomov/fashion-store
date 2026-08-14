@@ -54,6 +54,9 @@ type CartItem struct {
 	UnitPrice         money.Money
 	Quantity          int
 	AvailableQuantity int
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	// WeightGrams is the variant's per-unit shipping weight (0 when unset),
+	// used to compute a parcel weight for Speedy shipping-cost quotes.
+	WeightGrams int
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }

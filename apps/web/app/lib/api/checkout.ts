@@ -8,7 +8,7 @@ function fromMoneyDTO(dto: MoneyDTO): Money {
   return { amount: dto.amount_minor, currency: dto.currency };
 }
 
-export type DeliveryMethodCode = "speedy" | "easybox";
+export type DeliveryMethodCode = "speedy" | "speedy_office" | "easybox";
 export type PaymentMethodCode = "cash_on_delivery" | "card_on_easybox" | "card_online";
 
 export type DeliveryMethod = {
@@ -33,15 +33,25 @@ export type Contact = {
   phone: string;
 };
 
+// A Speedy-resolved checkout address: city/complex/street carry Speedy location
+// codes (…_id) plus display names; house details are free text. Bulgaria only.
 export type CheckoutAddress = {
   recipient_name: string;
   phone: string;
-  line1: string;
-  line2: string;
-  city: string;
-  region: string;
-  postal_code: string;
   country_code: string;
+  country_id: number;
+  site_id: number;
+  city: string;
+  post_code: string;
+  complex_id: number;
+  complex_name: string;
+  street_id: number;
+  street_name: string;
+  street_no: string;
+  block_no: string;
+  entrance_no: string;
+  floor_no: string;
+  apartment_no: string;
 };
 
 export type PlaceOrderInput = {

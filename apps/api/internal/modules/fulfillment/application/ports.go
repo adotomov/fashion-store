@@ -21,8 +21,20 @@ type SettingsRepository interface {
 // time.
 type SpeedyClient interface {
 	CreateShipment(ctx context.Context, req CreateShipmentRequest) (ShipmentResult, error)
+	// Calculate prices a parcel for one or more services in a single call,
+	// returning one result per service that succeeded.
+	Calculate(ctx context.Context, req CalculateRequest) ([]CalculationResult, error)
 	Track(ctx context.Context, creds Credentials, parcelIDs []string) ([]TrackedParcel, error)
-	SearchOffices(ctx context.Context, creds Credentials, city, officeType string) ([]Office, error)
+	// SearchOffices lists Speedy offices (type "OFFICE") or EasyBox lockers
+	// (type "APT"). Filter by siteID when known (0 = unfiltered) and/or a
+	// free-text name fragment.
+	SearchOffices(ctx context.Context, creds Credentials, siteID int64, name, officeType string) ([]Office, error)
+	// SearchSites resolves populated places by name fragment (Bulgaria only).
+	SearchSites(ctx context.Context, creds Credentials, name string) ([]Site, error)
+	// SearchComplexes lists residential complexes (кв./жк.) within a site.
+	SearchComplexes(ctx context.Context, creds Credentials, siteID int64, name string) ([]Complex, error)
+	// SearchStreets lists streets within a site.
+	SearchStreets(ctx context.Context, creds Credentials, siteID int64, name string) ([]Street, error)
 }
 
 // TrackedOrderRef is the minimal info the poller needs to ask Speedy for an

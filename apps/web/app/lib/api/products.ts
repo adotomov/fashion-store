@@ -40,8 +40,23 @@ export type ProductVariant = {
   // Absent means no SKU/inventory item has been assigned to this variant yet.
   inventory_item_id?: string;
   quantity_available?: number;
+  // Physical shipping attributes of the SKU (grams / cm; 0 = unset). Weight is
+  // used to quote Speedy shipping costs; dimensions are stored for reference.
+  weight_grams: number;
+  length_cm: number;
+  width_cm: number;
+  height_cm: number;
   created_at: string;
   updated_at: string;
+};
+
+// VariantDimensions carries the SKU's physical shipping attributes through the
+// create/update calls.
+export type VariantDimensions = {
+  weightGrams: number;
+  lengthCm: number;
+  widthCm: number;
+  heightCm: number;
 };
 
 export type ProductMedia = {
@@ -151,12 +166,17 @@ export async function createVariant(
   productId: string,
   attributeValueIds: string[],
   priceOverride?: Money,
+  dimensions?: VariantDimensions,
 ): Promise<ProductVariant> {
   const raw = await apiFetch<RawVariant>(`/api/v1/admin/products/${productId}/variants`, {
     method: "POST",
     body: {
       attribute_value_ids: attributeValueIds,
       price_override: priceOverride ? toMoneyDTO(priceOverride) : undefined,
+      weight_grams: dimensions?.weightGrams ?? 0,
+      length_cm: dimensions?.lengthCm ?? 0,
+      width_cm: dimensions?.widthCm ?? 0,
+      height_cm: dimensions?.heightCm ?? 0,
     },
   });
   return fromRawVariant(raw);
@@ -165,7 +185,12 @@ export async function createVariant(
 export async function updateVariant(
   productId: string,
   variantId: string,
-  input: { attributeValueIds: string[]; priceOverride?: Money; clearPriceOverride?: boolean },
+  input: {
+    attributeValueIds: string[];
+    priceOverride?: Money;
+    clearPriceOverride?: boolean;
+    dimensions?: VariantDimensions;
+  },
 ): Promise<ProductVariant> {
   const raw = await apiFetch<RawVariant>(`/api/v1/admin/products/${productId}/variants/${variantId}`, {
     method: "PATCH",
@@ -173,6 +198,10 @@ export async function updateVariant(
       attribute_value_ids: input.attributeValueIds,
       price_override: input.priceOverride ? toMoneyDTO(input.priceOverride) : undefined,
       clear_price_override: input.clearPriceOverride ?? false,
+      weight_grams: input.dimensions?.weightGrams ?? 0,
+      length_cm: input.dimensions?.lengthCm ?? 0,
+      width_cm: input.dimensions?.widthCm ?? 0,
+      height_cm: input.dimensions?.heightCm ?? 0,
     },
   });
   return fromRawVariant(raw);

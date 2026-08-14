@@ -36,18 +36,39 @@ type ContactInput struct {
 type AddressInput struct {
 	RecipientName string
 	Phone         string
-	Line1         string
-	Line2         string
-	City          string
-	Region        string
-	PostalCode    string
-	CountryCode   string
+
+	CountryCode string
+	CountryID   int64
+	SiteID      int64
+	City        string
+	PostCode    string
+	ComplexID   int64
+	ComplexName string
+	StreetID    int64
+	StreetName  string
+	StreetNo    string
+	BlockNo     string
+	EntranceNo  string
+	FloorNo     string
+	ApartmentNo string
 }
 
 func (a AddressInput) toDomain() domain.Address {
+	countryCode := a.CountryCode
+	if countryCode == "" {
+		countryCode = "BG"
+	}
+	countryID := a.CountryID
+	if countryID == 0 {
+		countryID = 100
+	}
 	return domain.Address{
-		RecipientName: a.RecipientName, Phone: a.Phone, Line1: a.Line1, Line2: a.Line2,
-		City: a.City, Region: a.Region, PostalCode: a.PostalCode, CountryCode: a.CountryCode,
+		RecipientName: a.RecipientName, Phone: a.Phone,
+		CountryCode: countryCode, CountryID: countryID, SiteID: a.SiteID,
+		City: a.City, PostCode: a.PostCode,
+		ComplexID: a.ComplexID, ComplexName: a.ComplexName,
+		StreetID: a.StreetID, StreetName: a.StreetName, StreetNo: a.StreetNo,
+		BlockNo: a.BlockNo, EntranceNo: a.EntranceNo, FloorNo: a.FloorNo, ApartmentNo: a.ApartmentNo,
 	}
 }
 

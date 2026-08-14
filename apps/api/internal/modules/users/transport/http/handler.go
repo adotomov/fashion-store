@@ -117,13 +117,44 @@ type addressRequest struct {
 	Label         string `json:"label"`
 	RecipientName string `json:"recipient_name"`
 	Phone         string `json:"phone"`
-	Line1         string `json:"line1"`
-	Line2         string `json:"line2"`
-	City          string `json:"city"`
-	Region        string `json:"region"`
-	PostalCode    string `json:"postal_code"`
 	CountryCode   string `json:"country_code"`
+	CountryID     int64  `json:"country_id"`
+	SiteID        int64  `json:"site_id"`
+	City          string `json:"city"`
+	PostCode      string `json:"post_code"`
+	ComplexID     int64  `json:"complex_id"`
+	ComplexName   string `json:"complex_name"`
+	StreetID      int64  `json:"street_id"`
+	StreetName    string `json:"street_name"`
+	StreetNo      string `json:"street_no"`
+	BlockNo       string `json:"block_no"`
+	EntranceNo    string `json:"entrance_no"`
+	FloorNo       string `json:"floor_no"`
+	ApartmentNo   string `json:"apartment_no"`
 	IsDefault     bool   `json:"is_default"`
+}
+
+func (req addressRequest) toInput() application.AddressInput {
+	return application.AddressInput{
+		Label:         req.Label,
+		RecipientName: req.RecipientName,
+		Phone:         req.Phone,
+		CountryCode:   req.CountryCode,
+		CountryID:     req.CountryID,
+		SiteID:        req.SiteID,
+		City:          req.City,
+		PostCode:      req.PostCode,
+		ComplexID:     req.ComplexID,
+		ComplexName:   req.ComplexName,
+		StreetID:      req.StreetID,
+		StreetName:    req.StreetName,
+		StreetNo:      req.StreetNo,
+		BlockNo:       req.BlockNo,
+		EntranceNo:    req.EntranceNo,
+		FloorNo:       req.FloorNo,
+		ApartmentNo:   req.ApartmentNo,
+		IsDefault:     req.IsDefault,
+	}
 }
 
 func (h *Handler) createAddress(w http.ResponseWriter, r *http.Request) {
@@ -139,18 +170,7 @@ func (h *Handler) createAddress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	addr, err := h.service.AddAddress(r.Context(), p.UserID, application.AddAddressInput{
-		Label:         req.Label,
-		RecipientName: req.RecipientName,
-		Phone:         req.Phone,
-		Line1:         req.Line1,
-		Line2:         req.Line2,
-		City:          req.City,
-		Region:        req.Region,
-		PostalCode:    req.PostalCode,
-		CountryCode:   req.CountryCode,
-		IsDefault:     req.IsDefault,
-	})
+	addr, err := h.service.AddAddress(r.Context(), p.UserID, req.toInput())
 	if err != nil {
 		writeServiceError(w, err)
 		return
@@ -172,35 +192,13 @@ func (h *Handler) updateAddress(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req struct {
-		Label         *string `json:"label,omitempty"`
-		RecipientName *string `json:"recipient_name,omitempty"`
-		Phone         *string `json:"phone,omitempty"`
-		Line1         *string `json:"line1,omitempty"`
-		Line2         *string `json:"line2,omitempty"`
-		City          *string `json:"city,omitempty"`
-		Region        *string `json:"region,omitempty"`
-		PostalCode    *string `json:"postal_code,omitempty"`
-		CountryCode   *string `json:"country_code,omitempty"`
-		IsDefault     *bool   `json:"is_default,omitempty"`
-	}
+	var req addressRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "request body is invalid")
 		return
 	}
 
-	addr, err := h.service.UpdateAddress(r.Context(), p.UserID, addressID, application.UpdateAddressInput{
-		Label:         req.Label,
-		RecipientName: req.RecipientName,
-		Phone:         req.Phone,
-		Line1:         req.Line1,
-		Line2:         req.Line2,
-		City:          req.City,
-		Region:        req.Region,
-		PostalCode:    req.PostalCode,
-		CountryCode:   req.CountryCode,
-		IsDefault:     req.IsDefault,
-	})
+	addr, err := h.service.UpdateAddress(r.Context(), p.UserID, addressID, req.toInput())
 	if err != nil {
 		writeServiceError(w, err)
 		return

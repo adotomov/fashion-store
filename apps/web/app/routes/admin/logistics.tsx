@@ -209,6 +209,17 @@ function SpeedyConfigForm({
         />
       </FormField>
       <FormField
+        label="Office service ID"
+        htmlFor="speedy-office-service-id"
+        hint="Used for Speedy Office pickup shipments (falls back to the courier service if blank)"
+      >
+        <Input
+          id="speedy-office-service-id"
+          value={config.default_office_service_id ?? ""}
+          onChange={(e) => onChange("default_office_service_id", e.target.value)}
+        />
+      </FormField>
+      <FormField
         label="Locker service ID"
         htmlFor="speedy-locker-service-id"
         hint="Used for EasyBox locker shipments"

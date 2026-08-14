@@ -23,6 +23,10 @@ type Repository interface {
 	CountByUser(ctx context.Context, userID uuid.UUID) (int, error)
 	Create(ctx context.Context, order domain.Order) (*domain.Order, error)
 
+	// SaveShippingQuotes persists Speedy shipping-cost quotes for an order
+	// (internal reference data, never displayed).
+	SaveShippingQuotes(ctx context.Context, orderID uuid.UUID, quotes []ShippingQuote) error
+
 	AdminList(ctx context.Context, filter AdminListOrdersFilter) ([]domain.Order, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*domain.Order, error)
 	FindByOrderNumber(ctx context.Context, orderNumber string) (*domain.Order, error)

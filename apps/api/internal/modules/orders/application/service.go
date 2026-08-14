@@ -44,11 +44,12 @@ func (s *Service) CreateOrder(ctx context.Context, userID uuid.UUID, input Creat
 		ContactPhone:     input.ContactPhone,
 		ShippingAddress:  input.ShippingAddress,
 		BillingAddress:   input.BillingAddress,
-		DeliveryMethod:   input.DeliveryMethod,
-		DeliveryFee:      input.DeliveryFee,
-		PaymentMethod:    input.PaymentMethod,
-		DeliveryOfficeID: input.DeliveryOfficeID,
-		ReservationID:    input.ReservationID,
+		DeliveryMethod:    input.DeliveryMethod,
+		DeliveryFee:       input.DeliveryFee,
+		PaymentMethod:     input.PaymentMethod,
+		DeliveryOfficeID:  input.DeliveryOfficeID,
+		ParcelWeightGrams: input.ParcelWeightGrams,
+		ReservationID:     input.ReservationID,
 		CartGuestToken:   input.CartGuestToken,
 		DiscountCode:     input.DiscountCode,
 		DiscountAmount:   input.DiscountAmount,
@@ -72,6 +73,15 @@ func (s *Service) CreateOrder(ctx context.Context, userID uuid.UUID, input Creat
 		})
 	}
 	return s.repo.Create(ctx, order)
+}
+
+// SaveShippingQuotes records Speedy shipping-cost quotes for an order —
+// internal reference data, never displayed. A no-op for an empty slice.
+func (s *Service) SaveShippingQuotes(ctx context.Context, orderID uuid.UUID, quotes []ShippingQuote) error {
+	if len(quotes) == 0 {
+		return nil
+	}
+	return s.repo.SaveShippingQuotes(ctx, orderID, quotes)
 }
 
 // CountOrdersByUser is exposed to other modules (via an adapter) so they can

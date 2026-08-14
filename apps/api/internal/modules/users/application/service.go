@@ -152,19 +152,8 @@ func (s *Service) ListAddresses(ctx context.Context, userID uuid.UUID) ([]domain
 }
 
 func (s *Service) AddAddress(ctx context.Context, userID uuid.UUID, input AddAddressInput) (*domain.Address, error) {
-	addr := domain.Address{
-		UserID:        userID,
-		Label:         input.Label,
-		RecipientName: input.RecipientName,
-		Phone:         input.Phone,
-		Line1:         input.Line1,
-		Line2:         input.Line2,
-		City:          input.City,
-		Region:        input.Region,
-		PostalCode:    input.PostalCode,
-		CountryCode:   input.CountryCode,
-		IsDefault:     input.IsDefault,
-	}
+	addr := addressFromInput(input)
+	addr.UserID = userID
 	if err := addr.Validate(); err != nil {
 		return nil, err
 	}
@@ -172,47 +161,52 @@ func (s *Service) AddAddress(ctx context.Context, userID uuid.UUID, input AddAdd
 }
 
 func (s *Service) UpdateAddress(ctx context.Context, userID, addressID uuid.UUID, input UpdateAddressInput) (*domain.Address, error) {
-	addr, err := s.repo.FindAddress(ctx, userID, addressID)
+	existing, err := s.repo.FindAddress(ctx, userID, addressID)
 	if err != nil {
 		return nil, err
 	}
 
-	if input.Label != nil {
-		addr.Label = *input.Label
-	}
-	if input.RecipientName != nil {
-		addr.RecipientName = *input.RecipientName
-	}
-	if input.Phone != nil {
-		addr.Phone = *input.Phone
-	}
-	if input.Line1 != nil {
-		addr.Line1 = *input.Line1
-	}
-	if input.Line2 != nil {
-		addr.Line2 = *input.Line2
-	}
-	if input.City != nil {
-		addr.City = *input.City
-	}
-	if input.Region != nil {
-		addr.Region = *input.Region
-	}
-	if input.PostalCode != nil {
-		addr.PostalCode = *input.PostalCode
-	}
-	if input.CountryCode != nil {
-		addr.CountryCode = *input.CountryCode
-	}
-	if input.IsDefault != nil {
-		addr.IsDefault = *input.IsDefault
-	}
-
+	addr := addressFromInput(input)
+	addr.ID = existing.ID
+	addr.UserID = existing.UserID
+	addr.CreatedAt = existing.CreatedAt
 	if err := addr.Validate(); err != nil {
 		return nil, err
 	}
+	return s.repo.UpdateAddress(ctx, addr)
+}
 
-	return s.repo.UpdateAddress(ctx, *addr)
+// addressFromInput maps a submitted structured address onto the domain type,
+// defaulting the country to Bulgaria (the only supported market for now).
+func addressFromInput(input AddressInput) domain.Address {
+	countryCode := input.CountryCode
+	if countryCode == "" {
+		countryCode = "BG"
+	}
+	countryID := input.CountryID
+	if countryID == 0 {
+		countryID = 100
+	}
+	return domain.Address{
+		Label:         input.Label,
+		RecipientName: input.RecipientName,
+		Phone:         input.Phone,
+		CountryCode:   countryCode,
+		CountryID:     countryID,
+		SiteID:        input.SiteID,
+		City:          input.City,
+		PostCode:      input.PostCode,
+		ComplexID:     input.ComplexID,
+		ComplexName:   input.ComplexName,
+		StreetID:      input.StreetID,
+		StreetName:    input.StreetName,
+		StreetNo:      input.StreetNo,
+		BlockNo:       input.BlockNo,
+		EntranceNo:    input.EntranceNo,
+		FloorNo:       input.FloorNo,
+		ApartmentNo:   input.ApartmentNo,
+		IsDefault:     input.IsDefault,
+	}
 }
 
 func (s *Service) DeleteAddress(ctx context.Context, userID, addressID uuid.UUID) error {

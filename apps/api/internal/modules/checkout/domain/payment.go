@@ -15,18 +15,16 @@ func ValidPaymentMethod(method string) bool {
 	}
 }
 
-// PaymentMethodsFor returns the payment methods that make sense for a given
-// delivery method. The two are physically coupled: an EasyBox locker has no
-// courier to hand cash to, so it's card-only (paid online up front, or on
-// the locker's card terminal at pickup). Courier delivery can be paid online
-// up front or on delivery (cash or card to the courier / at a Speedy
-// office); only the locker's terminal option doesn't apply to it.
+// PaymentMethodsFor returns the payment methods offered for a given delivery
+// method. All three methods — door delivery, office pickup, and EasyBox
+// locker — settle either on delivery (Speedy collects the cash-on-delivery
+// amount at the door, office, or locker) or online up front. The legacy
+// card_on_easybox ("pay on terminal") option is no longer offered, though it
+// stays a valid method so historical orders keep rendering.
 func PaymentMethodsFor(deliveryMethodCode string) []string {
 	switch deliveryMethodCode {
-	case DeliveryMethodSpeedy:
+	case DeliveryMethodSpeedy, DeliveryMethodSpeedyOffice, DeliveryMethodEasyBox:
 		return []string{PaymentMethodCashOnDelivery, PaymentMethodCardOnline}
-	case DeliveryMethodEasyBox:
-		return []string{PaymentMethodCardOnline, PaymentMethodCardOnEasyBox}
 	default:
 		return nil
 	}

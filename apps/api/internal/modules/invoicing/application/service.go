@@ -56,11 +56,11 @@ func (s *Service) GenerateForOrder(ctx context.Context, orderID uuid.UUID, actor
 	recipientAddr := buildAddressString(order.ShippingAddress)
 
 	inv := domain.Invoice{
-		ID:           uuid.New(),
-		DocumentType: domain.DocumentTypeFaktura,
-		OrderID:      orderID,
-		OrderNumber:  order.OrderNumber,
-		PlacedAt:     order.PlacedAt,
+		ID:            uuid.New(),
+		DocumentType:  domain.DocumentTypeFaktura,
+		OrderID:       orderID,
+		OrderNumber:   order.OrderNumber,
+		PlacedAt:      order.PlacedAt,
 		PaymentMethod: order.PaymentMethod,
 
 		CompanyName:      settings.CompanyName,
@@ -289,18 +289,18 @@ func (s *Service) buildLineItems(ctx context.Context, order *ordersdomain.Order)
 		grandVATMinor += lineVAT
 
 		items = append(items, domain.InvoiceLineItem{
-			ID:                uuid.New(),
-			ProductName:       oi.ProductName,
-			VariantLabel:      oi.VariantLabel,
-			Quantity:          oi.Quantity,
-			UnitPriceInclVAT:  money.Money{AmountMinor: unitIncl, Currency: oi.UnitPrice.Currency},
-			UnitPriceExclVAT:  money.Money{AmountMinor: unitExcl, Currency: oi.UnitPrice.Currency},
-			VATPerUnit:        money.Money{AmountMinor: vatUnit, Currency: oi.UnitPrice.Currency},
-			LineTotalInclVAT:  money.Money{AmountMinor: lineIncl, Currency: oi.UnitPrice.Currency},
-			LineTotalExclVAT:  money.Money{AmountMinor: lineExcl, Currency: oi.UnitPrice.Currency},
-			LineVATAmount:     money.Money{AmountMinor: lineVAT, Currency: oi.UnitPrice.Currency},
-			VATRate:           rate,
-			SortOrder:         i,
+			ID:               uuid.New(),
+			ProductName:      oi.ProductName,
+			VariantLabel:     oi.VariantLabel,
+			Quantity:         oi.Quantity,
+			UnitPriceInclVAT: money.Money{AmountMinor: unitIncl, Currency: oi.UnitPrice.Currency},
+			UnitPriceExclVAT: money.Money{AmountMinor: unitExcl, Currency: oi.UnitPrice.Currency},
+			VATPerUnit:       money.Money{AmountMinor: vatUnit, Currency: oi.UnitPrice.Currency},
+			LineTotalInclVAT: money.Money{AmountMinor: lineIncl, Currency: oi.UnitPrice.Currency},
+			LineTotalExclVAT: money.Money{AmountMinor: lineExcl, Currency: oi.UnitPrice.Currency},
+			LineVATAmount:    money.Money{AmountMinor: lineVAT, Currency: oi.UnitPrice.Currency},
+			VATRate:          rate,
+			SortOrder:        i,
 		})
 	}
 
@@ -366,19 +366,39 @@ func formatSettingsAddress(s domain.InvoiceSettings) string {
 	return strings.Join(parts, ", ")
 }
 
+// buildAddressString renders a Speedy-structured order address into a single
+// human-readable line for the invoice, from the display names (the numeric
+// location codes aren't shown). Empty parts are skipped.
 func buildAddressString(addr ordersdomain.OrderAddress) string {
-	parts := []string{addr.Line1}
-	if addr.Line2 != "" {
-		parts = append(parts, addr.Line2)
+	var parts []string
+	if street := strings.TrimSpace(addr.StreetName + " " + addr.StreetNo); street != "" {
+		parts = append(parts, street)
 	}
-	cityLine := addr.City
-	if addr.Region != "" {
-		cityLine += ", " + addr.Region
+	if addr.ComplexName != "" {
+		parts = append(parts, addr.ComplexName)
 	}
-	if addr.PostalCode != "" {
-		cityLine += " " + addr.PostalCode
+	var detail []string
+	if addr.BlockNo != "" {
+		detail = append(detail, "bl. "+addr.BlockNo)
 	}
-	parts = append(parts, cityLine, addr.CountryCode)
+	if addr.EntranceNo != "" {
+		detail = append(detail, "entr. "+addr.EntranceNo)
+	}
+	if addr.FloorNo != "" {
+		detail = append(detail, "fl. "+addr.FloorNo)
+	}
+	if addr.ApartmentNo != "" {
+		detail = append(detail, "ap. "+addr.ApartmentNo)
+	}
+	if len(detail) > 0 {
+		parts = append(parts, strings.Join(detail, ", "))
+	}
+	if cityLine := strings.TrimSpace(addr.PostCode + " " + addr.City); cityLine != "" {
+		parts = append(parts, cityLine)
+	}
+	if addr.CountryCode != "" {
+		parts = append(parts, addr.CountryCode)
+	}
 	return strings.Join(parts, ", ")
 }
 

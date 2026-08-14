@@ -292,10 +292,15 @@ func scanUser(row pgx.Row) (*domain.User, error) {
 	return &u, nil
 }
 
+// addressColumns is the shared SELECT/RETURNING column list for user_addresses,
+// in the order scanAddress expects.
+const addressColumns = `id, user_id, label, recipient_name, phone, country_code, country_id,
+	site_id, city, post_code, complex_id, complex_name, street_id, street_name, street_no,
+	block_no, entrance_no, floor_no, apartment_no, is_default, created_at, updated_at`
+
 func (r *PostgresRepository) ListAddresses(ctx context.Context, userID uuid.UUID) ([]domain.Address, error) {
 	rows, err := r.db.Query(ctx, `
-		SELECT id, user_id, label, recipient_name, phone, line1, line2, city, region,
-		       postal_code, country_code, is_default, created_at, updated_at
+		SELECT `+addressColumns+`
 		FROM user_addresses WHERE user_id = $1 ORDER BY created_at`, userID)
 	if err != nil {
 		return nil, err
@@ -315,14 +320,15 @@ func (r *PostgresRepository) ListAddresses(ctx context.Context, userID uuid.UUID
 
 func (r *PostgresRepository) CreateAddress(ctx context.Context, address domain.Address) (*domain.Address, error) {
 	row := r.db.QueryRow(ctx, `
-		INSERT INTO user_addresses (user_id, label, recipient_name, phone, line1, line2,
-			city, region, postal_code, country_code, is_default)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-		RETURNING id, user_id, label, recipient_name, phone, line1, line2, city, region,
-		          postal_code, country_code, is_default, created_at, updated_at`,
-		address.UserID, address.Label, address.RecipientName, address.Phone, address.Line1,
-		address.Line2, address.City, address.Region, address.PostalCode, address.CountryCode,
-		address.IsDefault)
+		INSERT INTO user_addresses (user_id, label, recipient_name, phone, country_code, country_id,
+			site_id, city, post_code, complex_id, complex_name, street_id, street_name, street_no,
+			block_no, entrance_no, floor_no, apartment_no, is_default)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
+		RETURNING `+addressColumns,
+		address.UserID, address.Label, address.RecipientName, address.Phone, address.CountryCode,
+		address.CountryID, address.SiteID, address.City, address.PostCode, address.ComplexID,
+		address.ComplexName, address.StreetID, address.StreetName, address.StreetNo, address.BlockNo,
+		address.EntranceNo, address.FloorNo, address.ApartmentNo, address.IsDefault)
 
 	return scanAddress(row)
 }
@@ -330,15 +336,16 @@ func (r *PostgresRepository) CreateAddress(ctx context.Context, address domain.A
 func (r *PostgresRepository) UpdateAddress(ctx context.Context, address domain.Address) (*domain.Address, error) {
 	row := r.db.QueryRow(ctx, `
 		UPDATE user_addresses SET
-			label = $3, recipient_name = $4, phone = $5, line1 = $6, line2 = $7,
-			city = $8, region = $9, postal_code = $10, country_code = $11,
-			is_default = $12, updated_at = NOW()
+			label = $3, recipient_name = $4, phone = $5, country_code = $6, country_id = $7,
+			site_id = $8, city = $9, post_code = $10, complex_id = $11, complex_name = $12,
+			street_id = $13, street_name = $14, street_no = $15, block_no = $16, entrance_no = $17,
+			floor_no = $18, apartment_no = $19, is_default = $20, updated_at = NOW()
 		WHERE id = $1 AND user_id = $2
-		RETURNING id, user_id, label, recipient_name, phone, line1, line2, city, region,
-		          postal_code, country_code, is_default, created_at, updated_at`,
+		RETURNING `+addressColumns,
 		address.ID, address.UserID, address.Label, address.RecipientName, address.Phone,
-		address.Line1, address.Line2, address.City, address.Region, address.PostalCode,
-		address.CountryCode, address.IsDefault)
+		address.CountryCode, address.CountryID, address.SiteID, address.City, address.PostCode,
+		address.ComplexID, address.ComplexName, address.StreetID, address.StreetName, address.StreetNo,
+		address.BlockNo, address.EntranceNo, address.FloorNo, address.ApartmentNo, address.IsDefault)
 
 	return scanAddress(row)
 }
@@ -356,8 +363,7 @@ func (r *PostgresRepository) DeleteAddress(ctx context.Context, userID, addressI
 
 func (r *PostgresRepository) FindAddress(ctx context.Context, userID, addressID uuid.UUID) (*domain.Address, error) {
 	row := r.db.QueryRow(ctx, `
-		SELECT id, user_id, label, recipient_name, phone, line1, line2, city, region,
-		       postal_code, country_code, is_default, created_at, updated_at
+		SELECT `+addressColumns+`
 		FROM user_addresses WHERE id = $1 AND user_id = $2`, addressID, userID)
 
 	return scanAddress(row)
@@ -365,8 +371,10 @@ func (r *PostgresRepository) FindAddress(ctx context.Context, userID, addressID 
 
 func scanAddress(row pgx.Row) (*domain.Address, error) {
 	var a domain.Address
-	err := row.Scan(&a.ID, &a.UserID, &a.Label, &a.RecipientName, &a.Phone, &a.Line1, &a.Line2,
-		&a.City, &a.Region, &a.PostalCode, &a.CountryCode, &a.IsDefault, &a.CreatedAt, &a.UpdatedAt)
+	err := row.Scan(&a.ID, &a.UserID, &a.Label, &a.RecipientName, &a.Phone, &a.CountryCode,
+		&a.CountryID, &a.SiteID, &a.City, &a.PostCode, &a.ComplexID, &a.ComplexName, &a.StreetID,
+		&a.StreetName, &a.StreetNo, &a.BlockNo, &a.EntranceNo, &a.FloorNo, &a.ApartmentNo,
+		&a.IsDefault, &a.CreatedAt, &a.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrAddressNotFound
 	}

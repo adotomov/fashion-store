@@ -26,6 +26,8 @@ type CartLine struct {
 	Quantity          int
 	UnitPrice         money.Money
 	AvailableQuantity int
+	// WeightGrams is the variant's per-unit shipping weight (0 when unset).
+	WeightGrams int
 }
 
 type CartSnapshot struct {
@@ -80,7 +82,22 @@ type UserGateway interface {
 }
 
 type OrderAddress struct {
-	RecipientName, Phone, Line1, Line2, City, Region, PostalCode, CountryCode string
+	RecipientName string
+	Phone         string
+	CountryCode   string
+	CountryID     int64
+	SiteID        int64
+	City          string
+	PostCode      string
+	ComplexID     int64
+	ComplexName   string
+	StreetID      int64
+	StreetName    string
+	StreetNo      string
+	BlockNo       string
+	EntranceNo    string
+	FloorNo       string
+	ApartmentNo   string
 }
 
 type OrderPaymentRecord struct {
@@ -102,11 +119,12 @@ type CreateOrderInput struct {
 	ShippingAddress OrderAddress
 	BillingAddress  OrderAddress
 
-	DeliveryMethod   string
-	DeliveryFee      money.Money
-	DeliveryOfficeID string
-	PaymentMethod    string
-	Payment          *OrderPaymentRecord
+	DeliveryMethod    string
+	DeliveryFee       money.Money
+	DeliveryOfficeID  string
+	PaymentMethod     string
+	Payment           *OrderPaymentRecord
+	ParcelWeightGrams int
 
 	ReservationID uuid.UUID
 	// CartGuestToken is set only for guest card orders, so the payment webhook can
@@ -152,9 +170,21 @@ type OrderResult struct {
 	Items          []OrderResultItem
 }
 
+// ShippingQuote is a Speedy shipping-cost estimate for one delivery method,
+// recorded against the order as internal reference data (never displayed).
+type ShippingQuote struct {
+	DeliveryMethod string
+	ServiceID      string
+	Amount         money.Money
+}
+
 // OrderGateway persists and settles the placed order via the orders module.
 type OrderGateway interface {
 	CreateOrder(ctx context.Context, input CreateOrderInput) (OrderResult, error)
+
+	// SaveShippingQuotes records the per-method Speedy shipping-cost quotes for
+	// an order — best-effort reference data, never surfaced to anyone.
+	SaveShippingQuotes(ctx context.Context, orderID uuid.UUID, quotes []ShippingQuote) error
 
 	// SetShipmentInfo writes back the carrier/tracking details once a
 	// shipment has been created for the order — best-effort, called after
@@ -212,12 +242,13 @@ type OrderForFinalize struct {
 	DeliveryMethod   string
 	DeliveryOfficeID string
 	PaymentMethod    string
-	ContactName      string
-	ContactEmail     string
-	ContactPhone     string
-	ShippingAddress  OrderAddress
-	Total            money.Money
-	DeliveryFee      money.Money
+	ContactName       string
+	ContactEmail      string
+	ContactPhone      string
+	ShippingAddress   OrderAddress
+	Total             money.Money
+	DeliveryFee       money.Money
+	ParcelWeightGrams int
 	// Items lets the settlement path build a confirmation email with line items,
 	// the same as the pay-on-delivery path.
 	Items []OrderResultItem
@@ -283,6 +314,10 @@ type CreateShipmentInput struct {
 	RequireCOD bool
 	CODAmount  money.Money
 	Ref1       string
+
+	// WeightKg is the real parcel weight summed from the order's SKUs; the
+	// fulfillment module falls back to its config default when this is 0.
+	WeightKg float64
 }
 
 type ShipmentResult struct {
@@ -299,6 +334,10 @@ type ShipmentResult struct {
 type FulfillmentGateway interface {
 	IsProviderEnabled(ctx context.Context, provider string) bool
 	CreateShipment(ctx context.Context, input CreateShipmentInput) (ShipmentResult, error)
+	// CalculateShippingCosts asks Speedy what each delivery method would cost
+	// to ship a parcel of the given weight to the given site — write-only
+	// reference data captured on the order, never shown to the customer.
+	CalculateShippingCosts(ctx context.Context, provider string, siteID int64, weightKg float64) ([]ShippingQuote, error)
 }
 
 // Revolut order states (lowercased by the gateway). We only branch on

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 
@@ -31,7 +32,21 @@ func (h *Handler) RegisterRoutes(r chi.Router, requireAdmin func(http.Handler) h
 		r.Put("/admin/logistics/providers/{provider}", h.adminSaveProvider)
 	})
 
+	// Public address-typeahead + office/locker lookups. No auth: guests build
+	// an address at checkout, and the data is non-sensitive carrier reference
+	// data (results are cached in memory server-side).
+	r.Get("/logistics/sites", h.searchSites)
+	r.Get("/logistics/complexes", h.searchComplexes)
+	r.Get("/logistics/streets", h.searchStreets)
 	r.Get("/logistics/offices", h.searchOffices)
+}
+
+func providerParam(r *http.Request) string {
+	provider := r.URL.Query().Get("provider")
+	if provider == "" {
+		provider = domain.ProviderSpeedy
+	}
+	return provider
 }
 
 func (h *Handler) adminListProviders(w http.ResponseWriter, r *http.Request) {
@@ -95,27 +110,72 @@ func (h *Handler) adminSaveProvider(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
-func (h *Handler) searchOffices(w http.ResponseWriter, r *http.Request) {
-	provider := r.URL.Query().Get("provider")
-	if provider == "" {
-		provider = domain.ProviderSpeedy
+func (h *Handler) searchSites(w http.ResponseWriter, r *http.Request) {
+	sites, err := h.service.SearchSites(r.Context(), providerParam(r), r.URL.Query().Get("q"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
 	}
+	httpx.WriteJSON(w, http.StatusOK, toSiteResponses(sites))
+}
+
+func (h *Handler) searchComplexes(w http.ResponseWriter, r *http.Request) {
+	siteID, ok := parseSiteID(w, r)
+	if !ok {
+		return
+	}
+	complexes, err := h.service.SearchComplexes(r.Context(), providerParam(r), siteID, r.URL.Query().Get("q"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toComplexResponses(complexes))
+}
+
+func (h *Handler) searchStreets(w http.ResponseWriter, r *http.Request) {
+	siteID, ok := parseSiteID(w, r)
+	if !ok {
+		return
+	}
+	streets, err := h.service.SearchStreets(r.Context(), providerParam(r), siteID, r.URL.Query().Get("q"))
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toStreetResponses(streets))
+}
+
+func (h *Handler) searchOffices(w http.ResponseWriter, r *http.Request) {
 	officeType := r.URL.Query().Get("type")
 	if officeType == "" {
 		officeType = "APT"
 	}
-	city := r.URL.Query().Get("city")
-	if city == "" {
-		httpx.WriteError(w, http.StatusBadRequest, "missing_city", "city is required")
+	siteID, ok := parseSiteID(w, r)
+	if !ok {
 		return
 	}
-
-	offices, err := h.service.SearchOffices(r.Context(), provider, city, officeType)
+	offices, err := h.service.SearchOffices(r.Context(), providerParam(r), siteID, r.URL.Query().Get("q"), officeType)
 	if err != nil {
 		writeServiceError(w, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, toOfficeResponses(offices))
+}
+
+// parseSiteID reads the required numeric siteId query param, writing a 400 and
+// returning ok=false when it's missing or malformed.
+func parseSiteID(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	raw := r.URL.Query().Get("siteId")
+	if raw == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "missing_site_id", "siteId is required")
+		return 0, false
+	}
+	id, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_site_id", "siteId must be a number")
+		return 0, false
+	}
+	return id, true
 }
 
 func writeServiceError(w http.ResponseWriter, err error) {

@@ -69,3 +69,45 @@ func toOfficeResponses(offices []application.Office) []officeResponse {
 	}
 	return resp
 }
+
+type siteResponse struct {
+	ID           int64  `json:"id"`
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	Municipality string `json:"municipality,omitempty"`
+	Region       string `json:"region,omitempty"`
+	PostCode     string `json:"post_code,omitempty"`
+}
+
+func toSiteResponses(sites []application.Site) []siteResponse {
+	resp := make([]siteResponse, 0, len(sites))
+	for _, s := range sites {
+		resp = append(resp, siteResponse{
+			ID: s.ID, Name: s.Name, Type: s.Type,
+			Municipality: s.Municipality, Region: s.Region, PostCode: s.PostCode,
+		})
+	}
+	return resp
+}
+
+type namedLocationResponse struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type,omitempty"`
+}
+
+func toComplexResponses(complexes []application.Complex) []namedLocationResponse {
+	resp := make([]namedLocationResponse, 0, len(complexes))
+	for _, x := range complexes {
+		resp = append(resp, namedLocationResponse{ID: x.ID, Name: x.Name, Type: x.Type})
+	}
+	return resp
+}
+
+func toStreetResponses(streets []application.Street) []namedLocationResponse {
+	resp := make([]namedLocationResponse, 0, len(streets))
+	for _, s := range streets {
+		resp = append(resp, namedLocationResponse{ID: s.ID, Name: s.Name, Type: s.Type})
+	}
+	return resp
+}

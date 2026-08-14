@@ -27,6 +27,7 @@ const (
 	SpeedyConfigLanguage                = "language"
 	SpeedyConfigClientSystemID          = "client_system_id"
 	SpeedyConfigDefaultCourierServiceID = "default_courier_service_id"
+	SpeedyConfigDefaultOfficeServiceID  = "default_office_service_id"
 	SpeedyConfigDefaultLockerServiceID  = "default_locker_service_id"
 	SpeedyConfigDefaultParcelWeightKg   = "default_parcel_weight_kg"
 )

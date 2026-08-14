@@ -3,6 +3,8 @@ package infrastructure
 import (
 	"context"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -22,12 +24,22 @@ func NewPostgresRepository(db *pgxpool.Pool) *PostgresRepository {
 	return &PostgresRepository{db: db}
 }
 
-const orderColumns = `
+// addressColumnsFor returns the 16 structured Speedy-address columns for a
+// given order-address side ("shipping" or "billing"), in the order scanOrder
+// and the INSERT expect.
+func addressColumnsFor(prefix string) string {
+	return prefix + `_recipient_name, ` + prefix + `_phone, ` + prefix + `_country_code, ` + prefix + `_country_id, ` +
+		prefix + `_site_id, ` + prefix + `_city, ` + prefix + `_post_code, ` + prefix + `_complex_id, ` +
+		prefix + `_complex_name, ` + prefix + `_street_id, ` + prefix + `_street_name, ` + prefix + `_street_no, ` +
+		prefix + `_block_no, ` + prefix + `_entrance_no, ` + prefix + `_floor_no, ` + prefix + `_apartment_no`
+}
+
+var orderColumns = `
 	id, user_id, order_number, status, total_amount, total_currency, placed_at,
 	contact_name, contact_email, contact_phone,
-	shipping_recipient_name, shipping_phone, shipping_line1, shipping_line2, shipping_city, shipping_region, shipping_postal_code, shipping_country_code,
-	billing_recipient_name, billing_phone, billing_line1, billing_line2, billing_city, billing_region, billing_postal_code, billing_country_code,
-	delivery_method, delivery_fee_amount, delivery_fee_currency, payment_method,
+	` + addressColumnsFor("shipping") + `,
+	` + addressColumnsFor("billing") + `,
+	delivery_method, delivery_fee_amount, delivery_fee_currency, payment_method, parcel_weight_grams,
 	carrier, tracking_number, shipment_status, speedy_shipment_id, delivery_office_id, viewed_by_admin_at, reservation_id, cart_guest_token,
 	discount_code, discount_amount_minor, discount_amount_currency,
 	created_at, updated_at`
@@ -146,24 +158,25 @@ func (r *PostgresRepository) Create(ctx context.Context, order domain.Order) (*d
 	}
 	defer tx.Rollback(ctx)
 
-	row := tx.QueryRow(ctx, `
-		INSERT INTO orders (
-			user_id, order_number, status, total_amount, total_currency, placed_at,
-			contact_name, contact_email, contact_phone,
-			shipping_recipient_name, shipping_phone, shipping_line1, shipping_line2, shipping_city, shipping_region, shipping_postal_code, shipping_country_code,
-			billing_recipient_name, billing_phone, billing_line1, billing_line2, billing_city, billing_region, billing_postal_code, billing_country_code,
-			delivery_method, delivery_fee_amount, delivery_fee_currency, payment_method, delivery_office_id, reservation_id, cart_guest_token,
-			discount_code, discount_amount_minor, discount_amount_currency
-		) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35)
-		RETURNING `+orderColumns,
+	insertCols := `
+		user_id, order_number, status, total_amount, total_currency, placed_at,
+		contact_name, contact_email, contact_phone,
+		` + addressColumnsFor("shipping") + `,
+		` + addressColumnsFor("billing") + `,
+		delivery_method, delivery_fee_amount, delivery_fee_currency, payment_method, parcel_weight_grams, delivery_office_id, reservation_id, cart_guest_token,
+		discount_code, discount_amount_minor, discount_amount_currency`
+
+	args := []any{
 		order.UserID, order.OrderNumber, order.Status, order.Total.AmountMinor, order.Total.Currency, order.PlacedAt,
 		order.ContactName, order.ContactEmail, order.ContactPhone,
-		order.ShippingAddress.RecipientName, order.ShippingAddress.Phone, order.ShippingAddress.Line1, order.ShippingAddress.Line2,
-		order.ShippingAddress.City, order.ShippingAddress.Region, order.ShippingAddress.PostalCode, order.ShippingAddress.CountryCode,
-		order.BillingAddress.RecipientName, order.BillingAddress.Phone, order.BillingAddress.Line1, order.BillingAddress.Line2,
-		order.BillingAddress.City, order.BillingAddress.Region, order.BillingAddress.PostalCode, order.BillingAddress.CountryCode,
-		order.DeliveryMethod, order.DeliveryFee.AmountMinor, order.DeliveryFee.Currency, order.PaymentMethod, order.DeliveryOfficeID, order.ReservationID, order.CartGuestToken,
+	}
+	args = append(args, addressArgs(order.ShippingAddress)...)
+	args = append(args, addressArgs(order.BillingAddress)...)
+	args = append(args,
+		order.DeliveryMethod, order.DeliveryFee.AmountMinor, order.DeliveryFee.Currency, order.PaymentMethod, order.ParcelWeightGrams, order.DeliveryOfficeID, order.ReservationID, order.CartGuestToken,
 		order.DiscountCode, discountAmountMinor(order.DiscountAmount), discountAmountCurrency(order.DiscountAmount))
+
+	row := tx.QueryRow(ctx, `INSERT INTO orders (`+insertCols+`) VALUES (`+placeholders(len(args))+`) RETURNING `+orderColumns, args...)
 
 	created, err := scanOrder(row)
 	if err != nil {
@@ -216,6 +229,24 @@ func (r *PostgresRepository) Create(ctx context.Context, order domain.Order) (*d
 		return nil, err
 	}
 	return created, nil
+}
+
+func (r *PostgresRepository) SaveShippingQuotes(ctx context.Context, orderID uuid.UUID, quotes []application.ShippingQuote) error {
+	batch := &pgx.Batch{}
+	for _, q := range quotes {
+		batch.Queue(`
+			INSERT INTO order_shipping_quotes (order_id, delivery_method, service_id, amount_minor, currency)
+			VALUES ($1, $2, $3, $4, $5)`,
+			orderID, q.DeliveryMethod, q.ServiceID, q.Amount.AmountMinor, q.Amount.Currency)
+	}
+	br := r.db.SendBatch(ctx, batch)
+	defer br.Close()
+	for range quotes {
+		if _, err := br.Exec(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *PostgresRepository) UpdateFulfillment(ctx context.Context, id uuid.UUID, input application.UpdateFulfillmentInput) (*domain.Order, error) {
@@ -666,30 +697,67 @@ func scanCountBreakdown(rows pgx.Rows) ([]application.CountBreakdown, error) {
 	return result, rows.Err()
 }
 
+// addressArgs returns the 16 structured-address values for an OrderAddress in
+// the column order used by addressColumnsFor and scanOrder.
+func addressArgs(a domain.OrderAddress) []any {
+	return []any{
+		a.RecipientName, a.Phone, a.CountryCode, a.CountryID,
+		a.SiteID, a.City, a.PostCode, a.ComplexID,
+		a.ComplexName, a.StreetID, a.StreetName, a.StreetNo,
+		a.BlockNo, a.EntranceNo, a.FloorNo, a.ApartmentNo,
+	}
+}
+
+// addressScanTargets returns pointers to an OrderAddress's fields matching the
+// addressColumnsFor order, so scanOrder can read straight into the snapshot.
+func addressScanTargets(a *domain.OrderAddress) []any {
+	return []any{
+		&a.RecipientName, &a.Phone, &a.CountryCode, &a.CountryID,
+		&a.SiteID, &a.City, &a.PostCode, &a.ComplexID,
+		&a.ComplexName, &a.StreetID, &a.StreetName, &a.StreetNo,
+		&a.BlockNo, &a.EntranceNo, &a.FloorNo, &a.ApartmentNo,
+	}
+}
+
+// placeholders returns a positional-parameter list "$1,$2,...,$n".
+func placeholders(n int) string {
+	var b strings.Builder
+	for i := 1; i <= n; i++ {
+		if i > 1 {
+			b.WriteByte(',')
+		}
+		b.WriteByte('$')
+		b.WriteString(strconv.Itoa(i))
+	}
+	return b.String()
+}
+
 func scanOrder(row pgx.Row) (*domain.Order, error) {
 	var o domain.Order
 	var status string
 	var amount int64
 	var currency string
 	var contactName, contactEmail, contactPhone string
-	var shipRecipient, shipPhone, shipLine1, shipLine2, shipCity, shipRegion, shipPostal, shipCountry string
-	var billRecipient, billPhone, billLine1, billLine2, billCity, billRegion, billPostal, billCountry string
 	var deliveryMethod, paymentMethod string
 	var deliveryFeeAmount int64
 	var deliveryFeeCurrency string
 	var discountAmountMinorCol *int64
 	var discountAmountCurrencyCol *string
 
-	err := row.Scan(
+	targets := []any{
 		&o.ID, &o.UserID, &o.OrderNumber, &status, &amount, &currency, &o.PlacedAt,
 		&contactName, &contactEmail, &contactPhone,
-		&shipRecipient, &shipPhone, &shipLine1, &shipLine2, &shipCity, &shipRegion, &shipPostal, &shipCountry,
-		&billRecipient, &billPhone, &billLine1, &billLine2, &billCity, &billRegion, &billPostal, &billCountry,
-		&deliveryMethod, &deliveryFeeAmount, &deliveryFeeCurrency, &paymentMethod,
+	}
+	targets = append(targets, addressScanTargets(&o.ShippingAddress)...)
+	targets = append(targets, addressScanTargets(&o.BillingAddress)...)
+	targets = append(targets,
+		&deliveryMethod, &deliveryFeeAmount, &deliveryFeeCurrency, &paymentMethod, &o.ParcelWeightGrams,
 		&o.Carrier, &o.TrackingNumber, &o.ShipmentStatus, &o.SpeedyShipmentID, &o.DeliveryOfficeID, &o.ViewedByAdminAt, &o.ReservationID, &o.CartGuestToken,
 		&o.DiscountCode, &discountAmountMinorCol, &discountAmountCurrencyCol,
 		&o.CreatedAt, &o.UpdatedAt,
 	)
+
+	err := row.Scan(targets...)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrOrderNotFound
 	}
@@ -700,14 +768,6 @@ func scanOrder(row pgx.Row) (*domain.Order, error) {
 	o.Status = domain.OrderStatus(status)
 	o.Total = money.Money{AmountMinor: amount, Currency: currency}
 	o.ContactName, o.ContactEmail, o.ContactPhone = contactName, contactEmail, contactPhone
-	o.ShippingAddress = domain.OrderAddress{
-		RecipientName: shipRecipient, Phone: shipPhone, Line1: shipLine1, Line2: shipLine2,
-		City: shipCity, Region: shipRegion, PostalCode: shipPostal, CountryCode: shipCountry,
-	}
-	o.BillingAddress = domain.OrderAddress{
-		RecipientName: billRecipient, Phone: billPhone, Line1: billLine1, Line2: billLine2,
-		City: billCity, Region: billRegion, PostalCode: billPostal, CountryCode: billCountry,
-	}
 	o.DeliveryMethod = deliveryMethod
 	o.DeliveryFee = money.Money{AmountMinor: deliveryFeeAmount, Currency: deliveryFeeCurrency}
 	o.PaymentMethod = paymentMethod

@@ -252,7 +252,9 @@ func formatMoney(m money.Money) string {
 }
 
 func formatOrderAddress(a checkoutapplication.OrderAddress) string {
-	parts := []string{a.RecipientName, a.Line1, a.Line2, a.PostalCode, a.City, a.Region, a.CountryCode}
+	street := strings.TrimSpace(a.StreetName + " " + a.StreetNo)
+	cityLine := strings.TrimSpace(a.PostCode + " " + a.City)
+	parts := []string{a.RecipientName, street, a.ComplexName, a.BlockNo, a.FloorNo, a.ApartmentNo, cityLine, a.CountryCode}
 	kept := parts[:0]
 	for _, p := range parts {
 		if strings.TrimSpace(p) != "" {
@@ -300,6 +302,7 @@ func (a *checkoutCartGatewayAdapter) GetCart(ctx context.Context, owner checkout
 			Quantity:          item.Quantity,
 			UnitPrice:         item.UnitPrice,
 			AvailableQuantity: item.AvailableQuantity,
+			WeightGrams:       item.WeightGrams,
 		})
 	}
 	return checkoutapplication.CartSnapshot{ID: cart.ID, Lines: lines}, nil
@@ -424,33 +427,29 @@ func (a *checkoutOrderGatewayAdapter) CreateOrder(ctx context.Context, input che
 	}
 
 	reservationID := input.ReservationID
+	var deliveryOfficeID *string
+	if input.DeliveryOfficeID != "" {
+		deliveryOfficeID = &input.DeliveryOfficeID
+	}
 	order, err := a.orders.CreateOrder(ctx, input.UserID, ordersapplication.CreateOrderInput{
-		OrderNumber:  input.OrderNumber,
-		Status:       input.Status,
-		Total:        input.Total,
-		PlacedAt:     time.Now(),
-		ContactName:  input.ContactName,
-		ContactEmail: input.ContactEmail,
-		ContactPhone: input.ContactPhone,
-		ShippingAddress: ordersdomain.OrderAddress{
-			RecipientName: input.ShippingAddress.RecipientName, Phone: input.ShippingAddress.Phone,
-			Line1: input.ShippingAddress.Line1, Line2: input.ShippingAddress.Line2,
-			City: input.ShippingAddress.City, Region: input.ShippingAddress.Region,
-			PostalCode: input.ShippingAddress.PostalCode, CountryCode: input.ShippingAddress.CountryCode,
-		},
-		BillingAddress: ordersdomain.OrderAddress{
-			RecipientName: input.BillingAddress.RecipientName, Phone: input.BillingAddress.Phone,
-			Line1: input.BillingAddress.Line1, Line2: input.BillingAddress.Line2,
-			City: input.BillingAddress.City, Region: input.BillingAddress.Region,
-			PostalCode: input.BillingAddress.PostalCode, CountryCode: input.BillingAddress.CountryCode,
-		},
-		DeliveryMethod: input.DeliveryMethod,
-		DeliveryFee:    input.DeliveryFee,
-		PaymentMethod:  input.PaymentMethod,
-		Payment:        payment,
-		ReservationID:  &reservationID,
-		CartGuestToken: input.CartGuestToken,
-		Items:          items,
+		OrderNumber:       input.OrderNumber,
+		Status:            input.Status,
+		Total:             input.Total,
+		PlacedAt:          time.Now(),
+		ContactName:       input.ContactName,
+		ContactEmail:      input.ContactEmail,
+		ContactPhone:      input.ContactPhone,
+		ShippingAddress:   toOrdersAddress(input.ShippingAddress),
+		BillingAddress:    toOrdersAddress(input.BillingAddress),
+		DeliveryMethod:    input.DeliveryMethod,
+		DeliveryFee:       input.DeliveryFee,
+		DeliveryOfficeID:  deliveryOfficeID,
+		PaymentMethod:     input.PaymentMethod,
+		Payment:           payment,
+		ParcelWeightGrams: input.ParcelWeightGrams,
+		ReservationID:     &reservationID,
+		CartGuestToken:    input.CartGuestToken,
+		Items:             items,
 	})
 	if err != nil {
 		return checkoutapplication.OrderResult{}, err
@@ -479,6 +478,18 @@ func (a *checkoutOrderGatewayAdapter) CreateOrder(ctx context.Context, input che
 	}, nil
 }
 
+func (a *checkoutOrderGatewayAdapter) SaveShippingQuotes(ctx context.Context, orderID uuid.UUID, quotes []checkoutapplication.ShippingQuote) error {
+	mapped := make([]ordersapplication.ShippingQuote, 0, len(quotes))
+	for _, q := range quotes {
+		mapped = append(mapped, ordersapplication.ShippingQuote{
+			DeliveryMethod: q.DeliveryMethod,
+			ServiceID:      q.ServiceID,
+			Amount:         q.Amount,
+		})
+	}
+	return a.orders.SaveShippingQuotes(ctx, orderID, mapped)
+}
+
 func (a *checkoutOrderGatewayAdapter) SetShipmentInfo(ctx context.Context, orderID uuid.UUID, carrier, trackingNumber, shipmentID, status string) error {
 	_, err := a.orders.UpdateFulfillment(ctx, orderID, ordersapplication.UpdateFulfillmentInput{
 		Carrier:        &carrier,
@@ -502,27 +513,23 @@ func (a *checkoutOrderGatewayAdapter) FindByProviderOrderID(ctx context.Context,
 		officeID = *order.DeliveryOfficeID
 	}
 	return checkoutapplication.OrderForFinalize{
-		ID:               order.ID,
-		OrderNumber:      order.OrderNumber,
-		Status:           string(order.Status),
-		UserID:           order.UserID,
-		CartGuestToken:   order.CartGuestToken,
-		ReservationID:    order.ReservationID,
-		DeliveryMethod:   order.DeliveryMethod,
-		DeliveryOfficeID: officeID,
-		PaymentMethod:    order.PaymentMethod,
-		ContactName:      order.ContactName,
-		ContactEmail:     order.ContactEmail,
-		ContactPhone:     order.ContactPhone,
-		ShippingAddress: checkoutapplication.OrderAddress{
-			RecipientName: order.ShippingAddress.RecipientName, Phone: order.ShippingAddress.Phone,
-			Line1: order.ShippingAddress.Line1, Line2: order.ShippingAddress.Line2,
-			City: order.ShippingAddress.City, Region: order.ShippingAddress.Region,
-			PostalCode: order.ShippingAddress.PostalCode, CountryCode: order.ShippingAddress.CountryCode,
-		},
-		Total:       order.Total,
-		DeliveryFee: order.DeliveryFee,
-		Items:       toCheckoutResultItems(order.Items),
+		ID:                order.ID,
+		OrderNumber:       order.OrderNumber,
+		Status:            string(order.Status),
+		UserID:            order.UserID,
+		CartGuestToken:    order.CartGuestToken,
+		ReservationID:     order.ReservationID,
+		DeliveryMethod:    order.DeliveryMethod,
+		DeliveryOfficeID:  officeID,
+		PaymentMethod:     order.PaymentMethod,
+		ContactName:       order.ContactName,
+		ContactEmail:      order.ContactEmail,
+		ContactPhone:      order.ContactPhone,
+		ShippingAddress:   toCheckoutOrderAddress(order.ShippingAddress),
+		Total:             order.Total,
+		DeliveryFee:       order.DeliveryFee,
+		ParcelWeightGrams: order.ParcelWeightGrams,
+		Items:             toCheckoutResultItems(order.Items),
 	}, nil
 }
 
@@ -610,6 +617,31 @@ type checkoutFulfillmentGatewayAdapter struct {
 	fulfillment *fulfillmentapplication.Service
 }
 
+// toOrdersAddress and toCheckoutOrderAddress bridge the identically-shaped
+// structured-address DTOs of the checkout and orders modules (each module owns
+// its own type to avoid a cross-module dependency).
+func toOrdersAddress(a checkoutapplication.OrderAddress) ordersdomain.OrderAddress {
+	return ordersdomain.OrderAddress{
+		RecipientName: a.RecipientName, Phone: a.Phone,
+		CountryCode: a.CountryCode, CountryID: a.CountryID, SiteID: a.SiteID,
+		City: a.City, PostCode: a.PostCode,
+		ComplexID: a.ComplexID, ComplexName: a.ComplexName,
+		StreetID: a.StreetID, StreetName: a.StreetName, StreetNo: a.StreetNo,
+		BlockNo: a.BlockNo, EntranceNo: a.EntranceNo, FloorNo: a.FloorNo, ApartmentNo: a.ApartmentNo,
+	}
+}
+
+func toCheckoutOrderAddress(a ordersdomain.OrderAddress) checkoutapplication.OrderAddress {
+	return checkoutapplication.OrderAddress{
+		RecipientName: a.RecipientName, Phone: a.Phone,
+		CountryCode: a.CountryCode, CountryID: a.CountryID, SiteID: a.SiteID,
+		City: a.City, PostCode: a.PostCode,
+		ComplexID: a.ComplexID, ComplexName: a.ComplexName,
+		StreetID: a.StreetID, StreetName: a.StreetName, StreetNo: a.StreetNo,
+		BlockNo: a.BlockNo, EntranceNo: a.EntranceNo, FloorNo: a.FloorNo, ApartmentNo: a.ApartmentNo,
+	}
+}
+
 func (a *checkoutFulfillmentGatewayAdapter) IsProviderEnabled(ctx context.Context, provider string) bool {
 	return a.fulfillment.IsEnabled(ctx, provider)
 }
@@ -621,20 +653,41 @@ func (a *checkoutFulfillmentGatewayAdapter) CreateShipment(ctx context.Context, 
 		ContactName:    input.ContactName,
 		Phone:          input.Phone,
 		Email:          input.Email,
-		City:           input.Address.City,
-		PostalCode:     input.Address.PostalCode,
-		Line1:          input.Address.Line1,
-		Line2:          input.Address.Line2,
-		CountryCode:    input.Address.CountryCode,
+		CountryID:      input.Address.CountryID,
+		SiteID:         input.Address.SiteID,
+		ComplexID:      input.Address.ComplexID,
+		StreetID:       input.Address.StreetID,
+		StreetNo:       input.Address.StreetNo,
+		BlockNo:        input.Address.BlockNo,
+		EntranceNo:     input.Address.EntranceNo,
+		FloorNo:        input.Address.FloorNo,
+		ApartmentNo:    input.Address.ApartmentNo,
 		OfficeID:       input.OfficeID,
 		RequireCOD:     input.RequireCOD,
 		CODAmount:      input.CODAmount,
 		Ref1:           input.Ref1,
+		WeightKg:       input.WeightKg,
 	})
 	if err != nil {
 		return checkoutapplication.ShipmentResult{}, err
 	}
 	return checkoutapplication.ShipmentResult{ShipmentID: result.ShipmentID, ParcelID: result.ParcelID}, nil
+}
+
+func (a *checkoutFulfillmentGatewayAdapter) CalculateShippingCosts(ctx context.Context, provider string, siteID int64, weightKg float64) ([]checkoutapplication.ShippingQuote, error) {
+	results, err := a.fulfillment.CalculateShippingCosts(ctx, provider, siteID, weightKg)
+	if err != nil {
+		return nil, err
+	}
+	quotes := make([]checkoutapplication.ShippingQuote, 0, len(results))
+	for _, r := range results {
+		quotes = append(quotes, checkoutapplication.ShippingQuote{
+			DeliveryMethod: r.DeliveryMethod,
+			ServiceID:      r.ServiceID,
+			Amount:         r.Amount,
+		})
+	}
+	return quotes, nil
 }
 
 // fulfillmentOrderGatewayAdapter implements fulfillment's OrderGateway port

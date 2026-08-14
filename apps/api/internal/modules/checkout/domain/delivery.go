@@ -7,8 +7,9 @@ import "github.com/adotomov/fashion-store/apps/api/internal/shared/money"
 // carriers later only needs this list (and the admin's tracking fields) to
 // change, not the checkout orchestration.
 const (
-	DeliveryMethodSpeedy  = "speedy"
-	DeliveryMethodEasyBox = "easybox"
+	DeliveryMethodSpeedy       = "speedy"
+	DeliveryMethodSpeedyOffice = "speedy_office"
+	DeliveryMethodEasyBox      = "easybox"
 )
 
 type DeliveryMethod struct {
@@ -19,8 +20,21 @@ type DeliveryMethod struct {
 
 func DeliveryMethods() []DeliveryMethod {
 	return []DeliveryMethod{
-		{Code: DeliveryMethodSpeedy, Name: "Speedy Courier", Fee: money.Money{AmountMinor: 299, Currency: "EUR"}},
+		{Code: DeliveryMethodSpeedy, Name: "Deliver to Address", Fee: money.Money{AmountMinor: 250, Currency: "EUR"}},
+		{Code: DeliveryMethodSpeedyOffice, Name: "Deliver to Office", Fee: money.Money{AmountMinor: 250, Currency: "EUR"}},
 		{Code: DeliveryMethodEasyBox, Name: "EasyBox Locker", Fee: money.Money{AmountMinor: 0, Currency: "EUR"}},
+	}
+}
+
+// RequiresOffice reports whether a delivery method is collected from a Speedy
+// office or EasyBox locker (so checkout must capture a DeliveryOfficeID) rather
+// than delivered to the door.
+func RequiresOffice(deliveryMethodCode string) bool {
+	switch deliveryMethodCode {
+	case DeliveryMethodSpeedyOffice, DeliveryMethodEasyBox:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -34,12 +48,13 @@ func FindDeliveryMethod(code string) (DeliveryMethod, bool) {
 }
 
 // ProviderFor maps a delivery method to the logistics provider that
-// fulfills it. Both speedy and easybox are fulfilled through the same
-// Speedy account (door delivery vs. APT/locker office type), so a single
-// admin toggle controls both.
+// fulfills it. Speedy door delivery, Speedy office pickup and EasyBox lockers
+// are all fulfilled through the same Speedy account (differing only by
+// destination type — address, OFFICE, or APT), so a single admin toggle
+// controls all three.
 func ProviderFor(deliveryMethodCode string) string {
 	switch deliveryMethodCode {
-	case DeliveryMethodSpeedy, DeliveryMethodEasyBox:
+	case DeliveryMethodSpeedy, DeliveryMethodSpeedyOffice, DeliveryMethodEasyBox:
 		return "speedy"
 	default:
 		return ""

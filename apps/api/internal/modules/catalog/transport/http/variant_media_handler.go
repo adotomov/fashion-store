@@ -19,6 +19,10 @@ type variantResponse struct {
 	ID                string                   `json:"id"`
 	ProductID         string                   `json:"product_id"`
 	PriceOverride     *moneyResponse           `json:"price_override,omitempty"`
+	WeightGrams       int                      `json:"weight_grams"`
+	LengthCM          int                      `json:"length_cm"`
+	WidthCM           int                      `json:"width_cm"`
+	HeightCM          int                      `json:"height_cm"`
 	AttributeValueIDs []string                 `json:"attribute_value_ids"`
 	Attributes        []attributeValueResponse `json:"attributes"`
 	InventoryItemID   *string                  `json:"inventory_item_id,omitempty"`
@@ -31,6 +35,10 @@ func toVariantResponse(v domain.ProductVariant) variantResponse {
 	resp := variantResponse{
 		ID:                v.ID.String(),
 		ProductID:         v.ProductID.String(),
+		WeightGrams:       v.WeightGrams,
+		LengthCM:          v.LengthCM,
+		WidthCM:           v.WidthCM,
+		HeightCM:          v.HeightCM,
 		AttributeValueIDs: []string{},
 		QuantityAvailable: v.QuantityAvailable,
 		CreatedAt:         v.CreatedAt.Format(timeFormat),
@@ -55,6 +63,10 @@ type variantRequest struct {
 	AttributeValueIDs  []string       `json:"attribute_value_ids"`
 	PriceOverride      *moneyResponse `json:"price_override,omitempty"`
 	ClearPriceOverride bool           `json:"clear_price_override,omitempty"`
+	WeightGrams        int            `json:"weight_grams,omitempty"`
+	LengthCM           int            `json:"length_cm,omitempty"`
+	WidthCM            int            `json:"width_cm,omitempty"`
+	HeightCM           int            `json:"height_cm,omitempty"`
 }
 
 func parseUUIDList(raw []string) ([]uuid.UUID, error) {
@@ -88,7 +100,13 @@ func (h *ProductHandler) createVariant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := application.CreateVariantInput{AttributeValueIDs: attributeValueIDs}
+	input := application.CreateVariantInput{
+		AttributeValueIDs: attributeValueIDs,
+		WeightGrams:       req.WeightGrams,
+		LengthCM:          req.LengthCM,
+		WidthCM:           req.WidthCM,
+		HeightCM:          req.HeightCM,
+	}
 	if req.PriceOverride != nil {
 		input.PriceOverride = &money.Money{AmountMinor: req.PriceOverride.AmountMinor, Currency: req.PriceOverride.Currency}
 	}
@@ -124,6 +142,10 @@ func (h *ProductHandler) updateVariant(w http.ResponseWriter, r *http.Request) {
 	input := application.UpdateVariantInput{
 		AttributeValueIDs:  attributeValueIDs,
 		ClearPriceOverride: req.ClearPriceOverride,
+		WeightGrams:        req.WeightGrams,
+		LengthCM:           req.LengthCM,
+		WidthCM:            req.WidthCM,
+		HeightCM:           req.HeightCM,
 	}
 	if req.PriceOverride != nil {
 		input.PriceOverride = &money.Money{AmountMinor: req.PriceOverride.AmountMinor, Currency: req.PriceOverride.Currency}

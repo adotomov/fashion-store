@@ -73,8 +73,12 @@ func generateOrderNumber() string {
 
 func toOrderAddress(a domain.Address) OrderAddress {
 	return OrderAddress{
-		RecipientName: a.RecipientName, Phone: a.Phone, Line1: a.Line1, Line2: a.Line2,
-		City: a.City, Region: a.Region, PostalCode: a.PostalCode, CountryCode: a.CountryCode,
+		RecipientName: a.RecipientName, Phone: a.Phone,
+		CountryCode: a.CountryCode, CountryID: a.CountryID, SiteID: a.SiteID,
+		City: a.City, PostCode: a.PostCode,
+		ComplexID: a.ComplexID, ComplexName: a.ComplexName,
+		StreetID: a.StreetID, StreetName: a.StreetName, StreetNo: a.StreetNo,
+		BlockNo: a.BlockNo, EntranceNo: a.EntranceNo, FloorNo: a.FloorNo, ApartmentNo: a.ApartmentNo,
 	}
 }
 
@@ -82,8 +86,12 @@ func toOrderAddress(a domain.Address) OrderAddress {
 // used when booking the shipment during webhook-driven settlement.
 func addressFromOrder(a OrderAddress) domain.Address {
 	return domain.Address{
-		RecipientName: a.RecipientName, Phone: a.Phone, Line1: a.Line1, Line2: a.Line2,
-		City: a.City, Region: a.Region, PostalCode: a.PostalCode, CountryCode: a.CountryCode,
+		RecipientName: a.RecipientName, Phone: a.Phone,
+		CountryCode: a.CountryCode, CountryID: a.CountryID, SiteID: a.SiteID,
+		City: a.City, PostCode: a.PostCode,
+		ComplexID: a.ComplexID, ComplexName: a.ComplexName,
+		StreetID: a.StreetID, StreetName: a.StreetName, StreetNo: a.StreetNo,
+		BlockNo: a.BlockNo, EntranceNo: a.EntranceNo, FloorNo: a.FloorNo, ApartmentNo: a.ApartmentNo,
 	}
 }
 
@@ -193,7 +201,7 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 	if !s.fulfillment.IsProviderEnabled(ctx, domain.ProviderFor(deliveryMethod.Code)) {
 		return PlaceOrderResult{}, domain.ErrDeliveryMethodUnavailable
 	}
-	if deliveryMethod.Code == domain.DeliveryMethodEasyBox && input.DeliveryOfficeID == "" {
+	if domain.RequiresOffice(deliveryMethod.Code) && input.DeliveryOfficeID == "" {
 		return PlaceOrderResult{}, domain.ErrOfficeRequired
 	}
 
@@ -234,6 +242,7 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 	hasSessionHold := sessionRes != nil && sessionRes.ExpiresAt.After(time.Now())
 
 	var subtotal int64
+	var parcelWeightGrams int
 	currency := deliveryMethod.Fee.Currency
 	reserveLines := make([]ReserveLine, 0, len(cartSnap.Lines))
 	orderItems := make([]CreateOrderItemInput, 0, len(cartSnap.Lines))
@@ -242,6 +251,7 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 			return PlaceOrderResult{}, domain.ErrInsufficientStock
 		}
 		subtotal += line.UnitPrice.AmountMinor * int64(line.Quantity)
+		parcelWeightGrams += line.WeightGrams * line.Quantity
 		currency = line.UnitPrice.Currency
 		reserveLines = append(reserveLines, ReserveLine{VariantID: line.VariantID, Quantity: line.Quantity})
 		orderItems = append(orderItems, CreateOrderItemInput{
@@ -317,23 +327,24 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 	// never completes the payment (released by the abandoned-payment sweeper).
 	if domain.RequiresUpfrontPayment(input.PaymentMethod) {
 		return s.initiateCardPayment(ctx, owner, cardPaymentParams{
-			orderNumber:      orderNumber,
-			userID:           userID,
-			reservationID:    reservationID,
-			sessionOwned:     sessionOwned,
-			total:            total,
-			contactName:      contactName,
-			contactEmail:     contactEmail,
-			contactPhone:     contactPhone,
-			shippingAddr:     shippingAddr,
-			billingAddr:      billingAddr,
-			deliveryMethod:   deliveryMethod,
-			deliveryOfficeID: input.DeliveryOfficeID,
-			paymentMethod:    input.PaymentMethod,
-			discountCode:     discountCodeStr,
-			discountAmount:   discountAmount,
-			discountCodeID:   discountCodeID,
-			items:            orderItems,
+			orderNumber:       orderNumber,
+			userID:            userID,
+			reservationID:     reservationID,
+			sessionOwned:      sessionOwned,
+			parcelWeightGrams: parcelWeightGrams,
+			total:             total,
+			contactName:       contactName,
+			contactEmail:      contactEmail,
+			contactPhone:      contactPhone,
+			shippingAddr:      shippingAddr,
+			billingAddr:       billingAddr,
+			deliveryMethod:    deliveryMethod,
+			deliveryOfficeID:  input.DeliveryOfficeID,
+			paymentMethod:     input.PaymentMethod,
+			discountCode:      discountCodeStr,
+			discountAmount:    discountAmount,
+			discountCodeID:    discountCodeID,
+			items:             orderItems,
 		})
 	}
 
@@ -346,23 +357,24 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 	}
 
 	result, err := s.orders.CreateOrder(ctx, CreateOrderInput{
-		UserID:           userID,
-		OrderNumber:      orderNumber,
-		ContactName:      contactName,
-		ContactEmail:     contactEmail,
-		ContactPhone:     contactPhone,
-		ShippingAddress:  toOrderAddress(shippingAddr),
-		BillingAddress:   toOrderAddress(billingAddr),
-		DeliveryMethod:   deliveryMethod.Code,
-		DeliveryFee:      deliveryMethod.Fee,
-		DeliveryOfficeID: input.DeliveryOfficeID,
-		PaymentMethod:    input.PaymentMethod,
-		ReservationID:    reservationID,
-		Status:           string(orderStatusPending),
-		Total:            total,
-		DiscountCode:     discountCodeStr,
-		DiscountAmount:   discountAmount,
-		Items:            orderItems,
+		UserID:            userID,
+		OrderNumber:       orderNumber,
+		ContactName:       contactName,
+		ContactEmail:      contactEmail,
+		ContactPhone:      contactPhone,
+		ShippingAddress:   toOrderAddress(shippingAddr),
+		BillingAddress:    toOrderAddress(billingAddr),
+		DeliveryMethod:    deliveryMethod.Code,
+		DeliveryFee:       deliveryMethod.Fee,
+		DeliveryOfficeID:  input.DeliveryOfficeID,
+		PaymentMethod:     input.PaymentMethod,
+		ParcelWeightGrams: parcelWeightGrams,
+		ReservationID:     reservationID,
+		Status:            string(orderStatusPending),
+		Total:             total,
+		DiscountCode:      discountCodeStr,
+		DiscountAmount:    discountAmount,
+		Items:             orderItems,
 	})
 	if err != nil {
 		return PlaceOrderResult{}, err
@@ -382,7 +394,9 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 	_ = s.cart.ClearReservation(ctx, owner)
 	_ = s.cart.ClearCart(ctx, owner)
 
-	s.createShipment(ctx, result, deliveryMethod, shippingAddr, contactName, contactPhone, contactEmail, input.DeliveryOfficeID, input.PaymentMethod, total)
+	weightKg := parcelWeightKg(parcelWeightGrams)
+	s.createShipment(ctx, result, deliveryMethod, shippingAddr, contactName, contactPhone, contactEmail, input.DeliveryOfficeID, input.PaymentMethod, total, weightKg)
+	s.recordShippingQuotes(ctx, result.ID, domain.ProviderFor(deliveryMethod.Code), shippingAddr.SiteID, weightKg)
 
 	// Generate the invoice for every successfully placed order, regardless of
 	// payment or delivery method. Runs after shipment booking so COD/EasyBox
@@ -428,20 +442,21 @@ type cardPaymentParams struct {
 	// sessionOwned is true when reservationID is the checkout-session hold (owned
 	// by the cart, not this order) — in which case a failure here must NOT release
 	// it, so a retry can reuse the same hold.
-	sessionOwned     bool
-	total            money.Money
-	contactName      string
-	contactEmail     string
-	contactPhone     string
-	shippingAddr     domain.Address
-	billingAddr      domain.Address
-	deliveryMethod   domain.DeliveryMethod
-	deliveryOfficeID string
-	paymentMethod    string
-	discountCode     *string
-	discountAmount   *money.Money
-	discountCodeID   uuid.UUID
-	items            []CreateOrderItemInput
+	sessionOwned      bool
+	parcelWeightGrams int
+	total             money.Money
+	contactName       string
+	contactEmail      string
+	contactPhone      string
+	shippingAddr      domain.Address
+	billingAddr       domain.Address
+	deliveryMethod    domain.DeliveryMethod
+	deliveryOfficeID  string
+	paymentMethod     string
+	discountCode      *string
+	discountAmount    *money.Money
+	discountCodeID    uuid.UUID
+	items             []CreateOrderItemInput
 }
 
 // initiateCardPayment opens the Revolut order and persists a pending_payment
@@ -463,17 +478,18 @@ func (s *Service) initiateCardPayment(ctx context.Context, owner CartOwner, p ca
 
 	reservationID := p.reservationID
 	result, err := s.orders.CreateOrder(ctx, CreateOrderInput{
-		UserID:           p.userID,
-		OrderNumber:      p.orderNumber,
-		ContactName:      p.contactName,
-		ContactEmail:     p.contactEmail,
-		ContactPhone:     p.contactPhone,
-		ShippingAddress:  toOrderAddress(p.shippingAddr),
-		BillingAddress:   toOrderAddress(p.billingAddr),
-		DeliveryMethod:   p.deliveryMethod.Code,
-		DeliveryFee:      p.deliveryMethod.Fee,
-		DeliveryOfficeID: p.deliveryOfficeID,
-		PaymentMethod:    p.paymentMethod,
+		UserID:            p.userID,
+		OrderNumber:       p.orderNumber,
+		ContactName:       p.contactName,
+		ContactEmail:      p.contactEmail,
+		ContactPhone:      p.contactPhone,
+		ShippingAddress:   toOrderAddress(p.shippingAddr),
+		BillingAddress:    toOrderAddress(p.billingAddr),
+		DeliveryMethod:    p.deliveryMethod.Code,
+		DeliveryFee:       p.deliveryMethod.Fee,
+		DeliveryOfficeID:  p.deliveryOfficeID,
+		PaymentMethod:     p.paymentMethod,
+		ParcelWeightGrams: p.parcelWeightGrams,
 		Payment: &OrderPaymentRecord{
 			Provider:        paymentProviderRevolut,
 			ProviderOrderID: paymentOrder.ID,
@@ -583,10 +599,12 @@ func (s *Service) FinalizePaidOrder(ctx context.Context, providerOrderID string)
 	// from the cart so the sweeper doesn't later try to reclaim it.
 	_ = s.cart.ClearReservation(ctx, clearOwner)
 
+	weightKg := parcelWeightKg(ord.ParcelWeightGrams)
 	if deliveryMethod, ok := domain.FindDeliveryMethod(ord.DeliveryMethod); ok {
 		s.createShipment(ctx, OrderResult{ID: ord.ID, OrderNumber: ord.OrderNumber}, deliveryMethod,
 			addressFromOrder(ord.ShippingAddress), ord.ContactName, ord.ContactPhone, ord.ContactEmail,
-			ord.DeliveryOfficeID, ord.PaymentMethod, ord.Total)
+			ord.DeliveryOfficeID, ord.PaymentMethod, ord.Total, weightKg)
+		s.recordShippingQuotes(ctx, ord.ID, domain.ProviderFor(deliveryMethod.Code), ord.ShippingAddress.SiteID, weightKg)
 	}
 	if s.invoices != nil {
 		if err := s.invoices.GenerateForOrder(ctx, ord.ID); err != nil {
@@ -742,7 +760,7 @@ func (s *Service) RefundOrder(ctx context.Context, orderID uuid.UUID, amountMino
 // writes the tracking info back onto it. Failures are logged, never
 // returned — a customer's order stays placed even if fulfillment can't be
 // booked immediately; an admin can retry by other means later.
-func (s *Service) createShipment(ctx context.Context, order OrderResult, deliveryMethod domain.DeliveryMethod, shippingAddr domain.Address, contactName, contactPhone, contactEmail, officeID, paymentMethod string, total money.Money) {
+func (s *Service) createShipment(ctx context.Context, order OrderResult, deliveryMethod domain.DeliveryMethod, shippingAddr domain.Address, contactName, contactPhone, contactEmail, officeID, paymentMethod string, total money.Money, weightKg float64) {
 	shipment, err := s.fulfillment.CreateShipment(ctx, CreateShipmentInput{
 		Provider:       domain.ProviderFor(deliveryMethod.Code),
 		DeliveryMethod: deliveryMethod.Code,
@@ -754,6 +772,7 @@ func (s *Service) createShipment(ctx context.Context, order OrderResult, deliver
 		RequireCOD:     paymentMethod != domain.PaymentMethodCardOnline,
 		CODAmount:      total,
 		Ref1:           order.OrderNumber,
+		WeightKg:       weightKg,
 	})
 	if err != nil {
 		s.logger.Error("failed to create logistics shipment for order", "error", err, "order_id", order.ID, "order_number", order.OrderNumber)
@@ -762,5 +781,33 @@ func (s *Service) createShipment(ctx context.Context, order OrderResult, deliver
 
 	if err := s.orders.SetShipmentInfo(ctx, order.ID, domain.ProviderFor(deliveryMethod.Code), shipment.ParcelID, shipment.ShipmentID, "created"); err != nil {
 		s.logger.Error("failed to record shipment info on order", "error", err, "order_id", order.ID)
+	}
+}
+
+// parcelWeightKg converts a summed SKU weight in grams to kilograms for the
+// Speedy calls. Speedy quotes and ships by kilogram.
+func parcelWeightKg(grams int) float64 {
+	return float64(grams) / 1000.0
+}
+
+// recordShippingQuotes asks Speedy what every delivery method would cost to
+// ship this order's parcel and persists the results as write-only reference
+// data — the costs are never shown to the customer or admin. Best-effort: any
+// failure (or an order with no usable weight/site) is logged and swallowed so
+// it never affects an already-placed order.
+func (s *Service) recordShippingQuotes(ctx context.Context, orderID uuid.UUID, provider string, siteID int64, weightKg float64) {
+	if provider == "" || siteID <= 0 || weightKg <= 0 {
+		return
+	}
+	quotes, err := s.fulfillment.CalculateShippingCosts(ctx, provider, siteID, weightKg)
+	if err != nil {
+		s.logger.WarnContext(ctx, "failed to calculate shipping cost quotes", "error", err, "order_id", orderID)
+		return
+	}
+	if len(quotes) == 0 {
+		return
+	}
+	if err := s.orders.SaveShippingQuotes(ctx, orderID, quotes); err != nil {
+		s.logger.WarnContext(ctx, "failed to save shipping cost quotes", "error", err, "order_id", orderID)
 	}
 }

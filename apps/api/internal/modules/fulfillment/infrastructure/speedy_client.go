@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"time"
 
 	"github.com/adotomov/fashion-store/apps/api/internal/modules/fulfillment/application"
+	"github.com/adotomov/fashion-store/apps/api/internal/shared/money"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
@@ -50,12 +52,19 @@ type speedyPhone struct {
 	Number string `json:"number"`
 }
 
+// speedyAddress is Speedy's structured (code-based) address. We send resolved
+// location IDs — siteId (city), complexId (кв./жк.), streetId — plus the
+// free-text house details, so Speedy never has to guess-resolve typed text.
 type speedyAddress struct {
-	CountryCode  string `json:"countryCode,omitempty"`
-	City         string `json:"city,omitempty"`
-	PostCode     string `json:"postCode,omitempty"`
-	AddressLine1 string `json:"addressLine1,omitempty"`
-	AddressLine2 string `json:"addressLine2,omitempty"`
+	CountryID   int64  `json:"countryId,omitempty"`
+	SiteID      int64  `json:"siteId,omitempty"`
+	ComplexID   int64  `json:"complexId,omitempty"`
+	StreetID    int64  `json:"streetId,omitempty"`
+	StreetNo    string `json:"streetNo,omitempty"`
+	BlockNo     string `json:"blockNo,omitempty"`
+	EntranceNo  string `json:"entranceNo,omitempty"`
+	FloorNo     string `json:"floorNo,omitempty"`
+	ApartmentNo string `json:"apartmentNo,omitempty"`
 }
 
 type speedyRecipient struct {
@@ -137,11 +146,15 @@ func (c *SpeedyHTTPClient) CreateShipment(ctx context.Context, req application.C
 		body.Recipient.OfficeID = req.Recipient.OfficeID
 	} else {
 		body.Recipient.Address = &speedyAddress{
-			CountryCode:  req.Recipient.CountryCode,
-			City:         req.Recipient.City,
-			PostCode:     req.Recipient.PostalCode,
-			AddressLine1: req.Recipient.Line1,
-			AddressLine2: req.Recipient.Line2,
+			CountryID:   req.Recipient.CountryID,
+			SiteID:      req.Recipient.SiteID,
+			ComplexID:   req.Recipient.ComplexID,
+			StreetID:    req.Recipient.StreetID,
+			StreetNo:    req.Recipient.StreetNo,
+			BlockNo:     req.Recipient.BlockNo,
+			EntranceNo:  req.Recipient.EntranceNo,
+			FloorNo:     req.Recipient.FloorNo,
+			ApartmentNo: req.Recipient.ApartmentNo,
 		}
 	}
 
@@ -164,6 +177,78 @@ func (c *SpeedyHTTPClient) CreateShipment(ctx context.Context, req application.C
 		return application.ShipmentResult{}, fmt.Errorf("speedy create shipment returned no parcels")
 	}
 	return application.ShipmentResult{ShipmentID: resp.ID, ParcelID: resp.Parcels[0].ParcelID}, nil
+}
+
+type calculateContent struct {
+	ParcelsCount int     `json:"parcelsCount"`
+	TotalWeight  float64 `json:"totalWeight"`
+}
+
+// calculateRecipient is a minimal recipient for pricing — just the destination
+// site. Unlike a shipment it carries no contact name/phone.
+type calculateRecipient struct {
+	PrivatePerson bool           `json:"privatePerson"`
+	Address       *speedyAddress `json:"address,omitempty"`
+}
+
+type calculateRequest struct {
+	speedyAuth
+	// Sender omitted on purpose — Speedy uses the account's default pickup.
+	Recipient calculateRecipient `json:"recipient"`
+	Service   []int64            `json:"service"`
+	Content   calculateContent   `json:"content"`
+	Payment   speedyPayment      `json:"payment"`
+}
+
+type speedyPrice struct {
+	Total    float64 `json:"total"`
+	Currency string  `json:"currency"`
+}
+
+type speedyCalculation struct {
+	ServiceID int64        `json:"serviceId"`
+	Price     *speedyPrice `json:"price"`
+	Error     *speedyError `json:"error"`
+}
+
+type calculateResponse struct {
+	Calculations []speedyCalculation `json:"calculations"`
+	Error        *speedyError        `json:"error"`
+}
+
+func (c *SpeedyHTTPClient) Calculate(ctx context.Context, req application.CalculateRequest) ([]application.CalculationResult, error) {
+	body := calculateRequest{
+		speedyAuth: authFromCreds(req.Creds),
+		Recipient: calculateRecipient{
+			PrivatePerson: true,
+			Address:       &speedyAddress{CountryID: speedyCountryBG, SiteID: req.SiteID},
+		},
+		Service: req.ServiceIDs,
+		Content: calculateContent{ParcelsCount: 1, TotalWeight: req.WeightKg},
+		Payment: speedyPayment{CourierServicePayer: "SENDER"},
+	}
+
+	var resp calculateResponse
+	if err := c.post(ctx, "/calculate", body, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("speedy calculate failed: %s (code %d)", resp.Error.Message, resp.Error.Code)
+	}
+
+	results := make([]application.CalculationResult, 0, len(resp.Calculations))
+	for _, calc := range resp.Calculations {
+		// A single request can return both priced and errored services; keep
+		// only the ones Speedy could actually price.
+		if calc.Error != nil || calc.Price == nil {
+			continue
+		}
+		results = append(results, application.CalculationResult{
+			ServiceID: calc.ServiceID,
+			Amount:    money.Money{AmountMinor: int64(math.Round(calc.Price.Total * 100)), Currency: calc.Price.Currency},
+		})
+	}
+	return results, nil
 }
 
 type trackRequest struct {
@@ -216,11 +301,16 @@ func (c *SpeedyHTTPClient) Track(ctx context.Context, creds application.Credenti
 	return result, nil
 }
 
+// speedyCountryBG is Speedy's numeric country code for Bulgaria; the store
+// ships domestically only for now, so every location lookup is scoped to it.
+const speedyCountryBG = 100
+
 type officeSearchRequest struct {
 	speedyAuth
-	CountryCode string `json:"countryCode,omitempty"`
-	City        string `json:"city,omitempty"`
-	Type        string `json:"type,omitempty"`
+	CountryID int64  `json:"countryId,omitempty"`
+	SiteID    int64  `json:"siteId,omitempty"`
+	Name      string `json:"name,omitempty"`
+	Type      string `json:"type,omitempty"`
 }
 
 type speedyOffice struct {
@@ -234,9 +324,10 @@ type officeSearchResponse struct {
 	Error   *speedyError   `json:"error"`
 }
 
-func (c *SpeedyHTTPClient) SearchOffices(ctx context.Context, creds application.Credentials, city, officeType string) ([]application.Office, error) {
+func (c *SpeedyHTTPClient) SearchOffices(ctx context.Context, creds application.Credentials, siteID int64, name, officeType string) ([]application.Office, error) {
 	var resp officeSearchResponse
-	if err := c.post(ctx, "/location/office", officeSearchRequest{speedyAuth: authFromCreds(creds), City: city, Type: officeType}, &resp); err != nil {
+	req := officeSearchRequest{speedyAuth: authFromCreds(creds), CountryID: speedyCountryBG, SiteID: siteID, Name: name, Type: officeType}
+	if err := c.post(ctx, "/location/office", req, &resp); err != nil {
 		return nil, err
 	}
 	if resp.Error != nil {
@@ -248,6 +339,114 @@ func (c *SpeedyHTTPClient) SearchOffices(ctx context.Context, creds application.
 		offices = append(offices, application.Office{ID: o.ID, Name: o.Name, Type: o.Type})
 	}
 	return offices, nil
+}
+
+type siteSearchRequest struct {
+	speedyAuth
+	CountryID int64  `json:"countryId"`
+	Name      string `json:"name,omitempty"`
+}
+
+type speedySite struct {
+	ID           int64  `json:"id"`
+	Name         string `json:"name"`
+	Type         string `json:"type"`
+	Municipality string `json:"municipality"`
+	Region       string `json:"region"`
+	PostCode     string `json:"postCode"`
+}
+
+type siteSearchResponse struct {
+	Sites []speedySite `json:"sites"`
+	Error *speedyError `json:"error"`
+}
+
+func (c *SpeedyHTTPClient) SearchSites(ctx context.Context, creds application.Credentials, name string) ([]application.Site, error) {
+	var resp siteSearchResponse
+	req := siteSearchRequest{speedyAuth: authFromCreds(creds), CountryID: speedyCountryBG, Name: name}
+	if err := c.post(ctx, "/location/site", req, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("speedy site search failed: %s (code %d)", resp.Error.Message, resp.Error.Code)
+	}
+
+	sites := make([]application.Site, 0, len(resp.Sites))
+	for _, s := range resp.Sites {
+		sites = append(sites, application.Site{
+			ID: s.ID, Name: s.Name, Type: s.Type,
+			Municipality: s.Municipality, Region: s.Region, PostCode: s.PostCode,
+		})
+	}
+	return sites, nil
+}
+
+type complexSearchRequest struct {
+	speedyAuth
+	SiteID int64  `json:"siteId"`
+	Name   string `json:"name,omitempty"`
+}
+
+type speedyComplex struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+type complexSearchResponse struct {
+	Complexes []speedyComplex `json:"complexes"`
+	Error     *speedyError    `json:"error"`
+}
+
+func (c *SpeedyHTTPClient) SearchComplexes(ctx context.Context, creds application.Credentials, siteID int64, name string) ([]application.Complex, error) {
+	var resp complexSearchResponse
+	req := complexSearchRequest{speedyAuth: authFromCreds(creds), SiteID: siteID, Name: name}
+	if err := c.post(ctx, "/location/complex", req, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("speedy complex search failed: %s (code %d)", resp.Error.Message, resp.Error.Code)
+	}
+
+	complexes := make([]application.Complex, 0, len(resp.Complexes))
+	for _, x := range resp.Complexes {
+		complexes = append(complexes, application.Complex{ID: x.ID, Name: x.Name, Type: x.Type})
+	}
+	return complexes, nil
+}
+
+type streetSearchRequest struct {
+	speedyAuth
+	SiteID int64  `json:"siteId"`
+	Name   string `json:"name,omitempty"`
+}
+
+type speedyStreet struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	Type string `json:"type"`
+}
+
+type streetSearchResponse struct {
+	Streets []speedyStreet `json:"streets"`
+	Error   *speedyError   `json:"error"`
+}
+
+func (c *SpeedyHTTPClient) SearchStreets(ctx context.Context, creds application.Credentials, siteID int64, name string) ([]application.Street, error) {
+	var resp streetSearchResponse
+	req := streetSearchRequest{speedyAuth: authFromCreds(creds), SiteID: siteID, Name: name}
+	if err := c.post(ctx, "/location/street", req, &resp); err != nil {
+		return nil, err
+	}
+	if resp.Error != nil {
+		return nil, fmt.Errorf("speedy street search failed: %s (code %d)", resp.Error.Message, resp.Error.Code)
+	}
+
+	streets := make([]application.Street, 0, len(resp.Streets))
+	for _, s := range resp.Streets {
+		streets = append(streets, application.Street{ID: s.ID, Name: s.Name, Type: s.Type})
+	}
+	return streets, nil
 }
 
 func (c *SpeedyHTTPClient) post(ctx context.Context, path string, body, out any) error {

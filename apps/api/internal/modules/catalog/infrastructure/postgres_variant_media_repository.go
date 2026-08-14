@@ -12,7 +12,8 @@ import (
 )
 
 const variantsForQuery = `
-	SELECT v.id, v.product_id, v.price_override_amount, v.price_override_currency, v.created_at, v.updated_at,
+	SELECT v.id, v.product_id, v.price_override_amount, v.price_override_currency,
+	       v.weight_grams, v.length_cm, v.width_cm, v.height_cm, v.created_at, v.updated_at,
 	       ii.id, ii.quantity_on_hand, ii.quantity_reserved
 	FROM product_variants v
 	LEFT JOIN inventory_items ii ON ii.variant_id = v.id
@@ -61,10 +62,12 @@ func (r *PostgresProductRepository) CreateVariant(ctx context.Context, variant d
 	}
 
 	row := tx.QueryRow(ctx, `
-		INSERT INTO product_variants (product_id, price_override_amount, price_override_currency)
-		VALUES ($1, $2, $3)
-		RETURNING id, product_id, price_override_amount, price_override_currency, created_at, updated_at`,
-		variant.ProductID, amount, currency)
+		INSERT INTO product_variants (product_id, price_override_amount, price_override_currency,
+			weight_grams, length_cm, width_cm, height_cm)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+		RETURNING id, product_id, price_override_amount, price_override_currency,
+		          weight_grams, length_cm, width_cm, height_cm, created_at, updated_at`,
+		variant.ProductID, amount, currency, variant.WeightGrams, variant.LengthCM, variant.WidthCM, variant.HeightCM)
 
 	created, err := scanVariant(row)
 	if err != nil {
@@ -93,7 +96,8 @@ func (r *PostgresProductRepository) CreateVariant(ctx context.Context, variant d
 
 func (r *PostgresProductRepository) FindVariantByID(ctx context.Context, variantID uuid.UUID) (*domain.ProductVariant, error) {
 	row := r.db.QueryRow(ctx, `
-		SELECT id, product_id, price_override_amount, price_override_currency, created_at, updated_at
+		SELECT id, product_id, price_override_amount, price_override_currency,
+		       weight_grams, length_cm, width_cm, height_cm, created_at, updated_at
 		FROM product_variants WHERE id = $1`, variantID)
 
 	variant, err := scanVariant(row)
@@ -122,10 +126,12 @@ func (r *PostgresProductRepository) UpdateVariant(ctx context.Context, variant d
 	}
 
 	row := tx.QueryRow(ctx, `
-		UPDATE product_variants SET price_override_amount = $2, price_override_currency = $3, updated_at = NOW()
+		UPDATE product_variants SET price_override_amount = $2, price_override_currency = $3,
+			weight_grams = $4, length_cm = $5, width_cm = $6, height_cm = $7, updated_at = NOW()
 		WHERE id = $1
-		RETURNING id, product_id, price_override_amount, price_override_currency, created_at, updated_at`,
-		variant.ID, amount, currency)
+		RETURNING id, product_id, price_override_amount, price_override_currency,
+		          weight_grams, length_cm, width_cm, height_cm, created_at, updated_at`,
+		variant.ID, amount, currency, variant.WeightGrams, variant.LengthCM, variant.WidthCM, variant.HeightCM)
 
 	updated, err := scanVariant(row)
 	if err != nil {
@@ -173,7 +179,8 @@ func scanVariant(row pgx.Row) (*domain.ProductVariant, error) {
 	var v domain.ProductVariant
 	var amount *int64
 	var currency *string
-	err := row.Scan(&v.ID, &v.ProductID, &amount, &currency, &v.CreatedAt, &v.UpdatedAt)
+	err := row.Scan(&v.ID, &v.ProductID, &amount, &currency,
+		&v.WeightGrams, &v.LengthCM, &v.WidthCM, &v.HeightCM, &v.CreatedAt, &v.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrVariantNotFound
 	}
@@ -192,7 +199,9 @@ func scanVariantWithInventory(row pgx.Row) (*domain.ProductVariant, error) {
 	var currency *string
 	var inventoryItemID *uuid.UUID
 	var onHand, reserved *int
-	err := row.Scan(&v.ID, &v.ProductID, &amount, &currency, &v.CreatedAt, &v.UpdatedAt, &inventoryItemID, &onHand, &reserved)
+	err := row.Scan(&v.ID, &v.ProductID, &amount, &currency,
+		&v.WeightGrams, &v.LengthCM, &v.WidthCM, &v.HeightCM, &v.CreatedAt, &v.UpdatedAt,
+		&inventoryItemID, &onHand, &reserved)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, domain.ErrVariantNotFound
 	}

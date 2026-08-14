@@ -60,7 +60,7 @@ func TestFakeSpeedyClient_TrackSkipsUnknownParcels(t *testing.T) {
 
 func TestFakeSpeedyClient_SearchOfficesReturnsCatalogue(t *testing.T) {
 	client := NewFakeSpeedyClient()
-	offices, err := client.SearchOffices(context.Background(), application.Credentials{}, "Plovdiv", "OFFICE")
+	offices, err := client.SearchOffices(context.Background(), application.Credentials{}, 10135, "", "OFFICE")
 	if err != nil {
 		t.Fatalf("SearchOffices: %v", err)
 	}

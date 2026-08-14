@@ -17,6 +17,7 @@ import {
   type AdminOrder,
   type AdminOrderStatus,
   type PaymentTransaction,
+  formatAdminOrderAddressLines,
   getAdminOrder,
   listAdminOrders,
   listPaymentTransactions,
@@ -323,14 +324,9 @@ export default function AdminOrders() {
                               </Text>
                               <div className="mt-2 text-sm text-stone-700">
                                 <div>{order.shipping_address.recipient_name}</div>
-                                <div>{order.shipping_address.line1}</div>
-                                {order.shipping_address.line2 && <div>{order.shipping_address.line2}</div>}
-                                <div>
-                                  {order.shipping_address.city}
-                                  {order.shipping_address.region ? `, ${order.shipping_address.region}` : ""}{" "}
-                                  {order.shipping_address.postal_code}
-                                </div>
-                                <div>{order.shipping_address.country_code}</div>
+                                {formatAdminOrderAddressLines(order.shipping_address).map((line, i) => (
+                                  <div key={i}>{line}</div>
+                                ))}
                                 {order.shipping_address.phone && <div className="mt-1">{order.shipping_address.phone}</div>}
                               </div>
                             </div>

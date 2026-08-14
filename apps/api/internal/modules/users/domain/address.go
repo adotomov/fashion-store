@@ -6,35 +6,50 @@ import (
 	"github.com/google/uuid"
 )
 
+// Address is a Speedy-resolved delivery address: the city, neighbourhood
+// (complex/кв./жк.) and street are carried as Speedy location codes (SiteID,
+// ComplexID, StreetID) alongside their display names, so a shipment can be
+// created without the carrier having to guess-resolve typed text. Bulgaria is
+// the only supported country for now (CountryCode "BG", CountryID 100).
 type Address struct {
 	ID            uuid.UUID
 	UserID        uuid.UUID
 	Label         string
 	RecipientName string
 	Phone         string
-	Line1         string
-	Line2         string
-	City          string
-	Region        string
-	PostalCode    string
-	CountryCode   string
-	IsDefault     bool
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+
+	CountryCode string
+	CountryID   int64
+	SiteID      int64
+	City        string
+	PostCode    string
+	ComplexID   int64
+	ComplexName string
+	StreetID    int64
+	StreetName  string
+	StreetNo    string
+	BlockNo     string
+	EntranceNo  string
+	FloorNo     string
+	ApartmentNo string
+
+	IsDefault bool
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 func (a Address) Validate() error {
 	if a.RecipientName == "" {
 		return ErrAddressInvalid("recipient_name is required")
 	}
-	if a.Line1 == "" {
-		return ErrAddressInvalid("line1 is required")
+	if a.SiteID <= 0 {
+		return ErrAddressInvalid("city (site) is required")
 	}
-	if a.City == "" {
-		return ErrAddressInvalid("city is required")
+	if a.ComplexID <= 0 {
+		return ErrAddressInvalid("complex (кв./жк.) is required")
 	}
-	if a.PostalCode == "" {
-		return ErrAddressInvalid("postal_code is required")
+	if a.StreetID <= 0 {
+		return ErrAddressInvalid("street is required")
 	}
 	if len(a.CountryCode) != 2 {
 		return ErrAddressInvalid("country_code must be a 2-letter ISO code")

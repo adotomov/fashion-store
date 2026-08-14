@@ -57,6 +57,14 @@ type RecordRefundInput struct {
 	OrderStatus      string // new order status when the refund is completed; "" leaves it unchanged
 }
 
+// ShippingQuote is a Speedy shipping-cost estimate for one delivery method,
+// captured against an order as internal reference data.
+type ShippingQuote struct {
+	DeliveryMethod string
+	ServiceID      string
+	Amount         money.Money
+}
+
 type CreateOrderInput struct {
 	OrderNumber string
 	Status      string
@@ -71,11 +79,12 @@ type CreateOrderInput struct {
 	ShippingAddress domain.OrderAddress
 	BillingAddress  domain.OrderAddress
 
-	DeliveryMethod   string
-	DeliveryFee      money.Money
-	PaymentMethod    string
-	Payment          *CreateOrderPaymentInput
-	DeliveryOfficeID *string
+	DeliveryMethod    string
+	DeliveryFee       money.Money
+	PaymentMethod     string
+	Payment           *CreateOrderPaymentInput
+	DeliveryOfficeID  *string
+	ParcelWeightGrams int
 
 	ReservationID  *uuid.UUID
 	CartGuestToken *uuid.UUID
