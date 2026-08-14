@@ -181,16 +181,19 @@ export function Header({ className }: HeaderProps) {
                         </Text>
                       </Link>
                       {category.children && category.children.length > 0 && (
-                        <ul className="flex flex-col items-center gap-1">
+                        <ul className="mt-1 flex flex-col gap-2 border-t border-stone-200 pt-3">
                           {category.children.map((child) => (
                             <li key={child.id}>
                               <Link
                                 to={`/shop?type=${type.slug}&category_id=${child.id}`}
                                 state={{ resetFilters: true }}
                                 onClick={() => setOpenTypeId(null)}
-                                className="text-xs text-stone-500 transition-colors hover:text-clay-600"
+                                className="group flex items-center gap-2.5"
                               >
-                                {child.name}
+                                <CategoryThumbnail category={child} size="sm" />
+                                <Text size="sm" className="font-medium text-stone-600 group-hover:text-clay-600">
+                                  {child.name}
+                                </Text>
                               </Link>
                             </li>
                           ))}
@@ -260,9 +263,10 @@ export function Header({ className }: HeaderProps) {
                               to={`/shop?type=${type.slug}&category_id=${child.id}`}
                               state={{ resetFilters: true }}
                               onClick={() => setMenuOpen(false)}
-                              className="rounded-sm px-2 py-1.5 text-sm text-stone-500 hover:bg-stone-50"
+                              className="group flex items-center gap-2.5 rounded-sm px-2 py-1.5 text-sm text-stone-500 hover:bg-stone-50"
                             >
-                              {child.name}
+                              <CategoryThumbnail category={child} size="sm" />
+                              <span className="group-hover:text-clay-600">{child.name}</span>
                             </Link>
                           ))}
                         </div>
@@ -279,10 +283,19 @@ export function Header({ className }: HeaderProps) {
   );
 }
 
-function CategoryThumbnail({ category }: { category: NavType["categories"][number] }) {
+function CategoryThumbnail({
+  category,
+  size = "lg",
+}: {
+  category: NavType["categories"][number];
+  size?: "lg" | "sm";
+}) {
+  const box = size === "sm" ? "h-10 w-10 shrink-0" : "aspect-square w-full";
+  const fallbackText = size === "sm" ? "text-sm" : "text-2xl";
+
   if (category.image_url) {
     return (
-      <span className="block aspect-square w-full overflow-hidden rounded-sm bg-stone-100">
+      <span className={cn("block overflow-hidden rounded-sm bg-stone-100", box)}>
         <img
           src={resolveImageUrl(category.image_url)}
           alt={category.name}
@@ -293,8 +306,13 @@ function CategoryThumbnail({ category }: { category: NavType["categories"][numbe
   }
 
   return (
-    <span className="flex aspect-square w-full items-center justify-center rounded-sm bg-gradient-to-br from-stone-100 to-stone-200 transition-colors group-hover:from-clay-50 group-hover:to-clay-100">
-      <span className="font-display text-2xl text-stone-400 group-hover:text-clay-500">
+    <span
+      className={cn(
+        "flex items-center justify-center rounded-sm bg-gradient-to-br from-stone-100 to-stone-200 transition-colors group-hover:from-clay-50 group-hover:to-clay-100",
+        box,
+      )}
+    >
+      <span className={cn("font-display text-stone-400 group-hover:text-clay-500", fallbackText)}>
         {category.name.charAt(0).toUpperCase()}
       </span>
     </span>

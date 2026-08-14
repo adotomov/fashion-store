@@ -146,7 +146,12 @@ export default function Shop() {
     setSelectedCategoryIds((prev) => {
       const ids = new Set(prev);
       for (const slug of selectedTypeSlugs) {
-        navTypes.find((nt) => nt.slug === slug)?.categories.forEach((c) => ids.add(c.id));
+        navTypes
+          .find((nt) => nt.slug === slug)
+          ?.categories.forEach((c) => {
+            ids.add(c.id);
+            c.children?.forEach((child) => ids.add(child.id));
+          });
       }
       return Array.from(ids);
     });
@@ -221,6 +226,13 @@ export default function Shop() {
     return selectedTypeSlugs.flatMap((slug) => categoriesByType.get(slug) ?? []);
   }, [navTypes, selectedTypeSlugs, categoriesByType]);
 
+  // Flattened (parent + children) view for id→name lookups. The filter list
+  // keeps the hierarchy via `depth`, but headings/breadcrumbs need a flat map.
+  const flatVisibleCategories = useMemo(
+    () => visibleCategories.flatMap((c) => [c, ...(c.children ?? [])]),
+    [visibleCategories],
+  );
+
   function toggleInList(list: string[], value: string): string[] {
     return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
   }
@@ -234,7 +246,7 @@ export default function Shop() {
       // categories, removing it drops them, matching how arriving from
       // the nav (type click) scopes the page.
       if (type) {
-        const categoryIds = type.categories.map((c) => c.id);
+        const categoryIds = type.categories.flatMap((c) => [c.id, ...(c.children ?? []).map((ch) => ch.id)]);
         setSelectedCategoryIds((prev) =>
           isCurrentlySelected
             ? prev.filter((id) => !categoryIds.includes(id))
@@ -275,7 +287,10 @@ export default function Shop() {
       id: "category",
       label: t("shop.filter_category", "Category"),
       type: "checkbox",
-      options: visibleCategories.map((c) => ({ id: c.id, label: c.name })),
+      options: visibleCategories.flatMap((c) => [
+        { id: c.id, label: c.name },
+        ...(c.children ?? []).map((child) => ({ id: child.id, label: child.name, depth: 1 })),
+      ]),
     },
     ...facets.map((facet): FilterGroup =>
       facet.attribute_type === "color"
@@ -308,7 +323,7 @@ export default function Shop() {
   const heading = searchQuery
     ? `${t("shop.search_results_for", "Search results for")} "${searchQuery}"`
     : selectedCategoryIds.length === 1
-      ? visibleCategories.find((c) => c.id === selectedCategoryIds[0])?.name ?? t("nav.shop_all", "Shop All")
+      ? flatVisibleCategories.find((c) => c.id === selectedCategoryIds[0])?.name ?? t("nav.shop_all", "Shop All")
       : selectedTypeSlugs.length === 1
         ? navTypes.find((nt) => nt.slug === selectedTypeSlugs[0])?.name ?? t("nav.shop_all", "Shop All")
         : t("shop.all_products", "All Products");

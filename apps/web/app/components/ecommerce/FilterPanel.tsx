@@ -9,6 +9,8 @@ export type FilterOption = {
   id: string;
   label: string;
   count?: number;
+  /** Nesting level (0 = top-level). Used to indent subcategories. */
+  depth?: number;
 };
 
 // Color filter options may carry an explicit id so the panel can toggle by a
@@ -58,7 +60,7 @@ export function FilterPanel({ groups, selected, onToggle, onClear, className }: 
             {group.type === "checkbox" && (
               <ul className="flex flex-col gap-2.5">
                 {group.options.map((option) => (
-                  <li key={option.id}>
+                  <li key={option.id} style={option.depth ? { paddingLeft: `${option.depth * 1.25}rem` } : undefined}>
                     <Checkbox
                       id={`${group.id}-${option.id}`}
                       checked={selected[group.id]?.includes(option.id) ?? false}
