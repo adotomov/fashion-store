@@ -105,9 +105,9 @@ variable "revolut_api_version" {
 }
 
 variable "revolut_enabled" {
-  description = "Inject the Revolut LIVE key + webhook secret into the API service. Keep false until the secret VALUES are populated out-of-band; flip to true to activate card payments in prod."
+  description = "Inject the Revolut LIVE key + webhook secret into the API service, activating real card payments. Defaults true now that the fs-prod-revolut-api-key and fs-prod-revolut-webhook-secret secrets are populated — kept sticky (like email_enabled) so a bare `terraform apply` can't silently revert to the mock gateway. Both secret containers MUST have a value version or the Cloud Run deploy fails on the secret_key_ref lookup."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "observability_enabled" {

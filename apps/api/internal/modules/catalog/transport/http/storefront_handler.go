@@ -132,6 +132,9 @@ type navCategoryResponse struct {
 	Slug         string  `json:"slug"`
 	ImageURL     *string `json:"image_url,omitempty"`
 	HasPromotion bool    `json:"has_promotion"`
+	// Children are the subcategories nested under this top-level category in
+	// the mega-menu. Empty for subcategories themselves (nav is one level deep).
+	Children []navCategoryResponse `json:"children,omitempty"`
 }
 
 type navTypeResponse struct {
@@ -165,13 +168,9 @@ func (h *StorefrontHandler) nav(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	categoriesByType := map[uuid.UUID][]navCategoryResponse{}
-	for _, c := range categories {
-		// Only top-level categories appear in the nav dropdown; subcategories
-		// belong to a category page, not the mega-menu, to keep it scannable.
-		if c.ParentID != nil {
-			continue
-		}
+	// Build a nav entry for a single category (translated name + optional
+	// thumbnail). Children are attached in a second pass below.
+	toNavCat := func(c domain.Category) navCategoryResponse {
 		name := c.Name
 		if v, ok := categoryTranslations[c.ID]["name"]; ok {
 			name = v
@@ -181,6 +180,32 @@ func (h *StorefrontHandler) nav(w http.ResponseWriter, r *http.Request) {
 			url := "/api/v1/storefront/categories/" + c.ID.String() + "/thumbnail/file"
 			navCat.ImageURL = &url
 		}
+		return navCat
+	}
+
+	// Group subcategories under their parent so the mega-menu can show each
+	// top-level category as a heading with its subcategories listed beneath.
+	childrenByParent := map[uuid.UUID][]navCategoryResponse{}
+	for _, c := range categories {
+		if c.ParentID == nil {
+			continue
+		}
+		childrenByParent[*c.ParentID] = append(childrenByParent[*c.ParentID], toNavCat(c))
+	}
+	for parentID, kids := range childrenByParent {
+		sort.Slice(kids, func(i, j int) bool { return kids[i].Name < kids[j].Name })
+		childrenByParent[parentID] = kids
+	}
+
+	categoriesByType := map[uuid.UUID][]navCategoryResponse{}
+	for _, c := range categories {
+		// Only top-level categories attach directly to the type; their
+		// subcategories are nested under them via Children.
+		if c.ParentID != nil {
+			continue
+		}
+		navCat := toNavCat(c)
+		navCat.Children = childrenByParent[c.ID]
 		categoriesByType[c.ProductTypeID] = append(categoriesByType[c.ProductTypeID], navCat)
 	}
 
@@ -216,6 +241,10 @@ func (h *StorefrontHandler) nav(w http.ResponseWriter, r *http.Request) {
 			for j := range resp[i].Categories {
 				id, _ := uuid.Parse(resp[i].Categories[j].ID)
 				ids = append(ids, id)
+				for k := range resp[i].Categories[j].Children {
+					cid, _ := uuid.Parse(resp[i].Categories[j].Children[k].ID)
+					ids = append(ids, cid)
+				}
 			}
 		}
 		if len(ids) > 0 {
@@ -224,6 +253,10 @@ func (h *StorefrontHandler) nav(w http.ResponseWriter, r *http.Request) {
 				for j := range resp[i].Categories {
 					id, _ := uuid.Parse(resp[i].Categories[j].ID)
 					resp[i].Categories[j].HasPromotion = promoted[id]
+					for k := range resp[i].Categories[j].Children {
+						cid, _ := uuid.Parse(resp[i].Categories[j].Children[k].ID)
+						resp[i].Categories[j].Children[k].HasPromotion = promoted[cid]
+					}
 				}
 			}
 		}

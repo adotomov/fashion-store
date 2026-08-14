@@ -17,6 +17,7 @@ export type NavCategory = {
   slug: string;
   image_url?: string;
   has_promotion?: boolean;
+  children?: NavCategory[];
 };
 
 export type NavType = {

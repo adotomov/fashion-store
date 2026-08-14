@@ -166,20 +166,37 @@ export function Header({ className }: HeaderProps) {
               onMouseEnter={() => setOpenTypeId(type.id)}
             >
               <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-                <div className="grid grid-cols-2 gap-6 sm:grid-cols-4 md:grid-cols-6">
+                <div className="grid grid-cols-2 gap-x-6 gap-y-8 sm:grid-cols-4 md:grid-cols-6">
                   {type.categories.map((category) => (
-                    <Link
-                      key={category.id}
-                      to={`/shop?type=${type.slug}&category_id=${category.id}`}
-                      state={{ resetFilters: true }}
-                      onClick={() => setOpenTypeId(null)}
-                      className="group flex flex-col gap-2.5"
-                    >
-                      <CategoryThumbnail category={category} />
-                      <Text size="sm" className="text-center font-medium group-hover:text-clay-600">
-                        {category.name}
-                      </Text>
-                    </Link>
+                    <div key={category.id} className="flex flex-col gap-2.5">
+                      <Link
+                        to={`/shop?type=${type.slug}&category_id=${category.id}`}
+                        state={{ resetFilters: true }}
+                        onClick={() => setOpenTypeId(null)}
+                        className="group flex flex-col gap-2.5"
+                      >
+                        <CategoryThumbnail category={category} />
+                        <Text size="sm" className="text-center font-medium group-hover:text-clay-600">
+                          {category.name}
+                        </Text>
+                      </Link>
+                      {category.children && category.children.length > 0 && (
+                        <ul className="flex flex-col items-center gap-1">
+                          {category.children.map((child) => (
+                            <li key={child.id}>
+                              <Link
+                                to={`/shop?type=${type.slug}&category_id=${child.id}`}
+                                state={{ resetFilters: true }}
+                                onClick={() => setOpenTypeId(null)}
+                                className="text-xs text-stone-500 transition-colors hover:text-clay-600"
+                              >
+                                {child.name}
+                              </Link>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   ))}
                 </div>
               </div>
@@ -226,15 +243,31 @@ export function Header({ className }: HeaderProps) {
               {expandedMobileTypeId === type.id && (
                 <div className="ml-4 flex flex-col gap-1 border-l border-stone-200 pl-3">
                   {type.categories.map((category) => (
-                    <Link
-                      key={category.id}
-                      to={`/shop?type=${type.slug}&category_id=${category.id}`}
-                      state={{ resetFilters: true }}
-                      onClick={() => setMenuOpen(false)}
-                      className="rounded-sm px-2 py-2 text-sm text-stone-600 hover:bg-stone-50"
-                    >
-                      {category.name}
-                    </Link>
+                    <div key={category.id}>
+                      <Link
+                        to={`/shop?type=${type.slug}&category_id=${category.id}`}
+                        state={{ resetFilters: true }}
+                        onClick={() => setMenuOpen(false)}
+                        className="block rounded-sm px-2 py-2 text-sm font-medium text-stone-600 hover:bg-stone-50"
+                      >
+                        {category.name}
+                      </Link>
+                      {category.children && category.children.length > 0 && (
+                        <div className="ml-3 flex flex-col gap-0.5 border-l border-stone-100 pl-3">
+                          {category.children.map((child) => (
+                            <Link
+                              key={child.id}
+                              to={`/shop?type=${type.slug}&category_id=${child.id}`}
+                              state={{ resetFilters: true }}
+                              onClick={() => setMenuOpen(false)}
+                              className="rounded-sm px-2 py-1.5 text-sm text-stone-500 hover:bg-stone-50"
+                            >
+                              {child.name}
+                            </Link>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   ))}
                 </div>
               )}
