@@ -68,11 +68,15 @@ type speedyAddress struct {
 }
 
 type speedyRecipient struct {
-	ClientName string         `json:"clientName"`
-	Phone1     speedyPhone    `json:"phone1"`
-	Email      string         `json:"email,omitempty"`
-	Address    *speedyAddress `json:"address,omitempty"`
-	OfficeID   string         `json:"officeId,omitempty"`
+	// PrivatePerson must be true for B2C shipments — Speedy rejects the create
+	// call with error code 100 ("Подаването на private person за получател е
+	// задължително") when a recipient is submitted without it.
+	PrivatePerson bool           `json:"privatePerson"`
+	ClientName    string         `json:"clientName"`
+	Phone1        speedyPhone    `json:"phone1"`
+	Email         string         `json:"email,omitempty"`
+	Address       *speedyAddress `json:"address,omitempty"`
+	OfficeID      string         `json:"officeId,omitempty"`
 }
 
 type speedyService struct {
@@ -132,9 +136,10 @@ func (c *SpeedyHTTPClient) CreateShipment(ctx context.Context, req application.C
 	body := createShipmentRequest{
 		speedyAuth: authFromCreds(req.Creds),
 		Recipient: speedyRecipient{
-			ClientName: req.Recipient.ContactName,
-			Phone1:     speedyPhone{Number: req.Recipient.Phone},
-			Email:      req.Recipient.Email,
+			PrivatePerson: true,
+			ClientName:    req.Recipient.ContactName,
+			Phone1:        speedyPhone{Number: req.Recipient.Phone},
+			Email:         req.Recipient.Email,
 		},
 		Service: speedyService{ServiceID: req.ServiceID},
 		Content: speedyContent{ParcelsCount: 1, Parcels: []speedyParcel{{Weight: req.ParcelWeightKg}}},

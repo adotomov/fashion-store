@@ -254,7 +254,20 @@ export default function Shop() {
         );
       }
     } else if (groupId === "category") {
-      setSelectedCategoryIds((prev) => toggleInList(prev, optionId));
+      // Toggling a parent category cascades to all its subcategories, so the
+      // grid shows products filed under the children too (child ids are what
+      // the product query filters on). A child toggle finds no parent match
+      // here and falls back to a plain single toggle.
+      const parent = visibleCategories.find((c) => c.id === optionId);
+      const childIds = parent?.children?.map((ch) => ch.id) ?? [];
+      const isSelected = selectedCategoryIds.includes(optionId);
+      setSelectedCategoryIds((prev) => {
+        if (isSelected) {
+          const remove = new Set([optionId, ...childIds]);
+          return prev.filter((id) => !remove.has(id));
+        }
+        return Array.from(new Set([...prev, optionId, ...childIds]));
+      });
     } else if (groupId === "offers") {
       setOnSaleOnly((prev) => !prev);
     } else {

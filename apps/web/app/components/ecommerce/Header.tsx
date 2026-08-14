@@ -290,8 +290,8 @@ function CategoryThumbnail({
   category: NavType["categories"][number];
   size?: "lg" | "sm";
 }) {
-  const box = size === "sm" ? "h-10 w-10 shrink-0" : "aspect-square w-full";
-  const fallbackText = size === "sm" ? "text-sm" : "text-2xl";
+  const box = size === "sm" ? "h-16 w-16 shrink-0" : "aspect-square w-full";
+  const fallbackText = size === "sm" ? "text-lg" : "text-2xl";
 
   if (category.image_url) {
     return (
