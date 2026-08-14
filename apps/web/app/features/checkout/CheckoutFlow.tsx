@@ -70,7 +70,7 @@ function addressFromSaved(a: Address): CheckoutAddress {
 }
 
 export function CheckoutFlow() {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const { storeLocale } = useStoreBranding();
   const { isAuthenticated, profile } = useAuth();
   const { cart, refresh: refreshCart } = useCart();
@@ -377,6 +377,7 @@ export function CheckoutFlow() {
         delivery_office_id: officeTypeFor(deliveryMethod) ? officeId : undefined,
         payment_method: paymentMethod,
         discount_code: appliedDiscount?.code,
+        locale,
       });
       if (result.kind === "payment_required") {
         // Card order created; render the Revolut widget to collect payment.

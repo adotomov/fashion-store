@@ -42,7 +42,7 @@ var orderColumns = `
 	delivery_method, delivery_fee_amount, delivery_fee_currency, payment_method, parcel_weight_grams,
 	carrier, tracking_number, shipment_status, speedy_shipment_id, delivery_office_id, viewed_by_admin_at, reservation_id, cart_guest_token,
 	discount_code, discount_amount_minor, discount_amount_currency,
-	created_at, updated_at`
+	created_at, updated_at, locale`
 
 const paymentColumns = `
 	id, order_id, provider, COALESCE(provider_order_id, ''), COALESCE(provider_reference, ''),
@@ -164,7 +164,7 @@ func (r *PostgresRepository) Create(ctx context.Context, order domain.Order) (*d
 		` + addressColumnsFor("shipping") + `,
 		` + addressColumnsFor("billing") + `,
 		delivery_method, delivery_fee_amount, delivery_fee_currency, payment_method, parcel_weight_grams, delivery_office_id, reservation_id, cart_guest_token,
-		discount_code, discount_amount_minor, discount_amount_currency`
+		discount_code, discount_amount_minor, discount_amount_currency, locale`
 
 	args := []any{
 		order.UserID, order.OrderNumber, order.Status, order.Total.AmountMinor, order.Total.Currency, order.PlacedAt,
@@ -174,7 +174,7 @@ func (r *PostgresRepository) Create(ctx context.Context, order domain.Order) (*d
 	args = append(args, addressArgs(order.BillingAddress)...)
 	args = append(args,
 		order.DeliveryMethod, order.DeliveryFee.AmountMinor, order.DeliveryFee.Currency, order.PaymentMethod, order.ParcelWeightGrams, order.DeliveryOfficeID, order.ReservationID, order.CartGuestToken,
-		order.DiscountCode, discountAmountMinor(order.DiscountAmount), discountAmountCurrency(order.DiscountAmount))
+		order.DiscountCode, discountAmountMinor(order.DiscountAmount), discountAmountCurrency(order.DiscountAmount), order.Locale)
 
 	row := tx.QueryRow(ctx, `INSERT INTO orders (`+insertCols+`) VALUES (`+placeholders(len(args))+`) RETURNING `+orderColumns, args...)
 
@@ -754,7 +754,7 @@ func scanOrder(row pgx.Row) (*domain.Order, error) {
 		&deliveryMethod, &deliveryFeeAmount, &deliveryFeeCurrency, &paymentMethod, &o.ParcelWeightGrams,
 		&o.Carrier, &o.TrackingNumber, &o.ShipmentStatus, &o.SpeedyShipmentID, &o.DeliveryOfficeID, &o.ViewedByAdminAt, &o.ReservationID, &o.CartGuestToken,
 		&o.DiscountCode, &discountAmountMinorCol, &discountAmountCurrencyCol,
-		&o.CreatedAt, &o.UpdatedAt,
+		&o.CreatedAt, &o.UpdatedAt, &o.Locale,
 	)
 
 	err := row.Scan(targets...)

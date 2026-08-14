@@ -357,6 +357,7 @@ func (s *Service) notifyShipped(ctx context.Context, ref TrackedOrderRef) {
 		CustomerEmail:  ref.ContactEmail,
 		Carrier:        ref.Carrier,
 		TrackingNumber: ref.ParcelID,
+		Locale:         ref.Locale,
 	}
 	if err := s.notifier.OrderShipped(ctx, notification); err != nil {
 		s.logger.ErrorContext(ctx, "failed to queue shipping update email",

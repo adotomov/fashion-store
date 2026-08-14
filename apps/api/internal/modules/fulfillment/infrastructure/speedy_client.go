@@ -185,17 +185,26 @@ type calculateContent struct {
 }
 
 // calculateRecipient is a minimal recipient for pricing — just the destination
-// site. Unlike a shipment it carries no contact name/phone.
+// site. Unlike a shipment it carries no contact name/phone. Note the
+// destination is keyed "addressLocation" here, not "address" as in the
+// shipment API — the /calculate endpoint rejects "address" with code 120.
 type calculateRecipient struct {
 	PrivatePerson bool           `json:"privatePerson"`
-	Address       *speedyAddress `json:"address,omitempty"`
+	Address       *speedyAddress `json:"addressLocation,omitempty"`
+}
+
+// calculateService wraps the requested service IDs. The /calculate endpoint
+// expects an object { "serviceIds": [...] } and rejects a bare array with a
+// deserialization error, unlike the shipment API's scalar "service".
+type calculateService struct {
+	ServiceIDs []int64 `json:"serviceIds"`
 }
 
 type calculateRequest struct {
 	speedyAuth
 	// Sender omitted on purpose — Speedy uses the account's default pickup.
 	Recipient calculateRecipient `json:"recipient"`
-	Service   []int64            `json:"service"`
+	Service   calculateService   `json:"service"`
 	Content   calculateContent   `json:"content"`
 	Payment   speedyPayment      `json:"payment"`
 }
@@ -223,7 +232,7 @@ func (c *SpeedyHTTPClient) Calculate(ctx context.Context, req application.Calcul
 			PrivatePerson: true,
 			Address:       &speedyAddress{CountryID: speedyCountryBG, SiteID: req.SiteID},
 		},
-		Service: req.ServiceIDs,
+		Service: calculateService{ServiceIDs: req.ServiceIDs},
 		Content: calculateContent{ParcelsCount: 1, TotalWeight: req.WeightKg},
 		Payment: speedyPayment{CourierServicePayer: "SENDER"},
 	}
@@ -334,8 +343,16 @@ func (c *SpeedyHTTPClient) SearchOffices(ctx context.Context, creds application.
 		return nil, fmt.Errorf("speedy office search failed: %s (code %d)", resp.Error.Message, resp.Error.Code)
 	}
 
+	// Offices and EasyBox lockers are returned by the same endpoint,
+	// distinguished only by Type ("OFFICE" vs "APT"). We pass Type as a request
+	// filter above, but defensively re-filter here too: if Speedy ever ignores
+	// the request-side filter we must not leak lockers into the office picker
+	// (or vice versa), since the caller relies on a single-type list.
 	offices := make([]application.Office, 0, len(resp.Offices))
 	for _, o := range resp.Offices {
+		if officeType != "" && o.Type != officeType {
+			continue
+		}
 		offices = append(offices, application.Office{ID: o.ID, Name: o.Name, Type: o.Type})
 	}
 	return offices, nil

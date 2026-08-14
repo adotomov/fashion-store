@@ -48,6 +48,9 @@ type TrackedOrderRef struct {
 	ContactName  string
 	ContactEmail string
 	Carrier      string
+	// Locale is the language the order was placed in, so the dispatch email can
+	// reach a guest in their own language. Empty falls back to the store default.
+	Locale string
 }
 
 // ShipmentNotification describes a parcel that has just entered the carrier
@@ -59,6 +62,8 @@ type ShipmentNotification struct {
 	CustomerEmail  string
 	Carrier        string
 	TrackingNumber string
+	// Locale carries the order's checkout language through to the email adapter.
+	Locale string
 }
 
 // Notifier is told when a shipment reaches the customer-visible milestones

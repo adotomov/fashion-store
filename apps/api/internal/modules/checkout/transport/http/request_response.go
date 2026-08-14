@@ -73,6 +73,9 @@ type placeOrderRequest struct {
 	DeliveryOfficeID string         `json:"delivery_office_id,omitempty"`
 	PaymentMethod    string         `json:"payment_method"`
 	DiscountCode     string         `json:"discount_code,omitempty"`
+	// Locale is the display language the storefront is showing the customer, so
+	// a guest's confirmation email can be sent in the same language.
+	Locale string `json:"locale,omitempty"`
 }
 
 func (req placeOrderRequest) toInput() application.PlaceOrderInput {
@@ -90,6 +93,7 @@ func (req placeOrderRequest) toInput() application.PlaceOrderInput {
 		DeliveryOfficeID: req.DeliveryOfficeID,
 		PaymentMethod:    req.PaymentMethod,
 		DiscountCode:     req.DiscountCode,
+		Locale:           req.Locale,
 	}
 }
 

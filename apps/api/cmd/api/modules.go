@@ -158,7 +158,7 @@ func (a *fulfillmentNotifierAdapter) OrderShipped(ctx context.Context, n fulfill
 		TemplateKey: notificationsdomain.TemplateShippingUpdate,
 		ToEmail:     n.CustomerEmail,
 		ToName:      n.CustomerName,
-		Locale:      a.users.LocaleByEmail(ctx, n.CustomerEmail),
+		Locale:      recipientLocale(ctx, a.users, n.CustomerEmail, n.Locale),
 		// Keyed on the order: the tracking poll re-sees the in-flight status on
 		// every tick, and this is what stops it mailing on each one.
 		DedupeKey: notificationsdomain.TemplateShippingUpdate + ":" + n.OrderID.String(),
@@ -170,6 +170,18 @@ func (a *fulfillmentNotifierAdapter) OrderShipped(ctx context.Context, n fulfill
 			"TrackingURL":    speedyTrackingURL(n.TrackingNumber),
 		},
 	})
+}
+
+// recipientLocale picks the language for a customer email. A registered user's
+// saved preference wins (account-wins); for a guest — who has no user record to
+// read a preference from — it falls back to the locale captured on the order at
+// checkout. An empty result lets the notifications module apply the store
+// default, so a customer always gets the mail in some language.
+func recipientLocale(ctx context.Context, users *usersapplication.Service, email, orderLocale string) string {
+	if l := users.LocaleByEmail(ctx, email); l != "" {
+		return l
+	}
+	return i18ndomain.NormalizeLanguage(orderLocale)
 }
 
 // speedyTrackingURL builds the customer-facing parcel tracking link. Speedy is
@@ -209,7 +221,7 @@ func (a *checkoutNotifierAdapter) OrderConfirmed(ctx context.Context, n checkout
 		TemplateKey: notificationsdomain.TemplateOrderConfirmation,
 		ToEmail:     n.CustomerEmail,
 		ToName:      n.CustomerName,
-		Locale:      a.users.LocaleByEmail(ctx, n.CustomerEmail),
+		Locale:      recipientLocale(ctx, a.users, n.CustomerEmail, n.Locale),
 		// Keyed on the order, so the pay-on-delivery path, a webhook retry and
 		// the payment sweeper can all reach here without sending twice.
 		DedupeKey: notificationsdomain.TemplateOrderConfirmation + ":" + n.OrderID.String(),
@@ -231,7 +243,7 @@ func (a *checkoutNotifierAdapter) PaymentFailed(ctx context.Context, n checkouta
 		TemplateKey: notificationsdomain.TemplatePaymentFailed,
 		ToEmail:     n.CustomerEmail,
 		ToName:      n.CustomerName,
-		Locale:      a.users.LocaleByEmail(ctx, n.CustomerEmail),
+		Locale:      recipientLocale(ctx, a.users, n.CustomerEmail, n.Locale),
 		DedupeKey:   notificationsdomain.TemplatePaymentFailed + ":" + n.OrderID.String(),
 		Vars: map[string]any{
 			"CustomerName": n.CustomerName,
@@ -449,6 +461,7 @@ func (a *checkoutOrderGatewayAdapter) CreateOrder(ctx context.Context, input che
 		ParcelWeightGrams: input.ParcelWeightGrams,
 		ReservationID:     &reservationID,
 		CartGuestToken:    input.CartGuestToken,
+		Locale:            input.Locale,
 		Items:             items,
 	})
 	if err != nil {
@@ -529,6 +542,7 @@ func (a *checkoutOrderGatewayAdapter) FindByProviderOrderID(ctx context.Context,
 		Total:             order.Total,
 		DeliveryFee:       order.DeliveryFee,
 		ParcelWeightGrams: order.ParcelWeightGrams,
+		Locale:            order.Locale,
 		Items:             toCheckoutResultItems(order.Items),
 	}, nil
 }
@@ -712,6 +726,7 @@ func (a *fulfillmentOrderGatewayAdapter) ListAwaitingTracking(ctx context.Contex
 			OrderNumber:  o.OrderNumber,
 			ContactName:  o.ContactName,
 			ContactEmail: o.ContactEmail,
+			Locale:       o.Locale,
 		}
 		if o.Carrier != nil {
 			ref.Carrier = *o.Carrier

@@ -84,4 +84,8 @@ type PlaceOrderInput struct {
 	DeliveryOfficeID string
 	PaymentMethod    string
 	DiscountCode     string
+	// Locale is the display language the customer is checking out in (e.g.
+	// "en", "bg"), sent by the storefront and persisted on the order so a
+	// guest's transactional email can honour their language.
+	Locale string
 }

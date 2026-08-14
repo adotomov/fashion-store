@@ -53,6 +53,7 @@ func (s *Service) CreateOrder(ctx context.Context, userID uuid.UUID, input Creat
 		CartGuestToken:   input.CartGuestToken,
 		DiscountCode:     input.DiscountCode,
 		DiscountAmount:   input.DiscountAmount,
+		Locale:           input.Locale,
 	}
 	if input.Payment != nil {
 		order.Payment = &domain.OrderPayment{

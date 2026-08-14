@@ -125,6 +125,9 @@ type CreateOrderInput struct {
 	PaymentMethod     string
 	Payment           *OrderPaymentRecord
 	ParcelWeightGrams int
+	// Locale is the customer's checkout display language, persisted so a guest's
+	// transactional email can be sent in their own language.
+	Locale string
 
 	ReservationID uuid.UUID
 	// CartGuestToken is set only for guest card orders, so the payment webhook can
@@ -249,6 +252,9 @@ type OrderForFinalize struct {
 	Total             money.Money
 	DeliveryFee       money.Money
 	ParcelWeightGrams int
+	// Locale is the language the order was placed in, carried so the webhook
+	// settlement path can send a guest's confirmation in their own language.
+	Locale string
 	// Items lets the settlement path build a confirmation email with line items,
 	// the same as the pay-on-delivery path.
 	Items []OrderResultItem
@@ -267,6 +273,10 @@ type OrderNotification struct {
 	DeliveryFee     money.Money
 	ShippingAddress OrderAddress
 	Items           []OrderResultItem
+	// Locale is the language the order was placed in; the notifier adapter uses
+	// it as the recipient locale for guests (a registered user's saved
+	// preference still wins). Empty falls back to the store default.
+	Locale string
 }
 
 // OrderNotifier is told about order events worth emailing a customer about.

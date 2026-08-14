@@ -62,6 +62,10 @@ export type PlaceOrderInput = {
   delivery_office_id?: string;
   payment_method: PaymentMethodCode;
   discount_code?: string;
+  // The display language the customer is checking out in (e.g. "en", "bg"), so
+  // a guest's confirmation email can be sent in the same language. Registered
+  // users' saved preference still takes precedence server-side.
+  locale?: string;
 };
 
 export type OrderItem = {

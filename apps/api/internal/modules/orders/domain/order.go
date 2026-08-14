@@ -163,6 +163,11 @@ type Order struct {
 	DiscountCode   *string
 	DiscountAmount *money.Money
 
+	// Locale is the display language the customer placed the order in (e.g.
+	// "en", "bg"), captured so transactional email can honour a guest's
+	// language. Empty means not captured. See migration 20260814160000.
+	Locale string
+
 	Items []OrderItem
 
 	CreatedAt time.Time

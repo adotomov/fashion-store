@@ -344,6 +344,7 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 			discountCode:      discountCodeStr,
 			discountAmount:    discountAmount,
 			discountCodeID:    discountCodeID,
+			locale:            input.Locale,
 			items:             orderItems,
 		})
 	}
@@ -374,6 +375,7 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 		Total:             total,
 		DiscountCode:      discountCodeStr,
 		DiscountAmount:    discountAmount,
+		Locale:            input.Locale,
 		Items:             orderItems,
 	})
 	if err != nil {
@@ -419,6 +421,7 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 		DeliveryFee:     result.DeliveryFee,
 		ShippingAddress: toOrderAddress(shippingAddr),
 		Items:           result.Items,
+		Locale:          input.Locale,
 	})
 
 	return PlaceOrderResult{Order: &result}, nil
@@ -456,6 +459,7 @@ type cardPaymentParams struct {
 	discountCode      *string
 	discountAmount    *money.Money
 	discountCodeID    uuid.UUID
+	locale            string
 	items             []CreateOrderItemInput
 }
 
@@ -502,6 +506,7 @@ func (s *Service) initiateCardPayment(ctx context.Context, owner CartOwner, p ca
 		Total:          p.total,
 		DiscountCode:   p.discountCode,
 		DiscountAmount: p.discountAmount,
+		Locale:         p.locale,
 		Items:          p.items,
 	})
 	if err != nil {
@@ -630,6 +635,7 @@ func (s *Service) FinalizePaidOrder(ctx context.Context, providerOrderID string)
 		DeliveryFee:     ord.DeliveryFee,
 		ShippingAddress: ord.ShippingAddress,
 		Items:           ord.Items,
+		Locale:          ord.Locale,
 	})
 	return nil
 }
@@ -667,6 +673,7 @@ func (s *Service) FailPayment(ctx context.Context, providerOrderID, reason strin
 			CustomerEmail: ord.ContactEmail,
 			PaymentMethod: ord.PaymentMethod,
 			Total:         ord.Total,
+			Locale:        ord.Locale,
 		}
 		if err := s.notifier.PaymentFailed(ctx, notification); err != nil {
 			s.logger.ErrorContext(ctx, "failed to queue payment-failed email",

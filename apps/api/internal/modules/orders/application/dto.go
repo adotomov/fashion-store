@@ -91,6 +91,10 @@ type CreateOrderInput struct {
 
 	DiscountCode   *string
 	DiscountAmount *money.Money
+
+	// Locale is the customer's display language at checkout, persisted so
+	// transactional email can be sent in a guest's own language.
+	Locale string
 }
 
 // UpdateFulfillmentInput is the admin-facing mutation for an order's
