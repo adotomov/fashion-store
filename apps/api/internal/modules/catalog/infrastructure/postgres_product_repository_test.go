@@ -255,3 +255,82 @@ func TestPostgresProductRepository_AttributeFacetsAndFiltering(t *testing.T) {
 		t.Fatalf("expected both products for Size=S OR Size=M, got %v", orIDs)
 	}
 }
+
+// A parent-category link must surface products filed anywhere in its subtree,
+// not just products pinned directly on the parent. ProductIDsByCategory (and
+// AttributeFacets) walk the parent_id tree, so selecting a parent returns
+// products from its child categories too.
+func TestPostgresProductRepository_ProductIDsByCategorySubtree(t *testing.T) {
+	pool := newTestPool(t)
+	ctx := context.Background()
+
+	categoryRepo := infrastructure.NewPostgresCategoryRepository(pool)
+	productTypeRepo := infrastructure.NewPostgresProductTypeRepository(pool)
+	productRepo := infrastructure.NewPostgresProductRepository(pool)
+
+	productType, err := productTypeRepo.Create(ctx, domain.ProductType{Name: "IT-Test Subtree Type", Slug: "it-test-subtree-type"})
+	if err != nil {
+		t.Fatalf("create product type: %v", err)
+	}
+	t.Cleanup(func() { _ = productTypeRepo.Delete(ctx, productType.ID) })
+
+	parent, err := categoryRepo.Create(ctx, domain.Category{Name: "IT-Test Subtree Parent", Slug: "it-test-subtree-parent", ProductTypeID: productType.ID})
+	if err != nil {
+		t.Fatalf("create parent category: %v", err)
+	}
+	t.Cleanup(func() { _ = categoryRepo.Delete(ctx, parent.ID) })
+
+	child, err := categoryRepo.Create(ctx, domain.Category{Name: "IT-Test Subtree Child", Slug: "it-test-subtree-child", ProductTypeID: productType.ID, ParentID: &parent.ID})
+	if err != nil {
+		t.Fatalf("create child category: %v", err)
+	}
+	t.Cleanup(func() { _ = categoryRepo.Delete(ctx, child.ID) })
+
+	// Product assigned only to the child category.
+	childProduct, err := productRepo.Create(ctx, domain.Product{
+		Name: "IT-Test Subtree Child Product", Slug: "it-test-subtree-child-product",
+		Status: domain.ProductStatusActive, BasePrice: money.Money{AmountMinor: 1000, Currency: "EUR"},
+	})
+	if err != nil {
+		t.Fatalf("create child product: %v", err)
+	}
+	t.Cleanup(func() { _ = productRepo.Delete(ctx, childProduct.ID) })
+	if err := productRepo.SetCategories(ctx, childProduct.ID, []uuid.UUID{child.ID}); err != nil {
+		t.Fatalf("set child product categories: %v", err)
+	}
+
+	// Product assigned directly to the parent category.
+	parentProduct, err := productRepo.Create(ctx, domain.Product{
+		Name: "IT-Test Subtree Parent Product", Slug: "it-test-subtree-parent-product",
+		Status: domain.ProductStatusActive, BasePrice: money.Money{AmountMinor: 2000, Currency: "EUR"},
+	})
+	if err != nil {
+		t.Fatalf("create parent product: %v", err)
+	}
+	t.Cleanup(func() { _ = productRepo.Delete(ctx, parentProduct.ID) })
+	if err := productRepo.SetCategories(ctx, parentProduct.ID, []uuid.UUID{parent.ID}); err != nil {
+		t.Fatalf("set parent product categories: %v", err)
+	}
+
+	// Selecting the parent returns both the directly-assigned and the child's product.
+	parentIDs, err := productRepo.ProductIDsByCategory(ctx, parent.ID)
+	if err != nil {
+		t.Fatalf("product ids by parent category: %v", err)
+	}
+	got := map[uuid.UUID]bool{}
+	for _, id := range parentIDs {
+		got[id] = true
+	}
+	if !got[childProduct.ID] || !got[parentProduct.ID] {
+		t.Fatalf("expected parent category to include both parent and child products, got %v", parentIDs)
+	}
+
+	// Selecting the child returns only the child's product (no upward leakage).
+	childIDs, err := productRepo.ProductIDsByCategory(ctx, child.ID)
+	if err != nil {
+		t.Fatalf("product ids by child category: %v", err)
+	}
+	if len(childIDs) != 1 || childIDs[0] != childProduct.ID {
+		t.Fatalf("expected child category to return only the child product, got %v", childIDs)
+	}
+}

@@ -305,8 +305,38 @@ func (r *PostgresProductRepository) catalogIDsFor(ctx context.Context, productID
 	return r.idsFor(ctx, "catalog_products", "product_id", "catalog_id", productID)
 }
 
+// ProductIDsByCategory returns the ids of products assigned to the given
+// category OR any category beneath it in the tree. A storefront category link
+// — including a parent-category mega-menu link — must surface everything filed
+// anywhere in that subtree, not just products pinned directly on the parent
+// (parents are usually organisational and hold few/no products of their own).
+// We walk the parent_id tree with a recursive CTE; UNION (not UNION ALL)
+// deduplicates so a malformed cycle can't loop forever.
 func (r *PostgresProductRepository) ProductIDsByCategory(ctx context.Context, categoryID uuid.UUID) ([]uuid.UUID, error) {
-	return r.idsFor(ctx, "product_categories", "category_id", "product_id", categoryID)
+	rows, err := r.db.Query(ctx, `
+		WITH RECURSIVE subtree AS (
+			SELECT id FROM categories WHERE id = $1
+			UNION
+			SELECT c.id FROM categories c
+			JOIN subtree s ON c.parent_id = s.id
+		)
+		SELECT DISTINCT pc.product_id
+		FROM product_categories pc
+		WHERE pc.category_id IN (SELECT id FROM subtree)`, categoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ids := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func (r *PostgresProductRepository) ProductIDsByCatalog(ctx context.Context, catalogID uuid.UUID) ([]uuid.UUID, error) {
@@ -385,7 +415,18 @@ func (r *PostgresProductRepository) ProductIDsByAttributeValues(ctx context.Cont
 }
 
 func (r *PostgresProductRepository) AttributeFacets(ctx context.Context, categoryIDs []uuid.UUID, catalogID *uuid.UUID) ([]domain.AttributeFacet, error) {
+	// The category filter expands each requested category to its full subtree
+	// (parent + all descendants) so the facet list matches the product grid,
+	// which does the same expansion in ProductIDsByCategory. When no category is
+	// requested ($1 IS NULL) the subtree is empty and the IS NULL guard makes the
+	// whole condition true, so facets span the catalog.
 	rows, err := r.db.Query(ctx, `
+		WITH RECURSIVE subtree AS (
+			SELECT id FROM categories WHERE id = ANY($1)
+			UNION
+			SELECT c.id FROM categories c
+			JOIN subtree s ON c.parent_id = s.id
+		)
 		SELECT DISTINCT a.id, a.name, a.type, av.id, av.value, av.color_hex
 		FROM variant_attribute_values vav
 		JOIN attribute_values av ON av.id = vav.attribute_value_id
@@ -393,7 +434,7 @@ func (r *PostgresProductRepository) AttributeFacets(ctx context.Context, categor
 		JOIN product_variants pv ON pv.id = vav.variant_id
 		JOIN products p ON p.id = pv.product_id
 		WHERE p.status = 'active'
-			AND ($1::uuid[] IS NULL OR p.id IN (SELECT product_id FROM product_categories WHERE category_id = ANY($1)))
+			AND ($1::uuid[] IS NULL OR p.id IN (SELECT product_id FROM product_categories WHERE category_id IN (SELECT id FROM subtree)))
 			AND ($2::uuid IS NULL OR p.id IN (SELECT product_id FROM catalog_products WHERE catalog_id = $2))
 		ORDER BY a.name, av.value`,
 		nullableUUIDSlice(categoryIDs), catalogID)

@@ -52,15 +52,32 @@ resource "google_compute_security_policy" "armor" {
   # The default sensitivity (evaluatePreconfiguredExpr, all paranoia levels) is
   # heavily false-positive-prone — it blocks benign browser traffic (cookies,
   # Referer, query params that merely look SQL/XSS-ish) with a 403.
+  # SQLi + XSS body inspection. The SQLi rule is scoped to skip the authenticated
+  # admin API; XSS and the rate limiter still apply there.
+  #
+  # Why SQLi must be exempted for admin: the CRS SQLi rule (id942100 / libinjection)
+  # runs AFTER CRS applies t:utf8toUnicode + t:urlDecodeUni, which collapse each
+  # Cyrillic letter toward the low byte of its Unicode codepoint. Ч is U+0427, and
+  # 0x27 is an ASCII single quote ('), so any Bulgarian admin text starting with Ч
+  # (e.g. the colour translations Черен/Червен/Черно/Червено) transforms into a
+  # leading-quote string and is fingerprinted as SQLi — a 403 at the edge, which
+  # also strips CORS headers so the browser reports it as a CORS error. This is
+  # systemic for Cyrillic free-text, not specific to colours.
+  #
+  # A preconfigured-WAF *exclusion* can't help: Cloud Armor exclusions only drop
+  # header/cookie/query-param/URI fields from inspection, never the request BODY
+  # (where the match happens). So we scope the deny expression by path instead.
+  # Admin remains authenticated at the app layer and uses parameterized queries;
+  # storefront/checkout traffic keeps full SQLi inspection.
   rule {
     action   = "deny(403)"
     priority = 900
     match {
       expr {
-        expression = "evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 1}) || evaluatePreconfiguredWaf('xss-v33-stable', {'sensitivity': 1})"
+        expression = "(evaluatePreconfiguredWaf('sqli-v33-stable', {'sensitivity': 1}) && !request.path.startsWith('/api/v1/admin/')) || evaluatePreconfiguredWaf('xss-v33-stable', {'sensitivity': 1})"
       }
     }
-    description = "OWASP CRS: SQLi + XSS (sensitivity 1)"
+    description = "OWASP CRS: XSS everywhere; SQLi except /api/v1/admin/"
   }
 
   # Per-IP rate limit: 600 requests / minute, 429 over the threshold.

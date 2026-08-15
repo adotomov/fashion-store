@@ -76,6 +76,9 @@ type ProductRepository interface {
 	// ProductIDsByCategory/ByCatalog support storefront filtering — List
 	// deliberately omits category/catalog assignments per product (loaded
 	// only by FindByID), so filtering by membership needs its own query.
+	// ProductIDsByCategory matches the category and its whole descendant
+	// subtree, so a parent-category link surfaces products filed under its
+	// children too.
 	ProductIDsByCategory(ctx context.Context, categoryID uuid.UUID) ([]uuid.UUID, error)
 	ProductIDsByCatalog(ctx context.Context, catalogID uuid.UUID) ([]uuid.UUID, error)
 	// BestInCategoryProductIDs returns one active product ID per category,
