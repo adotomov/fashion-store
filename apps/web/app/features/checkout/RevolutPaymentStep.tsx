@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
+import { Input } from "../../components/ui/Input";
 import { Text } from "../../components/ui/Text";
 import { getOrderPaymentStatus, reportCheckoutEvent } from "../../lib/api/checkout";
 import { useLanguage } from "../i18n/LanguageContext";
@@ -13,6 +14,20 @@ type PaymentRequestInstance = ReturnType<RevolutCheckoutInstance["paymentRequest
 // The checkout widget mode is derived from a single build-time env var; no
 // publishable key ships in the bundle — the per-order token carries the auth.
 const REVOLUT_ENV = (import.meta.env.VITE_REVOLUT_ENV as "sandbox" | "prod" | undefined) ?? "sandbox";
+
+// Revolut validates the cardholder name from the submit call and declines a
+// non-Latin value with error.invalid-name. Bulgarian shoppers routinely enter
+// their delivery-contact name in Cyrillic, so we collect the card name
+// separately and require Latin here — failing fast with a clear message instead
+// of an opaque post-submit gateway decline. Allows basic Latin plus common
+// European accents (José, François); rejects Cyrillic and other scripts. Needs
+// at least two characters and must start with a letter.
+const LATIN_NAME_RE = /^[A-Za-zÀ-ɏ][A-Za-zÀ-ɏ .'-]*$/;
+
+function isLatinName(value: string): boolean {
+  const trimmed = value.trim();
+  return trimmed.length >= 2 && LATIN_NAME_RE.test(trimmed);
+}
 
 // Log severity for a widget event. Interaction chatter (field focus/validation
 // while typing) rides at "debug" so the prod INFO log stays quiet; milestones
@@ -93,6 +108,11 @@ export function RevolutPaymentStep({ token, orderNumber, cardHolderName, email, 
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [walletAvailable, setWalletAvailable] = useState(false);
+  // The cardholder name is entered here, not reused from the delivery contact:
+  // Revolut requires it in Latin. Prefill only when the contact name already is
+  // Latin, otherwise leave it blank rather than guess a transliteration.
+  const [cardName, setCardName] = useState(() => (isLatinName(cardHolderName) ? cardHolderName.trim() : ""));
+  const [cardNameInvalid, setCardNameInvalid] = useState(false);
 
   // Wait for the webhook to settle the order before showing success.
   async function confirmSettlement() {
@@ -237,11 +257,25 @@ export function RevolutPaymentStep({ token, orderNumber, cardHolderName, email, 
 
   function handlePay() {
     if (!cardFieldRef.current) return;
+    const name = cardName.trim();
+    // Fail fast on a non-Latin name instead of letting Revolut decline it with
+    // error.invalid-name after the round trip.
+    if (!isLatinName(name)) {
+      setCardNameInvalid(true);
+      setError(
+        t(
+          "checkout.cardholder_name_invalid",
+          "Enter the cardholder name in Latin letters, exactly as printed on your card.",
+        ),
+      );
+      emitWidgetEvent("cardholder_name_invalid", "info", orderNumber);
+      return;
+    }
     setError(null);
     submittingRef.current = true;
     setSubmitting(true);
     emitWidgetEvent("submit_clicked", "info", orderNumber);
-    cardFieldRef.current.submit({ name: cardHolderName, email });
+    cardFieldRef.current.submit({ name, email });
   }
 
   if (confirming) {
@@ -276,6 +310,24 @@ export function RevolutPaymentStep({ token, orderNumber, cardHolderName, email, 
           <span className="h-px flex-1 bg-stone-200" />
         </div>
       )}
+
+      <div className="flex flex-col gap-1.5">
+        <Text size="xs" className="font-medium uppercase tracking-wide text-stone-500">
+          {t("checkout.cardholder_name_label", "Cardholder name")}
+        </Text>
+        <Input
+          value={cardName}
+          onChange={(e) => {
+            setCardName(e.target.value);
+            if (cardNameInvalid) setCardNameInvalid(false);
+          }}
+          invalid={cardNameInvalid}
+          disabled={submitting}
+          autoComplete="cc-name"
+          placeholder={t("checkout.cardholder_name_placeholder", "As printed on your card")}
+          aria-label={t("checkout.cardholder_name_label", "Cardholder name")}
+        />
+      </div>
 
       <div className="flex flex-col gap-1.5">
         <Text size="xs" className="font-medium uppercase tracking-wide text-stone-500">
