@@ -28,6 +28,58 @@ func TestSpeedyRecipientPickupOfficeMarshal(t *testing.T) {
 	}
 }
 
+// The create-shipment body must match Speedy's schema: serviceId is an integer,
+// content carries totalWeight, and the COD additional service is nested under
+// `service` (not top-level) with a `currencyCode` key. Getting any of these
+// wrong means Speedy rejects the shipment or, worse, silently drops the COD and
+// delivers without collecting money.
+func TestCreateShipmentBodyShape(t *testing.T) {
+	body := createShipmentRequest{
+		Recipient: speedyRecipient{PrivatePerson: true, ClientName: "Ivan", PickupOfficeID: 2966},
+		Service:   speedyService{ServiceID: 505},
+		Content:   speedyContent{ParcelsCount: 1, TotalWeight: 1.5, Parcels: []speedyParcel{{Weight: 1.5}}},
+		Payment:   speedyPayment{CourierServicePayer: "SENDER"},
+	}
+	body.Service.AdditionalServices = &speedyAdditionalServices{COD: &speedyCOD{
+		Amount: 49.90, CurrencyCode: "BGN", ProcessingType: "CASH",
+	}}
+
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	if _, ok := m["additionalServices"]; ok {
+		t.Errorf("additionalServices must not be top-level; it belongs under service: %s", raw)
+	}
+	service, _ := m["service"].(map[string]any)
+	if service == nil {
+		t.Fatalf("missing service object: %s", raw)
+	}
+	if sid, ok := service["serviceId"].(float64); !ok || sid != 505 {
+		t.Errorf("service.serviceId should be integer 505, got %v (%s)", service["serviceId"], raw)
+	}
+	content, _ := m["content"].(map[string]any)
+	if tw, ok := content["totalWeight"].(float64); !ok || tw != 1.5 {
+		t.Errorf("content.totalWeight should be 1.5, got %v (%s)", content["totalWeight"], raw)
+	}
+	as, _ := service["additionalServices"].(map[string]any)
+	cod, _ := as["cod"].(map[string]any)
+	if cod == nil {
+		t.Fatalf("COD must be nested under service.additionalServices.cod: %s", raw)
+	}
+	if _, bad := cod["currency"]; bad {
+		t.Errorf("COD must use currencyCode, not currency: %s", raw)
+	}
+	if cc, ok := cod["currencyCode"].(string); !ok || cc != "BGN" {
+		t.Errorf("cod.currencyCode should be BGN, got %v (%s)", cod["currencyCode"], raw)
+	}
+}
+
 // Speedy returns office ids as JSON numbers. Modeling speedyOffice.ID as a
 // plain string used to 500 the office picker on prod ("cannot unmarshal number
 // into Go struct field ... of type string"). These cases lock in that the

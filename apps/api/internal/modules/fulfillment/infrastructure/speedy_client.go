@@ -84,7 +84,12 @@ type speedyRecipient struct {
 }
 
 type speedyService struct {
-	ServiceID string `json:"serviceId"`
+	// ServiceID is Speedy's numeric courier service id (integer per schema).
+	ServiceID int64 `json:"serviceId"`
+	// Additional services (COD, declared value, …) are nested under the
+	// service object — the create-shipment request has no top-level
+	// additionalServices, so a COD placed elsewhere is silently dropped.
+	AdditionalServices *speedyAdditionalServices `json:"additionalServices,omitempty"`
 }
 
 type speedyParcel struct {
@@ -93,13 +98,16 @@ type speedyParcel struct {
 
 type speedyContent struct {
 	ParcelsCount int            `json:"parcelsCount"`
-	Parcels      []speedyParcel `json:"parcels"`
+	TotalWeight  float64        `json:"totalWeight"`
+	Parcels      []speedyParcel `json:"parcels,omitempty"`
 }
 
 type speedyCOD struct {
-	Amount         float64 `json:"amount"`
-	Currency       string  `json:"currency"`
-	ProcessingType string  `json:"processingType"`
+	Amount float64 `json:"amount"`
+	// CurrencyCode is the schema field name (not "currency"); a mismatched key
+	// means Speedy ignores the currency on the cash-on-delivery service.
+	CurrencyCode   string `json:"currencyCode"`
+	ProcessingType string `json:"processingType"`
 }
 
 type speedyAdditionalServices struct {
@@ -112,12 +120,11 @@ type speedyPayment struct {
 
 type createShipmentRequest struct {
 	speedyAuth
-	Recipient          speedyRecipient           `json:"recipient"`
-	Service            speedyService             `json:"service"`
-	Content            speedyContent             `json:"content"`
-	Payment            speedyPayment             `json:"payment"`
-	AdditionalServices *speedyAdditionalServices `json:"additionalServices,omitempty"`
-	Ref1               string                    `json:"ref1,omitempty"`
+	Recipient speedyRecipient `json:"recipient"`
+	Service   speedyService   `json:"service"`
+	Content   speedyContent   `json:"content"`
+	Payment   speedyPayment   `json:"payment"`
+	Ref1      string          `json:"ref1,omitempty"`
 }
 
 type speedyParcelInfo struct {
@@ -137,6 +144,10 @@ type createShipmentResponse struct {
 }
 
 func (c *SpeedyHTTPClient) CreateShipment(ctx context.Context, req application.CreateShipmentRequest) (application.ShipmentResult, error) {
+	serviceID, err := strconv.ParseInt(req.ServiceID, 10, 64)
+	if err != nil {
+		return application.ShipmentResult{}, fmt.Errorf("invalid speedy service id %q: %w", req.ServiceID, err)
+	}
 	body := createShipmentRequest{
 		speedyAuth: authFromCreds(req.Creds),
 		Recipient: speedyRecipient{
@@ -145,8 +156,8 @@ func (c *SpeedyHTTPClient) CreateShipment(ctx context.Context, req application.C
 			Phone1:        speedyPhone{Number: req.Recipient.Phone},
 			Email:         req.Recipient.Email,
 		},
-		Service: speedyService{ServiceID: req.ServiceID},
-		Content: speedyContent{ParcelsCount: 1, Parcels: []speedyParcel{{Weight: req.ParcelWeightKg}}},
+		Service: speedyService{ServiceID: serviceID},
+		Content: speedyContent{ParcelsCount: 1, TotalWeight: req.ParcelWeightKg, Parcels: []speedyParcel{{Weight: req.ParcelWeightKg}}},
 		Payment: speedyPayment{CourierServicePayer: "SENDER"},
 		Ref1:    req.Ref1,
 	}
@@ -174,9 +185,9 @@ func (c *SpeedyHTTPClient) CreateShipment(ctx context.Context, req application.C
 	}
 
 	if req.RequireCOD {
-		body.AdditionalServices = &speedyAdditionalServices{COD: &speedyCOD{
+		body.Service.AdditionalServices = &speedyAdditionalServices{COD: &speedyCOD{
 			Amount:         float64(req.CODAmount.AmountMinor) / 100,
-			Currency:       req.CODAmount.Currency,
+			CurrencyCode:   req.CODAmount.Currency,
 			ProcessingType: "CASH",
 		}}
 	}
