@@ -80,6 +80,14 @@ export default function Shop() {
       searchParams.getAll("type").length > 0 &&
       searchParams.getAll("category_id").length === 0,
   );
+  // Landing on a parent-category link (header mega-menu → /shop?type=slug&
+  // category_id=parentId) arrives with only the parent's id selected. The
+  // parent's child categories should show as selected too, so the filter panel
+  // reflects that the whole subtree is in scope. Like the type expansion, this
+  // is deferred until the nav has loaded (children come from there).
+  const [categoryExpansionPending, setCategoryExpansionPending] = useState<boolean>(
+    () => !restored && searchParams.getAll("category_id").length > 0,
+  );
   // A search query lives entirely in the URL (never persisted to
   // sessionStorage like the other filters) — it always reflects exactly
   // what the header search form was last submitted with.
@@ -101,6 +109,7 @@ export default function Shop() {
     setSelectedAttributeValueIds(searchParams.getAll("attribute_value_id"));
     setOnSaleOnly(searchParams.get("sale") === "true");
     setTypeExpansionPending(urlTypes.length > 0 && urlCategoryIds.length === 0);
+    setCategoryExpansionPending(urlCategoryIds.length > 0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParamsKey, shouldReset]);
 
@@ -133,10 +142,13 @@ export default function Shop() {
   useEffect(() => {
     getNav(locale)
       .then(setNavTypes)
-      // If the nav can't load we can't expand a type into its categories —
-      // drop the pending flag so the product list falls back to unfiltered
-      // rather than hanging on the loading skeleton forever.
-      .catch(() => setTypeExpansionPending(false));
+      // If the nav can't load we can't expand a type/parent into its category
+      // ids — drop the pending flags so the product list falls back rather than
+      // hanging on the loading skeleton forever.
+      .catch(() => {
+        setTypeExpansionPending(false);
+        setCategoryExpansionPending(false);
+      });
   }, [locale]);
 
   // Once the nav has loaded, expand any type-only scope into that type's
@@ -158,6 +170,23 @@ export default function Shop() {
     setTypeExpansionPending(false);
   }, [typeExpansionPending, navTypes, selectedTypeSlugs]);
 
+  // Once the nav has loaded, expand any selected parent category into its child
+  // ids so the filter panel shows the whole subtree as selected (arriving from
+  // a parent-category link only carries the parent's id). Child links carry an
+  // id with no children, so they expand to nothing and stay scoped as-is.
+  useEffect(() => {
+    if (!categoryExpansionPending || navTypes.length === 0) return;
+    const allCategories = navTypes.flatMap((nt) => nt.categories);
+    setSelectedCategoryIds((prev) => {
+      const ids = new Set(prev);
+      for (const id of prev) {
+        allCategories.find((c) => c.id === id)?.children?.forEach((child) => ids.add(child.id));
+      }
+      return Array.from(ids);
+    });
+    setCategoryExpansionPending(false);
+  }, [categoryExpansionPending, navTypes]);
+
   useEffect(() => {
     listFacets({ categoryIds: selectedCategoryIds, catalogId: selectedCatalogId, locale })
       .then(setFacets)
@@ -178,9 +207,11 @@ export default function Shop() {
 
   useEffect(() => {
     setProducts(null);
-    // Hold the fetch until a pending type→category expansion resolves, so we
-    // never briefly query unscoped (which would flash every product).
-    if (typeExpansionPending) return;
+    // Hold the fetch until a pending expansion resolves: a type→category
+    // expansion (else we'd briefly query unscoped and flash every product) or a
+    // parent→children expansion (else the post-expansion id change would fire a
+    // second, redundant fetch that flashes the skeleton for identical results).
+    if (typeExpansionPending || categoryExpansionPending) return;
     // A filter just changed while off page 1: the reset effect above is about
     // to set page = 1, which re-runs this fetch. Skip the stale in-between one.
     if (fetchedFilterKey.current !== filterKey && page !== 1) {
@@ -209,7 +240,7 @@ export default function Shop() {
         if (seq === reqSeq.current) setError(t("shop.load_error", "Could not load products."));
       });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterKey, page, typeExpansionPending]);
+  }, [filterKey, page, typeExpansionPending, categoryExpansionPending]);
 
   // Only types that own at least one selected category stay "active" — lets
   // us drive both the Type and Category groups from the same source of truth.
