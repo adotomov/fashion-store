@@ -37,7 +37,7 @@ func TestCreateShipmentBodyShape(t *testing.T) {
 	body := createShipmentRequest{
 		Recipient: speedyRecipient{PrivatePerson: true, ClientName: "Ivan", PickupOfficeID: 2966},
 		Service:   speedyService{ServiceID: 505},
-		Content:   speedyContent{ParcelsCount: 1, TotalWeight: 1.5, Parcels: []speedyParcel{{Weight: 1.5}}},
+		Content:   speedyContent{ParcelsCount: 1, TotalWeight: 1.5},
 		Payment:   speedyPayment{CourierServicePayer: "SENDER"},
 	}
 	body.Service.AdditionalServices = &speedyAdditionalServices{COD: &speedyCOD{
@@ -66,6 +66,11 @@ func TestCreateShipmentBodyShape(t *testing.T) {
 	content, _ := m["content"].(map[string]any)
 	if tw, ok := content["totalWeight"].(float64); !ok || tw != 1.5 {
 		t.Errorf("content.totalWeight should be 1.5, got %v (%s)", content["totalWeight"], raw)
+	}
+	// A parcels[] array requires a sequential seqNo per entry; sending it without
+	// one is what triggered Speedy code 1. For a single parcel we must omit it.
+	if _, bad := content["parcels"]; bad {
+		t.Errorf("content.parcels must be omitted for a single parcel: %s", raw)
 	}
 	as, _ := service["additionalServices"].(map[string]any)
 	cod, _ := as["cod"].(map[string]any)

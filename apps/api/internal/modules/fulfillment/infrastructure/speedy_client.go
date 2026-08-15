@@ -92,14 +92,14 @@ type speedyService struct {
 	AdditionalServices *speedyAdditionalServices `json:"additionalServices,omitempty"`
 }
 
-type speedyParcel struct {
-	Weight float64 `json:"weight"`
-}
-
+// speedyContent describes a single, unlabeled parcel. We deliberately send only
+// parcelsCount + totalWeight and NOT a parcels[] array: supplying parcels
+// requires a sequential seqNo per entry, and omitting it makes Speedy reject the
+// create with code 1 ("Грешни поредни номера на пакети" — wrong sequential
+// parcel numbers). Speedy synthesizes the parcel from the count + weight.
 type speedyContent struct {
-	ParcelsCount int            `json:"parcelsCount"`
-	TotalWeight  float64        `json:"totalWeight"`
-	Parcels      []speedyParcel `json:"parcels,omitempty"`
+	ParcelsCount int     `json:"parcelsCount"`
+	TotalWeight  float64 `json:"totalWeight"`
 }
 
 type speedyCOD struct {
@@ -157,7 +157,7 @@ func (c *SpeedyHTTPClient) CreateShipment(ctx context.Context, req application.C
 			Email:         req.Recipient.Email,
 		},
 		Service: speedyService{ServiceID: serviceID},
-		Content: speedyContent{ParcelsCount: 1, TotalWeight: req.ParcelWeightKg, Parcels: []speedyParcel{{Weight: req.ParcelWeightKg}}},
+		Content: speedyContent{ParcelsCount: 1, TotalWeight: req.ParcelWeightKg},
 		Payment: speedyPayment{CourierServicePayer: "SENDER"},
 		Ref1:    req.Ref1,
 	}
