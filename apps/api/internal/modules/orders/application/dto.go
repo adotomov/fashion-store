@@ -107,6 +107,9 @@ type UpdateFulfillmentInput struct {
 	TrackingNumber *string
 	ShipmentStatus *string
 	ShipmentID     *string
+	// ShipmentError sets (or, with an empty string, clears) the recorded reason a
+	// Speedy booking failed. Nil leaves the stored value untouched.
+	ShipmentError *string
 }
 
 // AdminListOrdersFilter narrows the admin order list. UnviewedOnly is used

@@ -89,6 +89,8 @@ export type AdminOrder = {
   carrier?: string;
   tracking_number?: string;
   shipment_status?: string;
+  speedy_shipment_id?: string;
+  shipment_error?: string;
   viewed_by_admin_at?: string;
   items: AdminOrderItem[];
 };
@@ -147,6 +149,20 @@ export type UpdateFulfillmentInput = Partial<{
 export async function updateOrderFulfillment(id: string, input: UpdateFulfillmentInput): Promise<AdminOrder> {
   const raw = await apiFetch<RawAdminOrder>(`/api/v1/admin/orders/${id}`, { method: "PATCH", body: input });
   return fromRawOrder(raw);
+}
+
+export type RetryShipmentResult = {
+  shipment_status: string;
+  shipment_id?: string;
+  tracking_number?: string;
+};
+
+// retryOrderShipment re-attempts booking the Speedy shipment for an order whose
+// original booking failed. On success the order carries fresh tracking details;
+// callers should refetch the order to reflect the new state. Throws with the
+// carrier's reason (also recorded on the order) when the booking fails again.
+export async function retryOrderShipment(id: string): Promise<RetryShipmentResult> {
+  return apiFetch<RetryShipmentResult>(`/api/v1/admin/orders/${id}/retry-shipment`, { method: "POST" });
 }
 
 export async function refundOrder(id: string, amountMinor: number, reason?: string): Promise<void> {

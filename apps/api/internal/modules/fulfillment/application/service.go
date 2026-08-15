@@ -171,7 +171,9 @@ func (s *Service) CreateShipmentForOrder(ctx context.Context, input CreateShipme
 			serviceID = office
 		}
 	case "easybox":
-		serviceID = st.Config[domain.SpeedyConfigDefaultLockerServiceID]
+		if locker := st.Config[domain.SpeedyConfigDefaultLockerServiceID]; locker != "" {
+			serviceID = locker
+		}
 	}
 	// Use the real per-order parcel weight; fall back to the provider's
 	// configured default when the order carried no SKU weights.

@@ -122,6 +122,14 @@ type refundRequest struct {
 	Reason      string `json:"reason,omitempty"`
 }
 
+// retryShipmentResponse returns the freshly booked shipment details after a
+// successful admin retry, so the order view can update without a full refetch.
+type retryShipmentResponse struct {
+	ShipmentStatus string `json:"shipment_status"`
+	ShipmentID     string `json:"shipment_id,omitempty"`
+	TrackingNumber string `json:"tracking_number,omitempty"`
+}
+
 // cancelPaymentRequest backs out a card payment the customer initiated but
 // didn't complete. The revolut_order_id is the capability that authorises the
 // cancel — the client holds it from the checkout initiation response.

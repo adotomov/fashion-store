@@ -504,13 +504,57 @@ func (a *checkoutOrderGatewayAdapter) SaveShippingQuotes(ctx context.Context, or
 }
 
 func (a *checkoutOrderGatewayAdapter) SetShipmentInfo(ctx context.Context, orderID uuid.UUID, carrier, trackingNumber, shipmentID, status string) error {
+	cleared := "" // a successful booking clears any recorded failure reason
 	_, err := a.orders.UpdateFulfillment(ctx, orderID, ordersapplication.UpdateFulfillmentInput{
 		Carrier:        &carrier,
 		TrackingNumber: &trackingNumber,
 		ShipmentID:     &shipmentID,
 		ShipmentStatus: &status,
+		ShipmentError:  &cleared,
 	})
 	return err
+}
+
+func (a *checkoutOrderGatewayAdapter) SetShipmentFailed(ctx context.Context, orderID uuid.UUID, reason string) error {
+	failed := "failed"
+	_, err := a.orders.UpdateFulfillment(ctx, orderID, ordersapplication.UpdateFulfillmentInput{
+		ShipmentStatus: &failed,
+		ShipmentError:  &reason,
+	})
+	return err
+}
+
+func (a *checkoutOrderGatewayAdapter) FindOrderForShipment(ctx context.Context, orderID uuid.UUID) (checkoutapplication.OrderForShipment, error) {
+	order, err := a.orders.FindByID(ctx, orderID)
+	if err != nil {
+		if errors.Is(err, ordersdomain.ErrOrderNotFound) {
+			return checkoutapplication.OrderForShipment{}, checkoutdomain.ErrOrderNotFound
+		}
+		return checkoutapplication.OrderForShipment{}, err
+	}
+	var officeID string
+	if order.DeliveryOfficeID != nil {
+		officeID = *order.DeliveryOfficeID
+	}
+	var shipmentStatus string
+	if order.ShipmentStatus != nil {
+		shipmentStatus = *order.ShipmentStatus
+	}
+	return checkoutapplication.OrderForShipment{
+		ID:                order.ID,
+		OrderNumber:       order.OrderNumber,
+		DeliveryMethod:    order.DeliveryMethod,
+		DeliveryOfficeID:  officeID,
+		PaymentMethod:     order.PaymentMethod,
+		ContactName:       order.ContactName,
+		ContactEmail:      order.ContactEmail,
+		ContactPhone:      order.ContactPhone,
+		ShippingAddress:   toCheckoutOrderAddress(order.ShippingAddress),
+		Total:             order.Total,
+		ParcelWeightGrams: order.ParcelWeightGrams,
+		AlreadyBooked:     order.SpeedyShipmentID != nil && *order.SpeedyShipmentID != "",
+		ShipmentStatus:    shipmentStatus,
+	}, nil
 }
 
 func (a *checkoutOrderGatewayAdapter) FindByProviderOrderID(ctx context.Context, providerOrderID string) (checkoutapplication.OrderForFinalize, error) {

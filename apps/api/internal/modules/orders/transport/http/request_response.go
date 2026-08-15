@@ -105,10 +105,12 @@ type orderResponse struct {
 	PaymentMethod  string                `json:"payment_method"`
 	Payment        *orderPaymentResponse `json:"payment,omitempty"`
 
-	Carrier         string `json:"carrier,omitempty"`
-	TrackingNumber  string `json:"tracking_number,omitempty"`
-	ShipmentStatus  string `json:"shipment_status,omitempty"`
-	ViewedByAdminAt string `json:"viewed_by_admin_at,omitempty"`
+	Carrier          string `json:"carrier,omitempty"`
+	TrackingNumber   string `json:"tracking_number,omitempty"`
+	ShipmentStatus   string `json:"shipment_status,omitempty"`
+	SpeedyShipmentID string `json:"speedy_shipment_id,omitempty"`
+	ShipmentError    string `json:"shipment_error,omitempty"`
+	ViewedByAdminAt  string `json:"viewed_by_admin_at,omitempty"`
 }
 
 func toOrderResponse(o domain.Order) orderResponse {
@@ -148,6 +150,12 @@ func toOrderResponse(o domain.Order) orderResponse {
 	}
 	if o.ShipmentStatus != nil {
 		resp.ShipmentStatus = *o.ShipmentStatus
+	}
+	if o.SpeedyShipmentID != nil {
+		resp.SpeedyShipmentID = *o.SpeedyShipmentID
+	}
+	if o.ShipmentError != nil {
+		resp.ShipmentError = *o.ShipmentError
 	}
 	if o.ViewedByAdminAt != nil {
 		resp.ViewedByAdminAt = o.ViewedByAdminAt.Format(timeFormat)

@@ -39,10 +39,10 @@ func (r *stubSettingsRepo) List(_ context.Context) ([]domain.ProviderSettings, e
 }
 
 type stubSpeedyClient struct {
-	lastCreateReq  application.CreateShipmentRequest
-	createResult   application.ShipmentResult
-	lastTrackBatch []string
-	trackResult    []application.TrackedParcel
+	lastCreateReq    application.CreateShipmentRequest
+	createResult     application.ShipmentResult
+	lastTrackBatch   []string
+	trackResult      []application.TrackedParcel
 	searchCalls      int
 	lastSiteID       int64
 	lastCalculateReq application.CalculateRequest
@@ -159,6 +159,35 @@ func TestCreateShipmentForOrder_BuildsRequestFromSettings(t *testing.T) {
 	}
 	if !speedy.lastCreateReq.RequireCOD || speedy.lastCreateReq.CODAmount.AmountMinor != 1999 {
 		t.Errorf("expected COD required with amount 1999, got %+v", speedy.lastCreateReq)
+	}
+}
+
+func TestCreateShipmentForOrder_EasyBoxFallsBackToCourierServiceID(t *testing.T) {
+	// EasyBox with no locker-specific service configured must fall back to the
+	// courier service id (mirroring speedy_office), not send a blank service id.
+	settings := &stubSettingsRepo{settings: map[string]domain.ProviderSettings{
+		domain.ProviderSpeedy: {
+			Provider: domain.ProviderSpeedy,
+			Enabled:  true,
+			Config: map[string]string{
+				domain.SpeedyConfigUsername:                "api-user",
+				domain.SpeedyConfigPassword:                "secret",
+				domain.SpeedyConfigDefaultCourierServiceID: "505",
+			},
+		},
+	}}
+	speedy := &stubSpeedyClient{createResult: application.ShipmentResult{ShipmentID: "ship-1", ParcelID: "parcel-1"}}
+	service := newTestService(settings, speedy, &stubOrderGateway{})
+
+	if _, err := service.CreateShipmentForOrder(context.Background(), application.CreateShipmentInput{
+		Provider:       domain.ProviderSpeedy,
+		DeliveryMethod: "easybox",
+		OfficeID:       "apt-7",
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if speedy.lastCreateReq.ServiceID != "505" {
+		t.Errorf("expected easybox to fall back to courier service id 505, got %q", speedy.lastCreateReq.ServiceID)
 	}
 }
 

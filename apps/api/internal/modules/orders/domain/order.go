@@ -153,6 +153,9 @@ type Order struct {
 	TrackingNumber   *string
 	ShipmentStatus   *string
 	SpeedyShipmentID *string
+	// ShipmentError records why the last Speedy booking attempt failed (nil/empty
+	// once a booking succeeds), so the admin can see the reason and retry.
+	ShipmentError    *string
 	DeliveryOfficeID *string
 	ViewedByAdminAt  *time.Time
 	ReservationID    *uuid.UUID

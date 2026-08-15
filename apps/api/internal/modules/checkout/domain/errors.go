@@ -23,6 +23,17 @@ var (
 	ErrRefundNotAllowed      = errors.New("order cannot be refunded")
 	ErrRefundAmountInvalid   = errors.New("refund amount is invalid")
 	ErrRefundFailed          = errors.New("refund could not be processed")
+
+	// Shipment retry errors (admin "retry shipment booking" action).
+	// ErrShipmentNotRetryable is returned for an order whose delivery method has
+	// no logistics provider (nothing to book).
+	ErrShipmentNotRetryable = errors.New("order has no shippable delivery method")
+	// ErrShipmentAlreadyBooked guards against creating a duplicate label when a
+	// Speedy shipment was already booked for the order.
+	ErrShipmentAlreadyBooked = errors.New("a shipment has already been booked for this order")
+	// ErrShipmentBookingFailed wraps a failed carrier booking on retry; the
+	// underlying reason is also recorded on the order for the admin to see.
+	ErrShipmentBookingFailed = errors.New("shipment booking failed")
 )
 
 type ValidationError string

@@ -22,6 +22,7 @@ import {
   listAdminOrders,
   listPaymentTransactions,
   refundOrder,
+  retryOrderShipment,
   updateOrderFulfillment,
 } from "../../lib/api/admin-orders";
 import { formatMoney } from "../../lib/money/money";
@@ -67,6 +68,20 @@ const paymentMethodLabels: Record<string, string> = {
   card_online: "Card Online",
 };
 
+const deliveryMethodLabels: Record<string, string> = {
+  speedy: "Speedy — to address",
+  speedy_office: "Speedy — to office",
+  easybox: "EasyBox locker",
+};
+
+function formatDeliveryMethod(code: string): string {
+  return deliveryMethodLabels[code] ?? code;
+}
+
+// Delivery methods fulfilled by a Speedy shipment we can (re)book. A method not
+// in this set (none currently) would hide the booking/retry controls.
+const SHIPPABLE_METHODS = new Set(["speedy", "speedy_office", "easybox"]);
+
 function formatStatus(status: string): string {
   return statusLabels[status] ?? status.charAt(0).toUpperCase() + status.slice(1);
 }
@@ -101,6 +116,10 @@ export default function AdminOrders() {
   const [refundReason, setRefundReason] = useState("");
   const [isRefunding, setIsRefunding] = useState(false);
   const [refundError, setRefundError] = useState<string | null>(null);
+
+  // Shipment retry state, keyed by order id so each row tracks its own booking.
+  const [retryingShipmentId, setRetryingShipmentId] = useState<string | null>(null);
+  const [retryError, setRetryError] = useState<Record<string, string>>({});
 
   function refundableMinor(order: AdminOrder): number {
     if (!order.payment) return 0;
@@ -142,6 +161,28 @@ export default function AdminOrders() {
       setRefundError("Could not process the refund. Try again.");
     } finally {
       setIsRefunding(false);
+    }
+  }
+
+  async function handleRetryShipment(order: AdminOrder) {
+    setRetryingShipmentId(order.id);
+    setRetryError((prev) => ({ ...prev, [order.id]: "" }));
+    try {
+      await retryOrderShipment(order.id);
+      const updated = await getAdminOrder(order.id);
+      setOrders((prev) => prev?.map((o) => (o.id === updated.id ? updated : o)) ?? prev);
+    } catch (err) {
+      const message = err instanceof Error && err.message ? err.message : "Could not book the shipment. Try again.";
+      setRetryError((prev) => ({ ...prev, [order.id]: message }));
+      // Refresh so a freshly recorded failure reason from the server shows up.
+      try {
+        const updated = await getAdminOrder(order.id);
+        setOrders((prev) => prev?.map((o) => (o.id === updated.id ? updated : o)) ?? prev);
+      } catch {
+        // ignore refresh failure — the inline retry error already explains it
+      }
+    } finally {
+      setRetryingShipmentId(null);
     }
   }
 
@@ -362,17 +403,17 @@ export default function AdminOrders() {
                                 ) : (
                                   <div className="text-stone-400">Settled at delivery</div>
                                 )}
-                                {order.shipment_status && (
-                                  <div className="mt-3">
-                                    <Text size="xs" tone="muted" className="uppercase tracking-wide">
-                                      Shipment Status
-                                    </Text>
-                                    <div>{order.shipment_status}</div>
-                                  </div>
-                                )}
                               </div>
                             </div>
                           </div>
+
+                          <DeliverySection
+                            order={order}
+                            isReadOnly={isReadOnly}
+                            isRetrying={retryingShipmentId === order.id}
+                            retryError={retryError[order.id]}
+                            onRetry={() => handleRetryShipment(order)}
+                          />
 
                           {order.payment && transactions[order.id] && transactions[order.id].length > 0 && (
                             <div className="mt-6">
@@ -485,6 +526,93 @@ export default function AdminOrders() {
           </Button>
         </div>
       </Modal>
+    </div>
+  );
+}
+
+function DeliverySection({
+  order,
+  isReadOnly,
+  isRetrying,
+  retryError,
+  onRetry,
+}: {
+  order: AdminOrder;
+  isReadOnly: boolean;
+  isRetrying: boolean;
+  retryError?: string;
+  onRetry: () => void;
+}) {
+  const shippable = SHIPPABLE_METHODS.has(order.delivery_method);
+  const hasSpeedyId = Boolean(order.speedy_shipment_id);
+  const booked = hasSpeedyId || order.shipment_status === "created";
+  const failed = order.shipment_status === "failed";
+  // The server refuses to re-book once a Speedy shipment id exists, so the retry
+  // control mirrors that: offered whenever a shippable order has no shipment yet.
+  const canRetry = shippable && !hasSpeedyId && !isReadOnly;
+
+  return (
+    <div className="mt-6 rounded-sm border border-stone-200 bg-white p-4">
+      <div className="flex items-center justify-between gap-3">
+        <Text size="xs" tone="muted" className="uppercase tracking-wide">
+          Delivery
+        </Text>
+        {shippable &&
+          (booked ? (
+            <Badge variant="success">Shipment booked</Badge>
+          ) : failed ? (
+            <Badge variant="danger">Booking failed</Badge>
+          ) : (
+            <Badge variant="neutral">Not booked</Badge>
+          ))}
+      </div>
+
+      <dl className="mt-3 grid grid-cols-1 gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+        <div className="flex justify-between gap-4">
+          <dt className="text-stone-500">Method</dt>
+          <dd className="text-right text-stone-700">{formatDeliveryMethod(order.delivery_method)}</dd>
+        </div>
+        {order.carrier && (
+          <div className="flex justify-between gap-4">
+            <dt className="text-stone-500">Carrier</dt>
+            <dd className="text-right text-stone-700 capitalize">{order.carrier}</dd>
+          </div>
+        )}
+        {order.speedy_shipment_id && (
+          <div className="flex justify-between gap-4">
+            <dt className="text-stone-500">Speedy shipment ID</dt>
+            <dd className="text-right font-mono text-stone-700">{order.speedy_shipment_id}</dd>
+          </div>
+        )}
+        {order.tracking_number && (
+          <div className="flex justify-between gap-4">
+            <dt className="text-stone-500">Tracking / parcel no.</dt>
+            <dd className="text-right font-mono text-stone-700">{order.tracking_number}</dd>
+          </div>
+        )}
+        {order.shipment_status && !booked && !failed && (
+          <div className="flex justify-between gap-4">
+            <dt className="text-stone-500">Shipment status</dt>
+            <dd className="text-right text-stone-700">{order.shipment_status}</dd>
+          </div>
+        )}
+      </dl>
+
+      {(order.shipment_error || retryError) && (
+        <div className="mt-3 rounded-sm border border-red-100 bg-red-50 px-3 py-2">
+          <Text size="xs" tone="danger" className="font-medium">
+            {retryError || `Last booking error: ${order.shipment_error}`}
+          </Text>
+        </div>
+      )}
+
+      {canRetry && (
+        <div className="mt-3">
+          <Button variant="outline" size="sm" onClick={onRetry} disabled={isRetrying}>
+            {isRetrying ? "Booking…" : booked || failed ? "Retry shipment booking" : "Book shipment"}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

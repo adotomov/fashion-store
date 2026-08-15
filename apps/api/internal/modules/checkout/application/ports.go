@@ -191,8 +191,18 @@ type OrderGateway interface {
 
 	// SetShipmentInfo writes back the carrier/tracking details once a
 	// shipment has been created for the order — best-effort, called after
-	// CreateOrder, never blocks the checkout response on its own.
+	// CreateOrder, never blocks the checkout response on its own. It also
+	// clears any previously recorded shipment error.
 	SetShipmentInfo(ctx context.Context, orderID uuid.UUID, carrier, trackingNumber, shipmentID, status string) error
+
+	// SetShipmentFailed records that a shipment booking attempt failed, storing
+	// the reason for the admin order view and marking shipment_status "failed".
+	SetShipmentFailed(ctx context.Context, orderID uuid.UUID, reason string) error
+
+	// FindOrderForShipment loads the fields needed to (re)book a shipment for an
+	// existing order, plus whether one was already booked. Returns
+	// ErrOrderNotFound if the id is unknown.
+	FindOrderForShipment(ctx context.Context, orderID uuid.UUID) (OrderForShipment, error)
 
 	// FindByProviderOrderID loads the finalize snapshot for the order behind a
 	// Revolut order id (the webhook lookup key). Returns ErrOrderNotFound if
@@ -236,15 +246,15 @@ type PendingPaymentRef struct {
 // to commit stock and book the shipment from a webhook, without reloading the
 // customer's original in-memory checkout submission.
 type OrderForFinalize struct {
-	ID               uuid.UUID
-	OrderNumber      string
-	Status           string
-	UserID           uuid.UUID
-	CartGuestToken   *uuid.UUID
-	ReservationID    *uuid.UUID
-	DeliveryMethod   string
-	DeliveryOfficeID string
-	PaymentMethod    string
+	ID                uuid.UUID
+	OrderNumber       string
+	Status            string
+	UserID            uuid.UUID
+	CartGuestToken    *uuid.UUID
+	ReservationID     *uuid.UUID
+	DeliveryMethod    string
+	DeliveryOfficeID  string
+	PaymentMethod     string
 	ContactName       string
 	ContactEmail      string
 	ContactPhone      string
@@ -258,6 +268,28 @@ type OrderForFinalize struct {
 	// Items lets the settlement path build a confirmation email with line items,
 	// the same as the pay-on-delivery path.
 	Items []OrderResultItem
+}
+
+// OrderForShipment is the subset of a placed order the admin retry path needs
+// to rebuild a Speedy shipment request, plus the current booking state so a
+// retry can refuse to create a duplicate label.
+type OrderForShipment struct {
+	ID                uuid.UUID
+	OrderNumber       string
+	DeliveryMethod    string
+	DeliveryOfficeID  string
+	PaymentMethod     string
+	ContactName       string
+	ContactEmail      string
+	ContactPhone      string
+	ShippingAddress   OrderAddress
+	Total             money.Money
+	ParcelWeightGrams int
+	// AlreadyBooked is true once a Speedy shipment id is recorded on the order —
+	// the guard against double-booking on retry.
+	AlreadyBooked bool
+	// ShipmentStatus is the last recorded status ("created", "failed", or empty).
+	ShipmentStatus string
 }
 
 // OrderNotification is the checkout-owned view of an order that an email needs.

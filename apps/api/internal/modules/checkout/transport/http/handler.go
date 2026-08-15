@@ -45,6 +45,7 @@ func (h *Handler) RegisterRoutes(r chi.Router, optionalAuth, requireAdmin func(h
 	r.Group(func(r chi.Router) {
 		r.Use(requireAdmin)
 		r.Post("/admin/orders/{id}/refund", h.refundOrder)
+		r.Post("/admin/orders/{id}/retry-shipment", h.retryShipment)
 	})
 }
 
@@ -256,6 +257,43 @@ func (h *Handler) refundOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *Handler) retryShipment(w http.ResponseWriter, r *http.Request) {
+	orderID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_order_id", "order id is invalid")
+		return
+	}
+
+	result, err := h.service.RetryShipment(r.Context(), orderID)
+	if err != nil {
+		writeRetryShipmentError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, retryShipmentResponse{
+		ShipmentStatus: result.ShipmentStatus,
+		ShipmentID:     result.ShipmentID,
+		TrackingNumber: result.TrackingNumber,
+	})
+}
+
+func writeRetryShipmentError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, domain.ErrOrderNotFound):
+		httpx.WriteError(w, http.StatusNotFound, "order_not_found", "order not found")
+	case errors.Is(err, domain.ErrShipmentNotRetryable):
+		httpx.WriteError(w, http.StatusBadRequest, "shipment_not_retryable", "this order has no shippable delivery method")
+	case errors.Is(err, domain.ErrShipmentAlreadyBooked):
+		httpx.WriteError(w, http.StatusConflict, "shipment_already_booked", "a shipment has already been booked for this order")
+	case errors.Is(err, domain.ErrDeliveryMethodUnavailable):
+		httpx.WriteError(w, http.StatusConflict, "provider_disabled", "the logistics provider is not enabled")
+	case errors.Is(err, domain.ErrShipmentBookingFailed):
+		// Surface the carrier's reason — it's already recorded on the order too.
+		httpx.WriteError(w, http.StatusBadGateway, "shipment_booking_failed", err.Error())
+	default:
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "an unexpected error occurred")
+	}
 }
 
 func writeRefundError(w http.ResponseWriter, err error) {

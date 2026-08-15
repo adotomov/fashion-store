@@ -783,12 +783,75 @@ func (s *Service) createShipment(ctx context.Context, order OrderResult, deliver
 	})
 	if err != nil {
 		s.logger.Error("failed to create logistics shipment for order", "error", err, "order_id", order.ID, "order_number", order.OrderNumber)
+		// Record the failure on the order so the admin can see why and retry,
+		// rather than the order silently carrying no shipment at all.
+		if ferr := s.orders.SetShipmentFailed(ctx, order.ID, err.Error()); ferr != nil {
+			s.logger.Error("failed to record shipment failure on order", "error", ferr, "order_id", order.ID)
+		}
 		return
 	}
 
 	if err := s.orders.SetShipmentInfo(ctx, order.ID, domain.ProviderFor(deliveryMethod.Code), shipment.ParcelID, shipment.ShipmentID, "created"); err != nil {
 		s.logger.Error("failed to record shipment info on order", "error", err, "order_id", order.ID)
 	}
+}
+
+// RetryShipmentResult reports the outcome of a successful shipment retry, so
+// the admin endpoint can return the freshly booked tracking details.
+type RetryShipmentResult struct {
+	ShipmentStatus string
+	ShipmentID     string
+	TrackingNumber string
+}
+
+// RetryShipment re-attempts booking a Speedy shipment for an already-placed
+// order whose original (best-effort) booking failed or never happened — the
+// admin "retry shipment booking" action. It refuses to double-book an order
+// that already has a shipment, and records a fresh failure reason if the retry
+// also fails so the admin can see it and try again.
+func (s *Service) RetryShipment(ctx context.Context, orderID uuid.UUID) (RetryShipmentResult, error) {
+	order, err := s.orders.FindOrderForShipment(ctx, orderID)
+	if err != nil {
+		return RetryShipmentResult{}, err
+	}
+	provider := domain.ProviderFor(order.DeliveryMethod)
+	if provider == "" {
+		return RetryShipmentResult{}, domain.ErrShipmentNotRetryable
+	}
+	if order.AlreadyBooked {
+		return RetryShipmentResult{}, domain.ErrShipmentAlreadyBooked
+	}
+	if !s.fulfillment.IsProviderEnabled(ctx, provider) {
+		return RetryShipmentResult{}, domain.ErrDeliveryMethodUnavailable
+	}
+
+	shipment, err := s.fulfillment.CreateShipment(ctx, CreateShipmentInput{
+		Provider:       provider,
+		DeliveryMethod: order.DeliveryMethod,
+		OfficeID:       order.DeliveryOfficeID,
+		ContactName:    order.ContactName,
+		Phone:          order.ContactPhone,
+		Email:          order.ContactEmail,
+		Address:        order.ShippingAddress,
+		RequireCOD:     order.PaymentMethod != domain.PaymentMethodCardOnline,
+		CODAmount:      order.Total,
+		Ref1:           order.OrderNumber,
+		WeightKg:       parcelWeightKg(order.ParcelWeightGrams),
+	})
+	if err != nil {
+		s.logger.Error("shipment retry failed", "error", err, "order_id", orderID, "order_number", order.OrderNumber)
+		if ferr := s.orders.SetShipmentFailed(ctx, orderID, err.Error()); ferr != nil {
+			s.logger.Error("failed to record shipment failure on order", "error", ferr, "order_id", orderID)
+		}
+		return RetryShipmentResult{}, fmt.Errorf("%w: %v", domain.ErrShipmentBookingFailed, err)
+	}
+
+	if err := s.orders.SetShipmentInfo(ctx, orderID, provider, shipment.ParcelID, shipment.ShipmentID, "created"); err != nil {
+		s.logger.Error("failed to record shipment info on order", "error", err, "order_id", orderID)
+		return RetryShipmentResult{}, err
+	}
+	s.logger.Info("shipment retry booked", "order_id", orderID, "order_number", order.OrderNumber, "shipment_id", shipment.ShipmentID)
+	return RetryShipmentResult{ShipmentStatus: "created", ShipmentID: shipment.ShipmentID, TrackingNumber: shipment.ParcelID}, nil
 }
 
 // parcelWeightKg converts a summed SKU weight in grams to kilograms for the

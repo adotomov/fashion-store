@@ -40,7 +40,7 @@ var orderColumns = `
 	` + addressColumnsFor("shipping") + `,
 	` + addressColumnsFor("billing") + `,
 	delivery_method, delivery_fee_amount, delivery_fee_currency, payment_method, parcel_weight_grams,
-	carrier, tracking_number, shipment_status, speedy_shipment_id, delivery_office_id, viewed_by_admin_at, reservation_id, cart_guest_token,
+	carrier, tracking_number, shipment_status, speedy_shipment_id, shipment_error, delivery_office_id, viewed_by_admin_at, reservation_id, cart_guest_token,
 	discount_code, discount_amount_minor, discount_amount_currency,
 	created_at, updated_at, locale`
 
@@ -275,12 +275,22 @@ func (r *PostgresRepository) UpdateFulfillment(ctx context.Context, id uuid.UUID
 	if input.ShipmentID != nil {
 		shipmentID = input.ShipmentID
 	}
+	shipmentError := current.ShipmentError
+	if input.ShipmentError != nil {
+		// An empty string clears the recorded failure (e.g. a retry succeeded);
+		// store it as NULL so the column reads cleanly.
+		if *input.ShipmentError == "" {
+			shipmentError = nil
+		} else {
+			shipmentError = input.ShipmentError
+		}
+	}
 
 	row := r.db.QueryRow(ctx, `
-		UPDATE orders SET status = $2, carrier = $3, tracking_number = $4, shipment_status = $5, speedy_shipment_id = $6, updated_at = NOW()
+		UPDATE orders SET status = $2, carrier = $3, tracking_number = $4, shipment_status = $5, speedy_shipment_id = $6, shipment_error = $7, updated_at = NOW()
 		WHERE id = $1
 		RETURNING `+orderColumns,
-		id, status, carrier, trackingNumber, shipmentStatus, shipmentID)
+		id, status, carrier, trackingNumber, shipmentStatus, shipmentID, shipmentError)
 
 	updated, err := scanOrder(row)
 	if err != nil {
@@ -752,7 +762,7 @@ func scanOrder(row pgx.Row) (*domain.Order, error) {
 	targets = append(targets, addressScanTargets(&o.BillingAddress)...)
 	targets = append(targets,
 		&deliveryMethod, &deliveryFeeAmount, &deliveryFeeCurrency, &paymentMethod, &o.ParcelWeightGrams,
-		&o.Carrier, &o.TrackingNumber, &o.ShipmentStatus, &o.SpeedyShipmentID, &o.DeliveryOfficeID, &o.ViewedByAdminAt, &o.ReservationID, &o.CartGuestToken,
+		&o.Carrier, &o.TrackingNumber, &o.ShipmentStatus, &o.SpeedyShipmentID, &o.ShipmentError, &o.DeliveryOfficeID, &o.ViewedByAdminAt, &o.ReservationID, &o.CartGuestToken,
 		&o.DiscountCode, &discountAmountMinorCol, &discountAmountCurrencyCol,
 		&o.CreatedAt, &o.UpdatedAt, &o.Locale,
 	)
