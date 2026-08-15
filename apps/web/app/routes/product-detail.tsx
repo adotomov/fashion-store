@@ -55,10 +55,13 @@ export default function ProductDetail() {
       .then((loaded) => {
         setProduct(loaded);
         addRecentlyViewed(loaded.id);
-        const firstVariant = loaded.variants[0];
-        if (firstVariant) {
+        // Auto-select the first in-stock variant so the page doesn't open on a
+        // sold-out color/size (which reads as the whole product being gone).
+        // Fall back to the first variant when nothing is in stock.
+        const initialVariant = loaded.variants.find(isVariantInStock) ?? loaded.variants[0];
+        if (initialVariant) {
           const initial: Record<string, string> = {};
-          for (const value of firstVariant.attributes) initial[value.attribute_id] = value.id;
+          for (const value of initialVariant.attributes) initial[value.attribute_id] = value.id;
           setSelectedValues(initial);
         }
       })

@@ -156,3 +156,35 @@ func TestAttributeService_DeleteSystemAttributeBlocked(t *testing.T) {
 		t.Fatalf("expected ErrSystemAttributeReadOnly, got %v", err)
 	}
 }
+
+func TestAttributeService_DeleteMulticolorValueBlocked(t *testing.T) {
+	repo := newFakeAttributeRepo()
+	svc := application.NewAttributeService(repo)
+
+	color, err := repo.Create(context.Background(), domain.Attribute{Name: "Color", Type: domain.AttributeTypeColor, IsSystem: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// Seed the built-in multicolor value directly (the service's AddValue would
+	// reject the non-hex sentinel, which is by design — it's migration-only).
+	multi := domain.MulticolorHex
+	seeded, err := repo.AddValue(context.Background(), color.ID, "Multicolor", &multi)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if err := svc.DeleteValue(context.Background(), color.ID, seeded.ID); err != domain.ErrSystemAttributeValueReadOnly {
+		t.Fatalf("expected ErrSystemAttributeValueReadOnly, got %v", err)
+	}
+
+	// A regular color value on the same attribute still deletes normally.
+	hex := "#B2543C"
+	clay, err := svc.AddValue(context.Background(), color.ID, "Clay", &hex)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if err := svc.DeleteValue(context.Background(), color.ID, clay.ID); err != nil {
+		t.Fatalf("expected regular value to delete, got %v", err)
+	}
+}

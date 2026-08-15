@@ -14,6 +14,7 @@ import { Input } from "../../ui/Input";
 import { Modal } from "../../ui/Modal";
 import { Pagination } from "../../ui/Pagination";
 import { Text } from "../../ui/Text";
+import { isMulticolor, swatchBackground } from "../../../lib/color";
 import { usePagination } from "../../../lib/usePagination";
 import {
   type Attribute,
@@ -434,29 +435,35 @@ function ColorAttributeCard({ attribute, isReadOnly, onAddColor, onDeleteValue }
             No colors yet
           </Text>
         )}
-        {attribute.values.map((value) => (
-          <div key={value.id} className="flex flex-col items-center gap-1.5">
-            <div className="relative">
-              <span
-                className="block h-9 w-9 rounded-full border border-stone-300"
-                style={{ backgroundColor: value.color_hex ?? "transparent" }}
-                title={value.color_hex ?? value.value}
-              />
-              <button
-                type="button"
-                aria-label={`Remove ${value.value}`}
-                onClick={() => onDeleteValue(attribute, value.id)}
-                disabled={isReadOnly}
-                className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-stone-400 shadow-sm ring-1 ring-stone-200 hover:text-danger-600 disabled:pointer-events-none disabled:opacity-30"
-              >
-                <Icon name="close" size={10} />
-              </button>
+        {attribute.values.map((value) => {
+          const multicolor = isMulticolor(value.color_hex);
+          return (
+            <div key={value.id} className="flex flex-col items-center gap-1.5">
+              <div className="relative">
+                <span
+                  className="block h-9 w-9 rounded-full border border-stone-300"
+                  style={{ background: swatchBackground(value.color_hex) }}
+                  title={multicolor ? "Multicolor" : (value.color_hex ?? value.value)}
+                />
+                {/* The built-in Multicolor swatch is permanent and can't be removed. */}
+                {!multicolor && (
+                  <button
+                    type="button"
+                    aria-label={`Remove ${value.value}`}
+                    onClick={() => onDeleteValue(attribute, value.id)}
+                    disabled={isReadOnly}
+                    className="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-white text-stone-400 shadow-sm ring-1 ring-stone-200 hover:text-danger-600 disabled:pointer-events-none disabled:opacity-30"
+                  >
+                    <Icon name="close" size={10} />
+                  </button>
+                )}
+              </div>
+              <Text size="xs" tone="muted">
+                {value.value}
+              </Text>
             </div>
-            <Text size="xs" tone="muted">
-              {value.value}
-            </Text>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="mt-5 flex flex-wrap items-end gap-3 border-t border-stone-100 pt-4">

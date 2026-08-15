@@ -15,6 +15,13 @@ const (
 	AttributeTypeColor AttributeType = "color"
 )
 
+// MulticolorHex is a sentinel stored in AttributeValue.ColorHex to mark the
+// permanent built-in "Multicolor" swatch, which represents multi-colored
+// garments (prints, patterns) and renders as a rainbow wheel instead of a solid
+// fill. It is intentionally not a valid hex so it can only be seeded (via
+// migration), never created or deleted through the admin API.
+const MulticolorHex = "multicolor"
+
 type Attribute struct {
 	ID   uuid.UUID
 	Name string
@@ -35,6 +42,13 @@ type AttributeValue struct {
 	// (e.g. "#B2543C"), nil for plain-text attributes.
 	ColorHex  *string
 	CreatedAt time.Time
+}
+
+// IsMulticolor reports whether this value is the permanent built-in Multicolor
+// swatch (see MulticolorHex), which the storefront renders as a rainbow wheel
+// and the admin API refuses to delete.
+func (v AttributeValue) IsMulticolor() bool {
+	return v.ColorHex != nil && *v.ColorHex == MulticolorHex
 }
 
 // AttributeFacet is a storefront-facing view of an attribute and the subset

@@ -292,6 +292,8 @@ func writeCatalogModuleError(w http.ResponseWriter, err error) {
 		httpx.WriteError(w, http.StatusNotFound, "attribute_value_not_found", "attribute value not found")
 	case errors.Is(err, domain.ErrSystemAttributeReadOnly):
 		httpx.WriteError(w, http.StatusForbidden, "system_attribute_read_only", "system attributes cannot be deleted")
+	case errors.Is(err, domain.ErrSystemAttributeValueReadOnly):
+		httpx.WriteError(w, http.StatusForbidden, "system_attribute_value_read_only", "this attribute value cannot be deleted")
 	case errors.Is(err, domain.ErrProductNotFound):
 		httpx.WriteError(w, http.StatusNotFound, "product_not_found", "product not found")
 	case errors.Is(err, domain.ErrVariantNotFound):

@@ -84,5 +84,14 @@ func (s *AttributeService) AddValue(ctx context.Context, attributeID uuid.UUID, 
 }
 
 func (s *AttributeService) DeleteValue(ctx context.Context, attributeID, valueID uuid.UUID) error {
+	attribute, err := s.repo.FindByID(ctx, attributeID)
+	if err != nil {
+		return err
+	}
+	for _, v := range attribute.Values {
+		if v.ID == valueID && v.IsMulticolor() {
+			return domain.ErrSystemAttributeValueReadOnly
+		}
+	}
 	return s.repo.DeleteValue(ctx, attributeID, valueID)
 }
