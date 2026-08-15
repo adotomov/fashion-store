@@ -83,11 +83,14 @@ func (h *Handler) adminSaveProvider(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A masked placeholder means "unchanged" — strip it so the service's
-	// merge logic preserves whatever is already stored.
+	// Secret fields (e.g. password) are never echoed back to the form in the
+	// clear, so a masked placeholder OR a blank submission means "keep the stored
+	// secret" — strip both so the value can never be accidentally wiped. Every
+	// other (non-secret) field is passed through as-is, including when empty, so
+	// the admin can clear it (the service treats an empty non-secret as "clear").
 	config := make(map[string]string, len(req.Config))
 	for k, v := range req.Config {
-		if maskedConfigKeys[k] && v == "********" {
+		if maskedConfigKeys[k] && (v == "********" || v == "") {
 			continue
 		}
 		config[k] = v

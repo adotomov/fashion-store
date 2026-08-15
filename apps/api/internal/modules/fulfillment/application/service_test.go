@@ -113,6 +113,42 @@ func newTestService(settings *stubSettingsRepo, speedy *stubSpeedyClient, orders
 	return application.NewService(settings, speedy, orders, slog.Default())
 }
 
+func TestSaveSettings_EmptyClearsAndAbsentPreserves(t *testing.T) {
+	settings := &stubSettingsRepo{settings: map[string]domain.ProviderSettings{
+		domain.ProviderSpeedy: {
+			Provider: domain.ProviderSpeedy,
+			Enabled:  true,
+			Config: map[string]string{
+				domain.SpeedyConfigUsername:                "api-user",
+				domain.SpeedyConfigPassword:                "secret",
+				domain.SpeedyConfigClientSystemID:          "117678825000",
+				domain.SpeedyConfigDefaultCourierServiceID: "505",
+			},
+		},
+	}}
+	service := newTestService(settings, &stubSpeedyClient{}, &stubOrderGateway{})
+
+	// Submit an explicit empty client system id (admin cleared the field). Password
+	// is absent — the transport layer strips a blank secret before this point.
+	saved, err := service.SaveSettings(context.Background(), domain.ProviderSpeedy, true, map[string]string{
+		domain.SpeedyConfigUsername:                "api-user",
+		domain.SpeedyConfigClientSystemID:          "",
+		domain.SpeedyConfigDefaultCourierServiceID: "505",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := saved.Config[domain.SpeedyConfigClientSystemID]; got != "" {
+		t.Errorf("expected client system id cleared, got %q", got)
+	}
+	if got := saved.Config[domain.SpeedyConfigPassword]; got != "secret" {
+		t.Errorf("expected absent password preserved, got %q", got)
+	}
+	if got := saved.Config[domain.SpeedyConfigDefaultCourierServiceID]; got != "505" {
+		t.Errorf("expected courier service id retained, got %q", got)
+	}
+}
+
 func TestCreateShipmentForOrder_BuildsRequestFromSettings(t *testing.T) {
 	settings := &stubSettingsRepo{settings: map[string]domain.ProviderSettings{
 		domain.ProviderSpeedy: {

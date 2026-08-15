@@ -65,10 +65,12 @@ func (s *Service) SaveSettings(ctx context.Context, provider string, enabled boo
 			merged[k] = v
 		}
 	}
+	// A submitted key overwrites the stored value, and an empty value clears it —
+	// so the admin can blank out a field (e.g. an unwanted client system id). The
+	// transport layer strips secret fields (password) before they reach here when
+	// blank, so clearing never wipes a stored secret. Keys absent from the submit
+	// (fields the form doesn't render) keep their stored value.
 	for k, v := range config {
-		if v == "" {
-			continue
-		}
 		merged[k] = v
 	}
 

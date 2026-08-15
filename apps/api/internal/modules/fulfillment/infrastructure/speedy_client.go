@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/adotomov/fashion-store/apps/api/internal/modules/fulfillment/application"
@@ -38,14 +39,22 @@ func NewSpeedyHTTPClient() *SpeedyHTTPClient {
 }
 
 type speedyAuth struct {
-	UserName       string `json:"userName"`
-	Password       string `json:"password"`
-	Language       string `json:"language,omitempty"`
-	ClientSystemID string `json:"clientSystemId,omitempty"`
+	UserName string `json:"userName"`
+	Password string `json:"password"`
+	Language string `json:"language,omitempty"`
+	// ClientSystemID is Speedy's "clientSystemId", typed Long in their schema and
+	// validated against their system register — so it must be sent as a bare JSON
+	// number, not a quoted string. Pointer + omitempty so an unset/invalid config
+	// value is omitted entirely (Speedy then uses the account default).
+	ClientSystemID *int64 `json:"clientSystemId,omitempty"`
 }
 
 func authFromCreds(creds application.Credentials) speedyAuth {
-	return speedyAuth{UserName: creds.Username, Password: creds.Password, Language: creds.Language, ClientSystemID: creds.ClientSystemID}
+	auth := speedyAuth{UserName: creds.Username, Password: creds.Password, Language: creds.Language}
+	if id, err := strconv.ParseInt(strings.TrimSpace(creds.ClientSystemID), 10, 64); err == nil && id != 0 {
+		auth.ClientSystemID = &id
+	}
+	return auth
 }
 
 type speedyPhone struct {
