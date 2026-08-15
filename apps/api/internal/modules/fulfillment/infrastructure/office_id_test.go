@@ -36,7 +36,7 @@ func TestSpeedyRecipientPickupOfficeMarshal(t *testing.T) {
 func TestCreateShipmentBodyShape(t *testing.T) {
 	body := createShipmentRequest{
 		Recipient: speedyRecipient{PrivatePerson: true, ClientName: "Ivan", PickupOfficeID: 2966},
-		Service:   speedyService{ServiceID: 505},
+		Service:   speedyService{ServiceID: 505, AutoAdjustPickupDate: true},
 		Content:   speedyContent{ParcelsCount: 1, TotalWeight: 1.5},
 		Payment:   speedyPayment{CourierServicePayer: "SENDER"},
 	}
@@ -62,6 +62,11 @@ func TestCreateShipmentBodyShape(t *testing.T) {
 	}
 	if sid, ok := service["serviceId"].(float64); !ok || sid != 505 {
 		t.Errorf("service.serviceId should be integer 505, got %v (%s)", service["serviceId"], raw)
+	}
+	// autoAdjustPickupDate must ride along so after-cutoff/weekend bookings roll to
+	// the next pickup day instead of Speedy rejecting them with code 500.
+	if adj, ok := service["autoAdjustPickupDate"].(bool); !ok || !adj {
+		t.Errorf("service.autoAdjustPickupDate should be true, got %v (%s)", service["autoAdjustPickupDate"], raw)
 	}
 	content, _ := m["content"].(map[string]any)
 	if tw, ok := content["totalWeight"].(float64); !ok || tw != 1.5 {

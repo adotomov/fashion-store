@@ -95,6 +95,12 @@ type speedyRecipient struct {
 type speedyService struct {
 	// ServiceID is Speedy's numeric courier service id (integer per schema).
 	ServiceID int64 `json:"serviceId"`
+	// AutoAdjustPickupDate lets Speedy roll the pickup to the first available date
+	// per the service's pickup schedule instead of rejecting the booking. Without
+	// it, orders placed after the daily address-delivery cutoff (or on weekends)
+	// fail with code 500 ("след крайния срок на за приемане на заявки"); with it,
+	// pickup simply moves to the next working day.
+	AutoAdjustPickupDate bool `json:"autoAdjustPickupDate"`
 	// Additional services (COD, declared value, …) are nested under the
 	// service object — the create-shipment request has no top-level
 	// additionalServices, so a COD placed elsewhere is silently dropped.
@@ -165,7 +171,7 @@ func (c *SpeedyHTTPClient) CreateShipment(ctx context.Context, req application.C
 			Phone1:        speedyPhone{Number: req.Recipient.Phone},
 			Email:         req.Recipient.Email,
 		},
-		Service: speedyService{ServiceID: serviceID},
+		Service: speedyService{ServiceID: serviceID, AutoAdjustPickupDate: true},
 		Content: speedyContent{ParcelsCount: 1, TotalWeight: req.ParcelWeightKg},
 		Payment: speedyPayment{CourierServicePayer: "SENDER"},
 		Ref1:    req.Ref1,
