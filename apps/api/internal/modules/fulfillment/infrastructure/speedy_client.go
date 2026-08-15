@@ -76,7 +76,11 @@ type speedyRecipient struct {
 	Phone1        speedyPhone    `json:"phone1"`
 	Email         string         `json:"email,omitempty"`
 	Address       *speedyAddress `json:"address,omitempty"`
-	OfficeID      string         `json:"officeId,omitempty"`
+	// PickupOfficeID is Speedy's numeric office/locker id for pickup-point
+	// delivery. Per the Speedy shipment schema the field is "pickupOfficeId"
+	// and its type is integer — a string field named "officeId" is silently
+	// ignored, so the parcel would never be routed to the chosen office.
+	PickupOfficeID int64 `json:"pickupOfficeId,omitempty"`
 }
 
 type speedyService struct {
@@ -148,7 +152,13 @@ func (c *SpeedyHTTPClient) CreateShipment(ctx context.Context, req application.C
 	}
 
 	if req.Recipient.OfficeID != "" {
-		body.Recipient.OfficeID = req.Recipient.OfficeID
+		// The app carries the pickup-point id as a string (that's how it's
+		// stored on the order), but Speedy's pickupOfficeId is an integer.
+		officeID, err := strconv.ParseInt(req.Recipient.OfficeID, 10, 64)
+		if err != nil {
+			return application.ShipmentResult{}, fmt.Errorf("invalid speedy office id %q: %w", req.Recipient.OfficeID, err)
+		}
+		body.Recipient.PickupOfficeID = officeID
 	} else {
 		body.Recipient.Address = &speedyAddress{
 			CountryID:   req.Recipient.CountryID,
@@ -327,10 +337,27 @@ type officeSearchRequest struct {
 	Type      string `json:"type,omitempty"`
 }
 
+// speedyOfficeID decodes Speedy's office id, which the API returns as a JSON
+// number, into the string the rest of the app uses for pickup-point ids.
+// Modeling it as a plain string 500s the office picker ("json: cannot unmarshal
+// number into Go struct field ... of type string"); this unmarshaler tolerates
+// number, quoted string, and null so an API encoding change can't break it again.
+type speedyOfficeID string
+
+func (id *speedyOfficeID) UnmarshalJSON(b []byte) error {
+	b = bytes.TrimSpace(b)
+	if len(b) == 0 || string(b) == "null" {
+		*id = ""
+		return nil
+	}
+	*id = speedyOfficeID(bytes.Trim(b, `"`))
+	return nil
+}
+
 type speedyOffice struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Type string `json:"type"`
+	ID   speedyOfficeID `json:"id"`
+	Name string         `json:"name"`
+	Type string         `json:"type"`
 }
 
 type officeSearchResponse struct {
@@ -358,7 +385,7 @@ func (c *SpeedyHTTPClient) SearchOffices(ctx context.Context, creds application.
 		if officeType != "" && o.Type != officeType {
 			continue
 		}
-		offices = append(offices, application.Office{ID: o.ID, Name: o.Name, Type: o.Type})
+		offices = append(offices, application.Office{ID: string(o.ID), Name: o.Name, Type: o.Type})
 	}
 	return offices, nil
 }
