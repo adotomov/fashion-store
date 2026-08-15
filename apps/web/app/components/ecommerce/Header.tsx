@@ -28,6 +28,7 @@ export function Header({ className }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [navTypes, setNavTypes] = useState<NavType[]>([]);
   const [openTypeId, setOpenTypeId] = useState<string | null>(null);
+  const [hoveredCategoryId, setHoveredCategoryId] = useState<string | null>(null);
   const [expandedMobileTypeId, setExpandedMobileTypeId] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -42,6 +43,12 @@ export function Header({ className }: HeaderProps) {
   useEffect(() => {
     if (searchOpen) searchInputRef.current?.focus();
   }, [searchOpen]);
+
+  // Reset the hovered-category preview whenever the open mega-menu changes, so
+  // each type's dropdown starts with no child grid until a parent is hovered.
+  useEffect(() => {
+    setHoveredCategoryId(null);
+  }, [openTypeId]);
 
   function handleSearchSubmit(e: FormEvent) {
     e.preventDefault();
@@ -152,60 +159,68 @@ export function Header({ className }: HeaderProps) {
         </div>
       </div>
 
-      {/* Desktop mega-menu: a category grid with small photos, dropped down
-          beneath the nav item currently being hovered. */}
-      {navTypes.map(
-        (type) =>
-          type.categories.length > 0 && (
-            <div
-              key={type.id}
-              className={cn(
-                "absolute inset-x-0 top-full border-b border-stone-200 bg-white shadow-lg",
-                openTypeId === type.id ? "block" : "hidden",
-              )}
-              onMouseEnter={() => setOpenTypeId(type.id)}
-            >
-              <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-                <div className="grid grid-cols-2 gap-x-6 gap-y-8 sm:grid-cols-4 md:grid-cols-6">
-                  {type.categories.map((category) => (
-                    <div key={category.id} className="flex flex-col gap-2.5">
+      {/* Desktop mega-menu: parent categories in a grid, dropped down beneath
+          the hovered nav item. Hovering a parent reveals its subcategories in a
+          separate grid below, which swaps as you move between parents. */}
+      {navTypes.map((type) => {
+        if (type.categories.length === 0) return null;
+        const hoveredCategory = type.categories.find((c) => c.id === hoveredCategoryId);
+        const activeChildren = hoveredCategory?.children ?? [];
+        return (
+          <div
+            key={type.id}
+            className={cn(
+              "absolute inset-x-0 top-full border-b border-stone-200 bg-white shadow-lg",
+              openTypeId === type.id ? "block" : "hidden",
+            )}
+            onMouseEnter={() => setOpenTypeId(type.id)}
+          >
+            <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+              <div className="grid grid-cols-2 gap-x-6 gap-y-8 sm:grid-cols-4 md:grid-cols-6">
+                {type.categories.map((category) => (
+                  <Link
+                    key={category.id}
+                    to={`/shop?type=${type.slug}&category_id=${category.id}`}
+                    state={{ resetFilters: true }}
+                    onClick={() => setOpenTypeId(null)}
+                    onMouseEnter={() => setHoveredCategoryId(category.id)}
+                    className="group flex flex-col gap-2.5"
+                  >
+                    <CategoryThumbnail category={category} />
+                    <Text size="sm" className="text-center font-medium group-hover:text-clay-600">
+                      {category.name}
+                    </Text>
+                  </Link>
+                ))}
+              </div>
+
+              {activeChildren.length > 0 && (
+                <div className="mt-8 border-t border-stone-200 pt-6">
+                  <Text size="xs" className="mb-4 font-medium uppercase tracking-wide text-stone-400">
+                    {hoveredCategory?.name}
+                  </Text>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-8 sm:grid-cols-4 md:grid-cols-6">
+                    {activeChildren.map((child) => (
                       <Link
-                        to={`/shop?type=${type.slug}&category_id=${category.id}`}
+                        key={child.id}
+                        to={`/shop?type=${type.slug}&category_id=${child.id}`}
                         state={{ resetFilters: true }}
                         onClick={() => setOpenTypeId(null)}
                         className="group flex flex-col gap-2.5"
                       >
-                        <CategoryThumbnail category={category} />
+                        <CategoryThumbnail category={child} />
                         <Text size="sm" className="text-center font-medium group-hover:text-clay-600">
-                          {category.name}
+                          {child.name}
                         </Text>
                       </Link>
-                      {category.children && category.children.length > 0 && (
-                        <ul className="mt-1 flex flex-col gap-2 border-t border-stone-200 pt-3">
-                          {category.children.map((child) => (
-                            <li key={child.id}>
-                              <Link
-                                to={`/shop?type=${type.slug}&category_id=${child.id}`}
-                                state={{ resetFilters: true }}
-                                onClick={() => setOpenTypeId(null)}
-                                className="group flex items-center gap-2.5"
-                              >
-                                <CategoryThumbnail category={child} size="sm" />
-                                <Text size="sm" className="font-medium text-stone-600 group-hover:text-clay-600">
-                                  {child.name}
-                                </Text>
-                              </Link>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
-          ),
-      )}
+          </div>
+        );
+      })}
 
       {menuOpen && (
         <nav className="flex flex-col gap-1 border-t border-stone-200 px-4 py-3 lg:hidden">
