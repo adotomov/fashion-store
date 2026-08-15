@@ -3,7 +3,9 @@ package http
 import (
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -22,10 +24,11 @@ const cartTokenHeader = "X-Cart-Token"
 type Handler struct {
 	service       *application.Service
 	webhookSecret string
+	logger        *slog.Logger
 }
 
-func NewHandler(service *application.Service, webhookSecret string) *Handler {
-	return &Handler{service: service, webhookSecret: webhookSecret}
+func NewHandler(service *application.Service, webhookSecret string, logger *slog.Logger) *Handler {
+	return &Handler{service: service, webhookSecret: webhookSecret, logger: logger}
 }
 
 func (h *Handler) RegisterRoutes(r chi.Router, optionalAuth, requireAdmin func(http.Handler) http.Handler) {
@@ -37,6 +40,7 @@ func (h *Handler) RegisterRoutes(r chi.Router, optionalAuth, requireAdmin func(h
 		r.Post("/checkout/session/release", h.releaseSession)
 		r.Get("/checkout/orders/{order_number}/status", h.orderStatus)
 		r.Post("/checkout/orders/{order_number}/cancel", h.cancelPayment)
+		r.Post("/checkout/client-events", h.clientEvent)
 	})
 	r.Group(func(r chi.Router) {
 		r.Use(requireAdmin)
@@ -170,6 +174,63 @@ func (h *Handler) cancelPayment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "cancelled"})
+}
+
+// clientEventMaxBytes caps a single telemetry event — it carries a few short
+// strings and one small detail payload, never a real request.
+const clientEventMaxBytes = 8 << 10 // 8 KiB
+
+// clientEvent is a best-effort telemetry sink for the payment widget: it
+// captures the shopper's interaction with Revolut's iframe (field focus and
+// validation, submit, success, decline, SDK load failure), which happens
+// entirely in the browser and never reaches our server logs otherwise. The
+// event's level maps onto slog severity, so LOG_LEVEL alone governs how much of
+// the stream is written — INFO (prod default) keeps the milestone/error events
+// and drops the DEBUG interaction chatter; ERROR keeps only failures; DEBUG
+// keeps everything. We log the (untrusted, truncated) fields and drop: the
+// response is always 204, and a malformed or oversized body is ignored rather
+// than surfaced — telemetry must never disrupt checkout.
+func (h *Handler) clientEvent(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, clientEventMaxBytes)
+	var req clientEventRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	if h.logger != nil {
+		attrs := []any{
+			"event", truncateField(req.Event, 60),
+			"order_number", truncateField(req.OrderNumber, 40),
+			"status", truncateField(req.Status, 120),
+			"code", truncateField(req.Code, 80),
+			"message", truncateField(req.Message, 500),
+			"detail", truncateField(req.Detail, 1000),
+			"revolut_env", truncateField(req.RevolutEnv, 20),
+			"user_agent", truncateField(r.UserAgent(), 300),
+		}
+		// The level is untrusted, so it only picks a severity — the three the
+		// widget emits, anything else treated as the quietest (debug) so a
+		// stray value can never force noise into a prod INFO log.
+		switch strings.ToLower(req.Level) {
+		case "error":
+			h.logger.ErrorContext(r.Context(), "checkout widget event", attrs...)
+		case "info":
+			h.logger.InfoContext(r.Context(), "checkout widget event", attrs...)
+		default:
+			h.logger.DebugContext(r.Context(), "checkout widget event", attrs...)
+		}
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// truncateField bounds an untrusted log field by rune count (so a truncation
+// never splits a UTF-8 sequence) to keep a hostile client from flooding logs.
+func truncateField(s string, maxRunes int) string {
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	return string(runes[:maxRunes]) + "…"
 }
 
 func (h *Handler) refundOrder(w http.ResponseWriter, r *http.Request) {

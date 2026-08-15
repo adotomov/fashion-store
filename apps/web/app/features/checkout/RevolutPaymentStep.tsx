@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { Button } from "../../components/ui/Button";
 import { Icon } from "../../components/ui/Icon";
 import { Text } from "../../components/ui/Text";
-import { getOrderPaymentStatus } from "../../lib/api/checkout";
+import { getOrderPaymentStatus, reportCheckoutEvent } from "../../lib/api/checkout";
 import { useLanguage } from "../i18n/LanguageContext";
 import { PaymentBrandLogos } from "./PaymentBrandLogos";
 
@@ -13,6 +13,38 @@ type PaymentRequestInstance = ReturnType<RevolutCheckoutInstance["paymentRequest
 // The checkout widget mode is derived from a single build-time env var; no
 // publishable key ships in the bundle — the per-order token carries the auth.
 const REVOLUT_ENV = (import.meta.env.VITE_REVOLUT_ENV as "sandbox" | "prod" | undefined) ?? "sandbox";
+
+// Log severity for a widget event. Interaction chatter (field focus/validation
+// while typing) rides at "debug" so the prod INFO log stays quiet; milestones
+// (mounted, submit, success) at "info"; failures at "error". The server's
+// LOG_LEVEL is what ultimately decides how much of this is written.
+type EventLevel = "info" | "debug" | "error";
+
+// safeDetail stringifies an arbitrary event payload (error, validation-error
+// array, field-status object) for the log, tolerating Error instances and
+// circular structures.
+function safeDetail(value: unknown): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (value instanceof Error) return `${value.name}: ${value.message}`;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+// emitWidgetEvent forwards a single payment-widget telemetry event to the
+// backend. Always fires — the server's LOG_LEVEL, not the client, decides what
+// is kept. Best-effort and non-blocking (see reportCheckoutEvent).
+function emitWidgetEvent(
+  event: string,
+  level: EventLevel,
+  orderNumber: string,
+  extra: { status?: string; code?: string; message?: string; detail?: string } = {},
+) {
+  reportCheckoutEvent({ event, level, order_number: orderNumber, revolut_env: REVOLUT_ENV, ...extra });
+}
 
 // Poll cadence for the post-payment confirmation: the widget's success is a
 // client-side signal; the order only becomes "paid" when our webhook settles
@@ -111,18 +143,39 @@ export function RevolutPaymentStep({ token, orderNumber, cardHolderName, email, 
           styles: cardFieldStyles,
           onSuccess: () => {
             submittingRef.current = false;
+            emitWidgetEvent("payment_success", "info", orderNumber);
             void confirmSettlement();
           },
           onError: (err) => {
             submittingRef.current = false;
             setSubmitting(false);
+            emitWidgetEvent("card_error", "error", orderNumber, { code: err?.type, message: err?.message, detail: safeDetail(err) });
             setError(err?.message ?? t("checkout.payment_failed_error", "Payment could not be processed. Please try again."));
+          },
+          onCancel: () => {
+            submittingRef.current = false;
+            setSubmitting(false);
+            emitWidgetEvent("payment_cancel", "info", orderNumber);
+          },
+          // Fires on every field status change (focus/blur, completeness) — the
+          // interaction chatter, so it rides at "debug".
+          onStatusChange: (status) => {
+            emitWidgetEvent("field_status_change", "debug", orderNumber, { status: safeDetail(status) });
           },
           // A rejected/invalid card comes back through validation, not onError.
           // Only treat it as a submit failure when a Pay click is pending —
           // otherwise this fires on ordinary typing and would flash an error.
           onValidation: (errors) => {
-            if (errors.length > 0 && submittingRef.current) {
+            const rejectedOnSubmit = errors.length > 0 && submittingRef.current;
+            // On submit a validation failure is a real decline ("error"); while
+            // typing it's just field feedback ("debug").
+            emitWidgetEvent(
+              rejectedOnSubmit ? "card_rejected" : "validation_change",
+              rejectedOnSubmit ? "error" : "debug",
+              orderNumber,
+              { detail: safeDetail(errors.map((e) => e.type)) },
+            );
+            if (rejectedOnSubmit) {
               submittingRef.current = false;
               setSubmitting(false);
               // The widget already highlights the offending field inline; this
@@ -137,21 +190,38 @@ export function RevolutPaymentStep({ token, orderNumber, cardHolderName, email, 
         // device/browser supports, and nothing if none is available.
         const pr = instance.paymentRequest({
           target: payTarget,
-          onSuccess: () => void confirmSettlement(),
-          onError: (err) => setError(err?.message ?? "wallet error"),
+          onSuccess: () => {
+            emitWidgetEvent("wallet_success", "info", orderNumber);
+            void confirmSettlement();
+          },
+          onError: (err) => {
+            emitWidgetEvent("wallet_error", "error", orderNumber, { code: err?.type, message: err?.message, detail: safeDetail(err) });
+            setError(err?.message ?? "wallet error");
+          },
+          onCancel: () => emitWidgetEvent("wallet_cancel", "info", orderNumber),
         });
         paymentRequestRef.current = pr;
         try {
-          if (await pr.canMakePayment()) {
+          const method = await pr.canMakePayment();
+          if (method) {
             await pr.render();
             setWalletAvailable(true);
+            emitWidgetEvent("wallet_available", "info", orderNumber, { detail: method });
+          } else {
+            emitWidgetEvent("wallet_unavailable", "debug", orderNumber);
           }
-        } catch {
+        } catch (err) {
           setWalletAvailable(false);
+          emitWidgetEvent("wallet_check_failed", "debug", orderNumber, { detail: safeDetail(err) });
         }
 
         setReady(true);
-      } catch {
+        emitWidgetEvent("widget_mounted", "info", orderNumber);
+      } catch (err) {
+        emitWidgetEvent("widget_load_error", "error", orderNumber, {
+          message: err instanceof Error ? err.message : String(err),
+          detail: safeDetail(err),
+        });
         if (!cancelled) setError(t("checkout.payment_widget_error", "Could not load the payment form. Please try again."));
       }
     }
@@ -170,6 +240,7 @@ export function RevolutPaymentStep({ token, orderNumber, cardHolderName, email, 
     setError(null);
     submittingRef.current = true;
     setSubmitting(true);
+    emitWidgetEvent("submit_clicked", "info", orderNumber);
     cardFieldRef.current.submit({ name: cardHolderName, email });
   }
 

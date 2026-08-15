@@ -1105,7 +1105,7 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 	checkoutWebhookStore := checkoutinfra.NewPostgresWebhookEventStore(a.DB)
 	checkoutService := checkoutapplication.NewService(checkoutCartGateway, checkoutInventoryGateway, checkoutUserGateway, checkoutOrderGateway, checkoutPaymentGateway, checkoutFulfillmentGateway, checkoutDiscountGateway, deferredInvoices, checkoutWebhookStore, a.Logger).
 		WithNotifier(&checkoutNotifierAdapter{notifications: notificationsService, users: usersService})
-	checkoutHandler := checkouthttp.NewHandler(checkoutService, a.Config.Payments.RevolutWebhookSecret)
+	checkoutHandler := checkouthttp.NewHandler(checkoutService, a.Config.Payments.RevolutWebhookSecret, a.Logger)
 	checkoutModule := checkouthttp.NewModule(checkoutHandler, authhttp.OptionalAuth(authService), requireAdmin)
 
 	wishlistRepo := wishlistinfra.NewPostgresRepository(a.DB)

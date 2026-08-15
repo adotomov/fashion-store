@@ -196,6 +196,46 @@ export async function releaseCheckoutSession(): Promise<void> {
   });
 }
 
+// CheckoutClientEvent is a single browser-side telemetry event from the payment
+// widget — a field status/validation change, a submit, a success, a decline, or
+// an SDK load failure. `level` selects the server log severity (LOG_LEVEL then
+// governs how much is actually written), so verbose interaction events ride at
+// "debug" and stay out of the prod INFO log until someone opts into DEBUG.
+export type CheckoutClientEvent = {
+  /** Event name, e.g. "field_status_change" | "card_rejected" | "payment_success". */
+  event: string;
+  level: "info" | "debug" | "error";
+  order_number?: string;
+  /** Widget field status snapshot, when relevant. */
+  status?: string;
+  /** Revolut's machine-readable error/validation code(s), when present. */
+  code?: string;
+  message?: string;
+  /** Stringified raw payload for anything not surfaced as a scalar field. */
+  detail?: string;
+  revolut_env?: string;
+};
+
+// reportCheckoutEvent forwards a widget telemetry event to the backend so the
+// shopper's in-iframe interaction lands in server logs — remote testers can't
+// share their browser console, and the widget's failures never reach us
+// otherwise. Fire-and-forget and best-effort: it never throws and never blocks
+// the UI, so a telemetry outage can't disrupt checkout. Always sent; the
+// server's LOG_LEVEL, not the client, decides what gets kept.
+export function reportCheckoutEvent(payload: CheckoutClientEvent): void {
+  try {
+    void apiFetch("/api/v1/checkout/client-events", {
+      method: "POST",
+      auth: false,
+      body: payload,
+    }).catch(() => {
+      // Swallow transport failures — telemetry must never surface to the shopper.
+    });
+  } catch {
+    // Guard against a synchronous throw (e.g. serialisation) for the same reason.
+  }
+}
+
 // getOrderPaymentStatus is the public post-payment poll (works for guests):
 // the confirmation page calls it until the order flips to paid / payment_failed.
 export async function getOrderPaymentStatus(orderNumber: string): Promise<{ order_number: string; status: string }> {

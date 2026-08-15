@@ -65,6 +65,23 @@ func (a addressRequest) toInput() application.AddressInput {
 	}
 }
 
+// clientEventRequest is a single telemetry event the payment widget posts as
+// the shopper interacts with Revolut's iframe (field focus/validation, submit,
+// success, decline, load failure). Every field is free-form and untrusted — the
+// handler only logs them (truncated), never acts on them. Level selects the log
+// severity so LOG_LEVEL governs how much of this stream is actually written
+// (INFO in prod hides the DEBUG interaction chatter; errors always land).
+type clientEventRequest struct {
+	Event       string `json:"event"`
+	Level       string `json:"level"`
+	OrderNumber string `json:"order_number"`
+	Status      string `json:"status"`
+	Code        string `json:"code"`
+	Message     string `json:"message"`
+	Detail      string `json:"detail"`
+	RevolutEnv  string `json:"revolut_env"`
+}
+
 type placeOrderRequest struct {
 	Contact          contactRequest `json:"contact"`
 	ShippingAddress  addressRequest `json:"shipping_address"`
