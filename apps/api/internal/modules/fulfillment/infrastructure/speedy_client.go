@@ -115,6 +115,11 @@ type speedyService struct {
 type speedyContent struct {
 	ParcelsCount int     `json:"parcelsCount"`
 	TotalWeight  float64 `json:"totalWeight"`
+	// Contents (description) and Package (packaging type) are both mandatory —
+	// Speedy rejects the create with code 600 ("Изисква се описание на
+	// съдържанието на пратката") when contents is missing.
+	Contents string `json:"contents"`
+	Package  string `json:"package"`
 }
 
 type speedyCOD struct {
@@ -172,7 +177,7 @@ func (c *SpeedyHTTPClient) CreateShipment(ctx context.Context, req application.C
 			Email:         req.Recipient.Email,
 		},
 		Service: speedyService{ServiceID: serviceID, AutoAdjustPickupDate: true},
-		Content: speedyContent{ParcelsCount: 1, TotalWeight: req.ParcelWeightKg},
+		Content: speedyContent{ParcelsCount: 1, TotalWeight: req.ParcelWeightKg, Contents: req.Contents, Package: req.Package},
 		Payment: speedyPayment{CourierServicePayer: "SENDER"},
 		Ref1:    req.Ref1,
 	}

@@ -554,6 +554,7 @@ func (a *checkoutOrderGatewayAdapter) FindOrderForShipment(ctx context.Context, 
 		ParcelWeightGrams: order.ParcelWeightGrams,
 		AlreadyBooked:     order.SpeedyShipmentID != nil && *order.SpeedyShipmentID != "",
 		ShipmentStatus:    shipmentStatus,
+		Items:             toCheckoutResultItems(order.Items),
 	}, nil
 }
 
@@ -725,6 +726,7 @@ func (a *checkoutFulfillmentGatewayAdapter) CreateShipment(ctx context.Context, 
 		CODAmount:      input.CODAmount,
 		Ref1:           input.Ref1,
 		WeightKg:       input.WeightKg,
+		Contents:       input.Contents,
 	})
 	if err != nil {
 		return checkoutapplication.ShipmentResult{}, err

@@ -43,10 +43,15 @@ type CreateShipmentRequest struct {
 	Creds          Credentials
 	ServiceID      string
 	ParcelWeightKg float64
-	Recipient      ShipmentRecipient
-	CODAmount      money.Money
-	RequireCOD     bool
-	Ref1           string
+	// Contents and Package are Speedy's mandatory ShipmentContent fields — a
+	// description of what's inside and the packaging type. Speedy rejects the
+	// create with code 600 when either is missing.
+	Contents   string
+	Package    string
+	Recipient  ShipmentRecipient
+	CODAmount  money.Money
+	RequireCOD bool
+	Ref1       string
 }
 
 type ShipmentResult struct {
@@ -147,4 +152,9 @@ type CreateShipmentInput struct {
 	// WeightKg is the real parcel weight summed from the order's SKUs. When 0
 	// (no SKU carried a weight) the provider's configured default is used.
 	WeightKg float64
+
+	// Contents is the parcel content description derived from the order's item
+	// names. Empty falls back to the configured default; the value is length-capped
+	// to Speedy's 100-char limit before it's sent.
+	Contents string
 }

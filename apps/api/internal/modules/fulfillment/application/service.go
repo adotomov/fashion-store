@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/adotomov/fashion-store/apps/api/internal/modules/fulfillment/domain"
@@ -184,10 +185,20 @@ func (s *Service) CreateShipmentForOrder(ctx context.Context, input CreateShipme
 		weight = parseFloatDefault(st.Config[domain.SpeedyConfigDefaultParcelWeightKg], 1.0)
 	}
 
+	// Speedy requires a content description and package type on every shipment.
+	// Prefer the per-order description derived from the item names, then the
+	// configured store default, then a constant — and cap to Speedy's field
+	// limits (contents 100, package 50) with a rune-safe truncation.
+	contents := truncateRunes(firstNonEmpty(input.Contents,
+		firstNonEmpty(st.Config[domain.SpeedyConfigDefaultParcelContents], domain.DefaultParcelContents)), 100)
+	pkg := truncateRunes(firstNonEmpty(st.Config[domain.SpeedyConfigDefaultParcelPackage], domain.DefaultParcelPackage), 50)
+
 	return s.speedy.CreateShipment(ctx, CreateShipmentRequest{
 		Creds:          credsFromConfig(st.Config),
 		ServiceID:      serviceID,
 		ParcelWeightKg: weight,
+		Contents:       contents,
+		Package:        pkg,
 		Recipient: ShipmentRecipient{
 			ContactName: input.ContactName,
 			Phone:       input.Phone,
@@ -394,6 +405,29 @@ func credsFromConfig(config map[string]string) Credentials {
 		Language:       config[domain.SpeedyConfigLanguage],
 		ClientSystemID: config[domain.SpeedyConfigClientSystemID],
 	}
+}
+
+// firstNonEmpty returns the trimmed value if non-blank, else the fallback —
+// used to back the mandatory Speedy content fields with sensible defaults.
+func firstNonEmpty(value, fallback string) string {
+	if v := strings.TrimSpace(value); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// truncateRunes caps s to max runes (not bytes, so multi-byte Cyrillic never
+// splits mid-character), replacing the tail with an ellipsis when it overflows —
+// so a long item-derived description still fits Speedy's fixed field limits.
+func truncateRunes(s string, max int) string {
+	r := []rune(s)
+	if len(r) <= max {
+		return s
+	}
+	if max <= 1 {
+		return string(r[:max])
+	}
+	return string(r[:max-1]) + "…"
 }
 
 func parseFloatDefault(raw string, fallback float64) float64 {

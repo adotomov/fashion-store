@@ -3,6 +3,7 @@ package application_test
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -224,6 +225,54 @@ func TestCreateShipmentForOrder_EasyBoxFallsBackToCourierServiceID(t *testing.T)
 	}
 	if speedy.lastCreateReq.ServiceID != "505" {
 		t.Errorf("expected easybox to fall back to courier service id 505, got %q", speedy.lastCreateReq.ServiceID)
+	}
+}
+
+func TestCreateShipmentForOrder_ContentsPreferInputAndTruncate(t *testing.T) {
+	settings := &stubSettingsRepo{settings: map[string]domain.ProviderSettings{
+		domain.ProviderSpeedy: {Provider: domain.ProviderSpeedy, Enabled: true, Config: map[string]string{
+			domain.SpeedyConfigDefaultCourierServiceID: "505",
+		}},
+	}}
+	speedy := &stubSpeedyClient{createResult: application.ShipmentResult{ShipmentID: "s", ParcelID: "p"}}
+	service := newTestService(settings, speedy, &stubOrderGateway{})
+
+	// 160 runes of multi-byte Cyrillic — must cap to 100 runes without splitting a
+	// character, and mark the truncation with an ellipsis.
+	long := strings.Repeat("Дъ", 80)
+	if _, err := service.CreateShipmentForOrder(context.Background(), application.CreateShipmentInput{
+		Provider: domain.ProviderSpeedy, DeliveryMethod: "speedy", Contents: long,
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	got := []rune(speedy.lastCreateReq.Contents)
+	if len(got) != 100 {
+		t.Errorf("contents should be capped to 100 runes, got %d (%q)", len(got), speedy.lastCreateReq.Contents)
+	}
+	if got[len(got)-1] != '…' {
+		t.Errorf("truncated contents should end with an ellipsis, got %q", string(got))
+	}
+}
+
+func TestCreateShipmentForOrder_ContentsFallsBackToDefault(t *testing.T) {
+	settings := &stubSettingsRepo{settings: map[string]domain.ProviderSettings{
+		domain.ProviderSpeedy: {Provider: domain.ProviderSpeedy, Enabled: true, Config: map[string]string{
+			domain.SpeedyConfigDefaultCourierServiceID: "505",
+		}},
+	}}
+	speedy := &stubSpeedyClient{}
+	service := newTestService(settings, speedy, &stubOrderGateway{})
+
+	if _, err := service.CreateShipmentForOrder(context.Background(), application.CreateShipmentInput{
+		Provider: domain.ProviderSpeedy, DeliveryMethod: "speedy", // no Contents
+	}); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if speedy.lastCreateReq.Contents != domain.DefaultParcelContents {
+		t.Errorf("expected default contents %q, got %q", domain.DefaultParcelContents, speedy.lastCreateReq.Contents)
+	}
+	if speedy.lastCreateReq.Package != domain.DefaultParcelPackage {
+		t.Errorf("expected default package %q, got %q", domain.DefaultParcelPackage, speedy.lastCreateReq.Package)
 	}
 }
 

@@ -290,6 +290,8 @@ type OrderForShipment struct {
 	AlreadyBooked bool
 	// ShipmentStatus is the last recorded status ("created", "failed", or empty).
 	ShipmentStatus string
+	// Items backs the parcel content description when re-booking a shipment.
+	Items []OrderResultItem
 }
 
 // OrderNotification is the checkout-owned view of an order that an email needs.
@@ -360,6 +362,11 @@ type CreateShipmentInput struct {
 	// WeightKg is the real parcel weight summed from the order's SKUs; the
 	// fulfillment module falls back to its config default when this is 0.
 	WeightKg float64
+
+	// Contents is a human description of what's in the parcel, derived from the
+	// order's item names for Speedy's mandatory content field. Empty falls back to
+	// the fulfillment module's configured default; fulfillment also caps its length.
+	Contents string
 }
 
 type ShipmentResult struct {

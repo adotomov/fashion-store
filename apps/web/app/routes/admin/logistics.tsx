@@ -233,8 +233,7 @@ function SpeedyConfigForm({
       <FormField
         label="Default parcel weight (kg)"
         htmlFor="speedy-default-weight"
-        hint="Used since the catalog doesn't track product weight"
-        className="sm:col-span-2"
+        hint="Used when an order's items carry no weight"
       >
         <Input
           id="speedy-default-weight"
@@ -243,6 +242,31 @@ function SpeedyConfigForm({
           step="0.1"
           value={config.default_parcel_weight_kg ?? ""}
           onChange={(e) => onChange("default_parcel_weight_kg", e.target.value)}
+        />
+      </FormField>
+      <FormField
+        label="Parcel package type"
+        htmlFor="speedy-parcel-package"
+        hint="Speedy requires it, e.g. Кутия (box) or Плик (envelope). Defaults to Кутия."
+      >
+        <Input
+          id="speedy-parcel-package"
+          value={config.default_parcel_package ?? ""}
+          onChange={(e) => onChange("default_parcel_package", e.target.value)}
+          maxLength={50}
+        />
+      </FormField>
+      <FormField
+        label="Parcel contents description"
+        htmlFor="speedy-parcel-contents"
+        hint="Printed on the label; Speedy requires it. Defaults to “Дрехи и аксесоари”."
+        className="sm:col-span-2"
+      >
+        <Input
+          id="speedy-parcel-contents"
+          value={config.default_parcel_contents ?? ""}
+          onChange={(e) => onChange("default_parcel_contents", e.target.value)}
+          maxLength={100}
         />
       </FormField>
     </div>

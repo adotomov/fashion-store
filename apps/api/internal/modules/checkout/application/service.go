@@ -606,7 +606,7 @@ func (s *Service) FinalizePaidOrder(ctx context.Context, providerOrderID string)
 
 	weightKg := parcelWeightKg(ord.ParcelWeightGrams)
 	if deliveryMethod, ok := domain.FindDeliveryMethod(ord.DeliveryMethod); ok {
-		s.createShipment(ctx, OrderResult{ID: ord.ID, OrderNumber: ord.OrderNumber}, deliveryMethod,
+		s.createShipment(ctx, OrderResult{ID: ord.ID, OrderNumber: ord.OrderNumber, Items: ord.Items}, deliveryMethod,
 			addressFromOrder(ord.ShippingAddress), ord.ContactName, ord.ContactPhone, ord.ContactEmail,
 			ord.DeliveryOfficeID, ord.PaymentMethod, ord.Total, weightKg)
 		s.recordShippingQuotes(ctx, ord.ID, domain.ProviderFor(deliveryMethod.Code), ord.ShippingAddress.SiteID, weightKg)
@@ -780,6 +780,7 @@ func (s *Service) createShipment(ctx context.Context, order OrderResult, deliver
 		CODAmount:      total,
 		Ref1:           order.OrderNumber,
 		WeightKg:       weightKg,
+		Contents:       shipmentContentsFromItems(order.Items),
 	})
 	if err != nil {
 		s.logger.Error("failed to create logistics shipment for order", "error", err, "order_id", order.ID, "order_number", order.OrderNumber)
@@ -837,6 +838,7 @@ func (s *Service) RetryShipment(ctx context.Context, orderID uuid.UUID) (RetrySh
 		CODAmount:      order.Total,
 		Ref1:           order.OrderNumber,
 		WeightKg:       parcelWeightKg(order.ParcelWeightGrams),
+		Contents:       shipmentContentsFromItems(order.Items),
 	})
 	if err != nil {
 		s.logger.Error("shipment retry failed", "error", err, "order_id", orderID, "order_number", order.OrderNumber)
@@ -858,6 +860,24 @@ func (s *Service) RetryShipment(ctx context.Context, orderID uuid.UUID) (RetrySh
 // Speedy calls. Speedy quotes and ships by kilogram.
 func parcelWeightKg(grams int) float64 {
 	return float64(grams) / 1000.0
+}
+
+// shipmentContentsFromItems builds the parcel content description from the
+// order's product names for Speedy's mandatory `contents` field. The result is
+// the comma-joined names (deduped, in order); the fulfillment module caps its
+// length and falls back to a configured default when this is empty.
+func shipmentContentsFromItems(items []OrderResultItem) string {
+	seen := make(map[string]bool, len(items))
+	names := make([]string, 0, len(items))
+	for _, it := range items {
+		name := strings.TrimSpace(it.ProductName)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+	return strings.Join(names, ", ")
 }
 
 // recordShippingQuotes asks Speedy what every delivery method would cost to

@@ -30,4 +30,16 @@ const (
 	SpeedyConfigDefaultOfficeServiceID  = "default_office_service_id"
 	SpeedyConfigDefaultLockerServiceID  = "default_locker_service_id"
 	SpeedyConfigDefaultParcelWeightKg   = "default_parcel_weight_kg"
+	// Speedy requires a content description and a package type on every shipment
+	// (ShipmentContent.contents / .package, both mandatory). These configure the
+	// store-wide defaults; blank falls back to the constants in the service.
+	SpeedyConfigDefaultParcelContents = "default_parcel_contents"
+	SpeedyConfigDefaultParcelPackage  = "default_parcel_package"
+)
+
+// Fallback values for the mandatory Speedy content fields when the provider
+// config leaves them blank, so shipments always carry the required description.
+const (
+	DefaultParcelContents = "Дрехи и аксесоари"
+	DefaultParcelPackage  = "Кутия"
 )
