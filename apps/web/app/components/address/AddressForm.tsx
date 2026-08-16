@@ -1,5 +1,8 @@
+import { useState } from "react";
+
 import { useLanguage } from "../../features/i18n/LanguageContext";
 import { searchComplexes, searchSites, searchStreets, type Site } from "../../lib/api/logistics";
+import { isValidPhone } from "../../lib/phone";
 import { Combobox, type ComboboxOption } from "../ui/Combobox";
 import { FormField } from "../ui/FormField";
 import { Input } from "../ui/Input";
@@ -63,6 +66,7 @@ type AddressFormProps = {
 
 export function AddressForm({ value, onChange, showRecipient = false, idPrefix = "addr" }: AddressFormProps) {
   const { t } = useLanguage();
+  const [phoneError, setPhoneError] = useState<string | null>(null);
 
   function patch(fields: Partial<StructuredAddress>) {
     onChange({ ...value, ...fields });
@@ -81,11 +85,23 @@ export function AddressForm({ value, onChange, showRecipient = false, idPrefix =
               onChange={(e) => patch({ recipient_name: e.target.value })}
             />
           </FormField>
-          <FormField label={t("address.phone", "Phone")} htmlFor={`${idPrefix}-phone`}>
+          <FormField label={t("address.phone", "Phone")} htmlFor={`${idPrefix}-phone`} error={phoneError ?? undefined}>
             <Input
               id={`${idPrefix}-phone`}
+              type="tel"
+              invalid={!!phoneError}
               value={value.phone}
-              onChange={(e) => patch({ phone: e.target.value })}
+              onChange={(e) => {
+                patch({ phone: e.target.value });
+                if (phoneError) setPhoneError(null);
+              }}
+              onBlur={(e) =>
+                setPhoneError(
+                  e.target.value.trim() && !isValidPhone(e.target.value)
+                    ? t("address.phone_invalid", "Enter a valid phone number, e.g. 0888 123 456 or +359 88 812 3456.")
+                    : null,
+                )
+              }
             />
           </FormField>
         </div>

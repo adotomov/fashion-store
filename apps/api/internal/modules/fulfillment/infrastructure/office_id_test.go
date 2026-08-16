@@ -97,6 +97,26 @@ func TestCreateShipmentBodyShape(t *testing.T) {
 	}
 }
 
+// Speedy accepts only digits + an optional leading "+", with spaces as the sole
+// separator, starting with "0" or "+" — anything else 100s the create. Lock the
+// normalization that gets customer-entered numbers into that shape.
+func TestNormalizePhone(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"0888 123 456", "0888123456"},        // spaces stripped
+		{"0888-123-456", "0888123456"},        // dashes stripped
+		{"(088) 812 3456", "0888123456"},      // parentheses stripped
+		{"+359 88 812 3456", "+359888123456"}, // leading + preserved
+		{"00359888123456", "+359888123456"},   // 00 international prefix -> +
+		{"888123456", "0888123456"},           // bare 9-digit national gets leading 0
+		{"  ", ""},                            // blank stays blank
+	}
+	for _, tc := range cases {
+		if got := normalizePhone(tc.in); got != tc.want {
+			t.Errorf("normalizePhone(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
 // Speedy returns office ids as JSON numbers. Modeling speedyOffice.ID as a
 // plain string used to 500 the office picker on prod ("cannot unmarshal number
 // into Go struct field ... of type string"). These cases lock in that the

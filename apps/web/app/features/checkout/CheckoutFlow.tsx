@@ -30,6 +30,7 @@ import { Combobox, type ComboboxOption } from "../../components/ui/Combobox";
 import { type Office, searchOffices, searchSites } from "../../lib/api/logistics";
 import { type Address, listAddresses } from "../../lib/api/users";
 import { formatMoneyDual } from "../../lib/money/money";
+import { isValidPhone } from "../../lib/phone";
 import { useAuth } from "../auth/AuthContext";
 import { useCart } from "../cart/CartContext";
 import { useLanguage } from "../i18n/LanguageContext";
@@ -135,6 +136,7 @@ export function CheckoutFlow() {
   const [placeError, setPlaceError] = useState<string | null>(null);
   const [placedOrder, setPlacedOrder] = useState<PlacedOrder | null>(null);
   const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [phoneError, setPhoneError] = useState<string | null>(null);
   // Set when the checkout-session stock hold can't be acquired because the
   // items are out of stock — blocks the whole flow with a clear message.
   const [reserveOutOfStock, setReserveOutOfStock] = useState(false);
@@ -324,6 +326,15 @@ export function CheckoutFlow() {
       setDetailsError(t("checkout.contact_required_error", "Full name, email and phone number are required."));
       return false;
     }
+    if (!isValidPhone(contact.phone)) {
+      const message = t(
+        "checkout.phone_invalid_error",
+        "Enter a valid phone number, e.g. 0888 123 456 or +359 88 812 3456.",
+      );
+      setPhoneError(message);
+      setDetailsError(message);
+      return false;
+    }
     if (!isStructuredAddressComplete(shippingAddress)) {
       setDetailsError(t("checkout.shipping_required_error", "Select a city, neighbourhood and street for the shipping address."));
       return false;
@@ -510,13 +521,27 @@ export function CheckoutFlow() {
                   onChange={(e) => setContact((c) => ({ ...c, email: e.target.value }))}
                 />
               </FormField>
-              <FormField label={t("common.phone", "Phone")} htmlFor="contact-phone">
+              <FormField label={t("common.phone", "Phone")} htmlFor="contact-phone" error={phoneError ?? undefined}>
                 <Input
                   id="contact-phone"
                   type="tel"
                   required
+                  invalid={!!phoneError}
                   value={contact.phone}
-                  onChange={(e) => setContact((c) => ({ ...c, phone: e.target.value }))}
+                  onChange={(e) => {
+                    setContact((c) => ({ ...c, phone: e.target.value }));
+                    if (phoneError) setPhoneError(null);
+                  }}
+                  onBlur={(e) =>
+                    setPhoneError(
+                      e.target.value.trim() && !isValidPhone(e.target.value)
+                        ? t(
+                            "checkout.phone_invalid_error",
+                            "Enter a valid phone number, e.g. 0888 123 456 or +359 88 812 3456.",
+                          )
+                        : null,
+                    )
+                  }
                 />
               </FormField>
             </div>

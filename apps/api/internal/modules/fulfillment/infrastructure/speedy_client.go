@@ -61,6 +61,45 @@ type speedyPhone struct {
 	Number string `json:"number"`
 }
 
+// normalizePhone reshapes a customer-entered phone into the only form Speedy
+// accepts: digits with an optional single leading "+". Speedy rejects the create
+// with code 100 ("Невалиден телефонен номер") for dashes, parentheses or other
+// separators, or a number not starting with "0"/"+". We strip separators, map a
+// leading "00" international prefix to "+", and add the Bulgarian national "0"
+// when a bare 9-digit subscriber number is given (a common BG-only input).
+func normalizePhone(raw string) string {
+	s := strings.TrimSpace(raw)
+	if s == "" {
+		return ""
+	}
+	plus := false
+	switch {
+	case strings.HasPrefix(s, "+"):
+		plus = true
+	case strings.HasPrefix(s, "00"):
+		plus = true
+		s = s[2:]
+	}
+	var digits strings.Builder
+	for _, r := range s {
+		if r >= '0' && r <= '9' {
+			digits.WriteRune(r)
+		}
+	}
+	d := digits.String()
+	switch {
+	case d == "":
+		return ""
+	case plus:
+		return "+" + d
+	case len(d) == 9:
+		// A leading-zero-less national subscriber number (e.g. 888123456).
+		return "0" + d
+	default:
+		return d
+	}
+}
+
 // speedyAddress is Speedy's structured (code-based) address. We send resolved
 // location IDs — siteId (city), complexId (кв./жк.), streetId — plus the
 // free-text house details, so Speedy never has to guess-resolve typed text.
@@ -173,7 +212,7 @@ func (c *SpeedyHTTPClient) CreateShipment(ctx context.Context, req application.C
 		Recipient: speedyRecipient{
 			PrivatePerson: true,
 			ClientName:    req.Recipient.ContactName,
-			Phone1:        speedyPhone{Number: req.Recipient.Phone},
+			Phone1:        speedyPhone{Number: normalizePhone(req.Recipient.Phone)},
 			Email:         req.Recipient.Email,
 		},
 		Service: speedyService{ServiceID: serviceID, AutoAdjustPickupDate: true},
