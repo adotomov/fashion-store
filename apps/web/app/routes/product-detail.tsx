@@ -1,6 +1,8 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { Link, useParams } from "react-router";
 
+import type { Route } from "./+types/product-detail";
+
 import { Breadcrumbs } from "../components/ecommerce/Breadcrumbs";
 import { Footer } from "../components/ecommerce/Footer";
 import { Header } from "../components/ecommerce/Header";
@@ -17,6 +19,10 @@ import { useLanguage } from "../features/i18n/LanguageContext";
 import { useWishlist } from "../features/wishlist/WishlistContext";
 import { cn } from "../lib/utils/cn";
 import { trackAddToCart, trackAddToWishlist, trackViewItem } from "../lib/analytics/ecommerce";
+import { JsonLd } from "../components/seo/JsonLd";
+import { SITE_NAME } from "../lib/seo/config";
+import { breadcrumbJsonLd, productJsonLd } from "../lib/seo/jsonld";
+import { buildMeta } from "../lib/seo/meta";
 import { addRecentlyViewed } from "../lib/recentlyViewed";
 import {
   type StorefrontProductDetail,
@@ -32,7 +38,30 @@ function isVariantInStock(variant: StorefrontVariant): boolean {
   return typeof variant.quantity_available === "number" && variant.quantity_available > 0;
 }
 
-export const handle = { title: "Product" };
+// Server-render a slug-derived title + breadcrumb so crawlers and link
+// previews get a meaningful <head> before the product data arrives. The real
+// product name and Product JSON-LD are applied client-side once loaded.
+export function meta({ params }: Route.MetaArgs) {
+  const slug = params.slug ?? "";
+  const derivedName = slug
+    .split("-")
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+  return buildMeta({
+    title: derivedName || "Product",
+    description: derivedName
+      ? `Shop ${derivedName} at Verani — fast delivery across Bulgaria.`
+      : "Shop this product at Verani.",
+    path: `/shop/${slug}`,
+    type: "product",
+    jsonLd: breadcrumbJsonLd([
+      { name: "Home", path: "/" },
+      { name: "Shop", path: "/shop" },
+      ...(derivedName ? [{ name: derivedName, path: `/shop/${slug}` }] : []),
+    ]),
+  });
+}
 
 export default function ProductDetail() {
   const { slug } = useParams<{ slug: string }>();
@@ -57,6 +86,8 @@ export default function ProductDetail() {
         setProduct(loaded);
         addRecentlyViewed(loaded.id);
         trackViewItem(loaded);
+        // Upgrade the slug-derived SSR title to the real product name.
+        document.title = `${loaded.name} | ${SITE_NAME}`;
         // Auto-select the first in-stock variant so the page doesn't open on a
         // sold-out color/size (which reads as the whole product being gone).
         // Fall back to the first variant when nothing is in stock.
@@ -148,6 +179,7 @@ export default function ProductDetail() {
 
   return (
     <Shell>
+      <JsonLd data={productJsonLd(product)} />
       <div className="flex items-center gap-3">
         <Link
           to="/shop"

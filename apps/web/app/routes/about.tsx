@@ -5,8 +5,15 @@ import { Header } from "../components/ecommerce/Header";
 import { Heading, Text } from "../components/ui/Text";
 import { useLanguage } from "../features/i18n/LanguageContext";
 import { type StorefrontStoreSettings, getStoreSettings, resolveImageUrl } from "../lib/api/storefront";
+import { buildMeta } from "../lib/seo/meta";
 
-export const handle = { title: "About" };
+export function meta() {
+  return buildMeta({
+    title: "About Us",
+    description: "Learn about Verani — our story, our values, and the curated fashion we bring to Bulgaria.",
+    path: "/about",
+  });
+}
 
 export default function About() {
   const { t } = useLanguage();

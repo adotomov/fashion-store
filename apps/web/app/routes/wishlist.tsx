@@ -13,8 +13,13 @@ import { useLanguage } from "../features/i18n/LanguageContext";
 import { useWishlist } from "../features/wishlist/WishlistContext";
 import { resolveImageUrl } from "../lib/api/storefront";
 import { cn } from "../lib/utils/cn";
+import { buildMeta } from "../lib/seo/meta";
 
 export const handle = { title: "Wishlist" };
+
+export function meta() {
+  return buildMeta({ title: "Wishlist", path: "/wishlist", noindex: true });
+}
 
 export default function Wishlist() {
   const { t } = useLanguage();

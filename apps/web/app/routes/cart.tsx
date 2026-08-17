@@ -13,9 +13,14 @@ import { useCart } from "../features/cart/CartContext";
 import { trackRemoveFromCart, trackViewCart } from "../lib/analytics/ecommerce";
 import type { CartItem } from "../lib/api/cart";
 import { resolveImageUrl } from "../lib/api/storefront";
+import { buildMeta } from "../lib/seo/meta";
 import { formatMoneyDual } from "../lib/money/money";
 
 export const handle = { title: "Cart" };
+
+export function meta() {
+  return buildMeta({ title: "Your Cart", path: "/cart", noindex: true });
+}
 
 export default function CartPage() {
   const { t } = useLanguage();

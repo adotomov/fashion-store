@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useSearchParams, useNavigate } from "react-router";
 
+import type { Route } from "./+types/shop";
+
 import { Breadcrumbs } from "../components/ecommerce/Breadcrumbs";
 import { type FilterGroup, FilterPanel } from "../components/ecommerce/FilterPanel";
 import { Footer } from "../components/ecommerce/Footer";
@@ -25,8 +27,25 @@ import {
 } from "../lib/api/storefront";
 import { Pagination } from "../components/ui/Pagination";
 import { loadShopFilterState, saveShopFilterState } from "../lib/shopFilterState";
+import { buildMeta } from "../lib/seo/meta";
+import { breadcrumbJsonLd } from "../lib/seo/jsonld";
 
-export const handle = { title: "Shop" };
+export function meta({ location }: Route.MetaArgs) {
+  const query = new URLSearchParams(location.search).get("q")?.trim();
+  return buildMeta({
+    title: query ? `Search: ${query}` : "Shop All",
+    description: query
+      ? `Search results for “${query}” at Verani.`
+      : "Browse the full Verani collection — clothing, jewelry, bags, and accessories. Filter by category, size, and color.",
+    // Canonical stays on the clean /shop path so filtered and paginated
+    // variants consolidate onto one indexable URL.
+    path: "/shop",
+    jsonLd: breadcrumbJsonLd([
+      { name: "Home", path: "/" },
+      { name: "Shop", path: "/shop" },
+    ]),
+  });
+}
 
 // Storefront grid page size — the API caps a page at 30 regardless.
 const PAGE_SIZE = 30;

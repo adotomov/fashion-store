@@ -5,6 +5,11 @@ import { useLanguage } from "../features/i18n/LanguageContext";
 import { GoogleSignInButton } from "../features/auth/GoogleSignInButton";
 import { useStoreBranding } from "../features/store-settings/StoreSettingsContext";
 import { Eyebrow, Heading, Text } from "../components/ui/Text";
+import { buildMeta } from "../lib/seo/meta";
+
+export function meta() {
+  return buildMeta({ title: "Sign In", path: "/login", noindex: true });
+}
 
 export default function Login() {
   const { t } = useLanguage();

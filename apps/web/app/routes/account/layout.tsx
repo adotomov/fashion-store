@@ -5,6 +5,12 @@ import { Footer } from "../../components/ecommerce/Footer";
 import { Header } from "../../components/ecommerce/Header";
 import { RequireAuth } from "../../components/RequireAuth";
 import { Heading } from "../../components/ui/Text";
+import { buildMeta } from "../../lib/seo/meta";
+
+// Personal account pages are per-user and must never be indexed.
+export function meta() {
+  return buildMeta({ title: "My Account", path: "/account", noindex: true });
+}
 
 export default function AccountLayout() {
   const matches = useMatches();

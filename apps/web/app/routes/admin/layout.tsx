@@ -5,6 +5,12 @@ import { AdminHeader } from "../../components/admin/AdminHeader";
 import { AdminSidebar } from "../../components/admin/AdminSidebar";
 import { RequireAdmin } from "../../components/RequireAdmin";
 import { AdminPermissionsProvider, useAdminPermissions } from "../../features/admin/AdminPermissionsContext";
+import { buildMeta } from "../../lib/seo/meta";
+
+// Keep the whole admin area out of search indexes (also blocked in robots.txt).
+export function meta() {
+  return buildMeta({ title: "Admin", path: "/admin", noindex: true });
+}
 
 function AccountantGuard() {
   const { isAccountant, canAccessPath } = useAdminPermissions();

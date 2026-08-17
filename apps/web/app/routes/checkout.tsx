@@ -2,8 +2,13 @@ import { Footer } from "../components/ecommerce/Footer";
 import { Header } from "../components/ecommerce/Header";
 import { Heading } from "../components/ui/Text";
 import { CheckoutFlow } from "../features/checkout/CheckoutFlow";
+import { buildMeta } from "../lib/seo/meta";
 
 export const handle = { title: "Checkout" };
+
+export function meta() {
+  return buildMeta({ title: "Checkout", path: "/checkout", noindex: true });
+}
 
 export default function Checkout() {
   return (
