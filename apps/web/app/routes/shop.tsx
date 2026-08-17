@@ -13,6 +13,7 @@ import { Modal } from "../components/ui/Modal";
 import { Heading, Text } from "../components/ui/Text";
 import { useAuth } from "../features/auth/AuthContext";
 import { useWishlist } from "../features/wishlist/WishlistContext";
+import { trackAddToWishlist, trackSelectItem, trackViewItemList } from "../lib/analytics/ecommerce";
 import {
   type AttributeFacet,
   type NavType,
@@ -235,6 +236,7 @@ export default function Shop() {
         if (seq !== reqSeq.current) return;
         setProducts(res.items);
         setTotal(res.total);
+        trackViewItemList(res.items, "shop", searchQuery ? "Search Results" : "Shop");
       })
       .catch(() => {
         if (seq === reqSeq.current) setError(t("shop.load_error", "Could not load products."));
@@ -441,7 +443,7 @@ export default function Shop() {
                 </Text>
               ) : (
                 <div className="grid grid-cols-2 gap-x-6 gap-y-10 sm:grid-cols-3">
-                  {products.map((product) => (
+                  {products.map((product, index) => (
                     <ProductCard
                       key={product.id}
                       href={`/shop/${product.slug}`}
@@ -453,7 +455,17 @@ export default function Shop() {
                       promotionLabel={product.promotion_label}
                       outOfStock={!product.in_stock}
                       isWishlisted={isAuthenticated && isWishlisted(product.id)}
-                      onToggleWishlist={isAuthenticated ? () => toggle(product.id) : undefined}
+                      onSelect={() =>
+                        trackSelectItem(product, "shop", searchQuery ? "Search Results" : "Shop", index)
+                      }
+                      onToggleWishlist={
+                        isAuthenticated
+                          ? () => {
+                              if (!isWishlisted(product.id)) trackAddToWishlist(product);
+                              toggle(product.id);
+                            }
+                          : undefined
+                      }
                     />
                   ))}
                 </div>

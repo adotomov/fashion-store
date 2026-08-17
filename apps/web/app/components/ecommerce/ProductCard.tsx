@@ -21,6 +21,8 @@ export type ProductCardProps = {
   outOfStock?: boolean;
   isWishlisted?: boolean;
   onToggleWishlist?: () => void;
+  /** Fired when the shopper clicks through to the product (analytics select_item). */
+  onSelect?: () => void;
   className?: string;
 };
 
@@ -36,6 +38,7 @@ export function ProductCard({
   outOfStock = false,
   isWishlisted = false,
   onToggleWishlist,
+  onSelect,
   className,
 }: ProductCardProps) {
   const { t } = useLanguage();
@@ -45,7 +48,7 @@ export function ProductCard({
   return (
     <div className={cn("group relative flex flex-col", className)}>
       <div className="relative aspect-[3/4] w-full overflow-hidden rounded-sm bg-stone-50">
-        <Link to={href}>
+        <Link to={href} onClick={onSelect}>
           {image ? (
             <img
               src={image.src}
@@ -84,7 +87,7 @@ export function ProductCard({
         </Button>
       </div>
 
-      <Link to={href} className="mt-3">
+      <Link to={href} onClick={onSelect} className="mt-3">
         <Text size="sm" className="line-clamp-2 font-medium">
           {title}
         </Text>

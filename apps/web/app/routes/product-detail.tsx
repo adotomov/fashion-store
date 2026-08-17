@@ -16,6 +16,7 @@ import { useCart } from "../features/cart/CartContext";
 import { useLanguage } from "../features/i18n/LanguageContext";
 import { useWishlist } from "../features/wishlist/WishlistContext";
 import { cn } from "../lib/utils/cn";
+import { trackAddToCart, trackAddToWishlist, trackViewItem } from "../lib/analytics/ecommerce";
 import { addRecentlyViewed } from "../lib/recentlyViewed";
 import {
   type StorefrontProductDetail,
@@ -55,6 +56,7 @@ export default function ProductDetail() {
       .then((loaded) => {
         setProduct(loaded);
         addRecentlyViewed(loaded.id);
+        trackViewItem(loaded);
         // Auto-select the first in-stock variant so the page doesn't open on a
         // sold-out color/size (which reads as the whole product being gone).
         // Fall back to the first variant when nothing is in stock.
@@ -135,6 +137,8 @@ export default function ProductDetail() {
     try {
       await addItem(matchedVariant.id);
       setAddedToCart(true);
+      const variantLabel = matchedVariant.attributes.map((a) => a.value).join(" / ");
+      trackAddToCart(product!, 1, variantLabel || undefined);
     } catch {
       setAddToCartError(t("product.add_to_cart_error", "Could not add this item to your cart."));
     } finally {
@@ -256,7 +260,10 @@ export default function ProductDetail() {
               size="lg"
               aria-pressed={isAuthenticated && isWishlisted(product.id)}
               aria-label={t("product.wishlist_add", "Add to wishlist")}
-              onClick={() => toggle(product.id)}
+              onClick={() => {
+                if (!isWishlisted(product.id)) trackAddToWishlist(product);
+                toggle(product.id);
+              }}
               disabled={!isAuthenticated}
             >
               <Icon

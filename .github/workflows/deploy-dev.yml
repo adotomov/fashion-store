@@ -27,6 +27,10 @@ env:
   VITE_GOOGLE_CLIENT_ID: 673528779465-pajifaekv8l1odrbd8mpbglo351d7r15.apps.googleusercontent.com
   # Dev talks to the Revolut SANDBOX, so the checkout widget runs in sandbox mode.
   VITE_REVOLUT_ENV: sandbox
+  # Google Analytics 4 Measurement ID for the dev property. Leave empty to keep
+  # analytics off on dev; set a separate test property's id to exercise GA
+  # without polluting prod numbers.
+  VITE_GA_MEASUREMENT_ID: ""
 
 jobs:
   deploy:

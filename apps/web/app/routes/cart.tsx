@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 
 import { Footer } from "../components/ecommerce/Footer";
@@ -10,6 +10,7 @@ import { Heading, Text } from "../components/ui/Text";
 import { useLanguage } from "../features/i18n/LanguageContext";
 import { useStoreBranding } from "../features/store-settings/StoreSettingsContext";
 import { useCart } from "../features/cart/CartContext";
+import { trackRemoveFromCart, trackViewCart } from "../lib/analytics/ecommerce";
 import type { CartItem } from "../lib/api/cart";
 import { resolveImageUrl } from "../lib/api/storefront";
 import { formatMoneyDual } from "../lib/money/money";
@@ -24,6 +25,14 @@ export default function CartPage() {
   // Any line whose requested quantity exceeds what's in stock (including fully
   // out-of-stock items) blocks checkout — it would otherwise 409 at the API.
   const hasUnavailableItems = items.some((item) => item.quantity > item.available_quantity);
+
+  // Fire view_cart once, when the cart has finished loading with items in it.
+  const viewedRef = useRef(false);
+  useEffect(() => {
+    if (viewedRef.current || isLoading || !cart || cart.items.length === 0) return;
+    viewedRef.current = true;
+    trackViewCart(cart);
+  }, [isLoading, cart]);
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -118,6 +127,7 @@ function CartLineItem({ item }: { item: CartItem }) {
     setError(null);
     try {
       await removeItem(item.id);
+      trackRemoveFromCart(item);
     } catch {
       setError(t("cart.remove_error", "Could not remove this item."));
       setIsUpdating(false);

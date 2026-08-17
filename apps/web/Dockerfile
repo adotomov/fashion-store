@@ -22,9 +22,15 @@ ARG VITE_GOOGLE_CLIENT_ID=673528779465-pajifaekv8l1odrbd8mpbglo351d7r15.apps.goo
 # or "prod". This is the ONLY Revolut value that ships to the browser — no
 # publishable key; the per-order token carries auth.
 ARG VITE_REVOLUT_ENV=sandbox
+# Google Analytics 4 Measurement ID (G-XXXXXXXXXX). Empty by default so local
+# and devbox builds ship with analytics OFF — the frontend injects no gtag
+# script and every analytics call is a no-op until a real ID is provided via
+# --build-arg (set per-environment in the deploy workflows).
+ARG VITE_GA_MEASUREMENT_ID=
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
 ENV VITE_REVOLUT_ENV=$VITE_REVOLUT_ENV
+ENV VITE_GA_MEASUREMENT_ID=$VITE_GA_MEASUREMENT_ID
 RUN npm run build
 
 FROM node:24-alpine

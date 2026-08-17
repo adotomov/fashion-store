@@ -23,6 +23,14 @@ import {
   reserveCheckoutSession,
   validateDiscountCode,
 } from "../../lib/api/checkout";
+import {
+  trackAddPaymentInfo,
+  trackAddShippingInfo,
+  trackBeginCheckout,
+  trackPurchase,
+  cartItemToItem,
+} from "../../lib/analytics/ecommerce";
+import type { CartItem } from "../../lib/api/cart";
 import { ApiError } from "../../lib/api/client";
 import { RevolutPaymentStep } from "./RevolutPaymentStep";
 import { AddressForm, type StructuredAddress, emptyStructuredAddress, isStructuredAddressComplete } from "../../components/address/AddressForm";
@@ -149,11 +157,49 @@ export function CheckoutFlow() {
   const orderInFlightRef = useRef(false);
   orderInFlightRef.current = paymentInitiation !== null || placedOrder !== null;
 
+  // Analytics: fire begin_checkout once per visit to the flow, and remember the
+  // cart lines at submit time so the purchase event can report items with their
+  // product ids even though the cart is cleared once the order is placed.
+  const beganCheckoutRef = useRef(false);
+  const purchaseItemsRef = useRef<CartItem[]>([]);
+
   useEffect(() => {
     listDeliveryMethods()
       .then(setDeliveryMethods)
       .catch(() => setDeliveryMethods([]));
   }, []);
+
+  useEffect(() => {
+    if (beganCheckoutRef.current || !cart || (cart.items?.length ?? 0) === 0) return;
+    beganCheckoutRef.current = true;
+    trackBeginCheckout(cart);
+  }, [cart]);
+
+  // Fire purchase once an order is placed/paid — covers both the direct
+  // (cash/terminal) path and the card path (handleCardPaid sets placedOrder).
+  // De-duplicated per order number via sessionStorage so a confirmation-page
+  // reload never double-counts revenue.
+  useEffect(() => {
+    if (!placedOrder) return;
+    const key = `ga_purchase_${placedOrder.order_number}`;
+    if (typeof sessionStorage !== "undefined" && sessionStorage.getItem(key)) return;
+    const items = purchaseItemsRef.current.length
+      ? purchaseItemsRef.current.map(cartItemToItem)
+      : placedOrder.items.map((it) => ({
+          item_name: it.product_name,
+          item_variant: it.variant_label,
+          price: it.unit_price.amount / 100,
+          quantity: it.quantity,
+        }));
+    trackPurchase({
+      transactionId: placedOrder.order_number,
+      currency: placedOrder.total.currency,
+      value: placedOrder.total.amount / 100,
+      shipping: placedOrder.delivery_fee ? placedOrder.delivery_fee.amount / 100 : undefined,
+      items,
+    });
+    if (typeof sessionStorage !== "undefined") sessionStorage.setItem(key, "1");
+  }, [placedOrder]);
 
   // Reserve stock for the whole checkout the moment the shopper arrives with a
   // non-empty cart — so a slow-filling shopper isn't beaten to the last unit at
@@ -377,6 +423,10 @@ export function CheckoutFlow() {
 
   async function submitOrder() {
     if (!deliveryMethod || !paymentMethod) return;
+    // Snapshot the cart lines before placing: the server clears the cart for a
+    // card order, so this preserves the items (with product ids) for the
+    // purchase event fired later from the confirmation step.
+    purchaseItemsRef.current = cart?.items ?? [];
     setIsPlacing(true);
     setPlaceError(null);
     try {
@@ -673,7 +723,10 @@ export function CheckoutFlow() {
               <Button
                 variant="primary"
                 disabled={!deliveryMethod || (pickupType !== null && !officeId)}
-                onClick={() => setStep("payment")}
+                onClick={() => {
+                  if (cart && deliveryMethod) trackAddShippingInfo(cart, deliveryMethod);
+                  setStep("payment");
+                }}
               >
                 {t("checkout.continue_to_payment", "Continue to Payment")}
               </Button>
@@ -744,11 +797,25 @@ export function CheckoutFlow() {
                     {t("common.back", "Back")}
                   </Button>
                   {paymentMethod === "card_online" ? (
-                    <Button variant="primary" onClick={submitOrder} disabled={isPlacing}>
+                    <Button
+                      variant="primary"
+                      onClick={() => {
+                        if (cart && paymentMethod) trackAddPaymentInfo(cart, paymentMethod);
+                        void submitOrder();
+                      }}
+                      disabled={isPlacing}
+                    >
                       {isPlacing ? t("checkout.starting_payment", "Starting payment…") : t("checkout.continue_to_pay", "Continue to Payment")}
                     </Button>
                   ) : (
-                    <Button variant="primary" disabled={!paymentMethod} onClick={() => setStep("confirmation")}>
+                    <Button
+                      variant="primary"
+                      disabled={!paymentMethod}
+                      onClick={() => {
+                        if (cart && paymentMethod) trackAddPaymentInfo(cart, paymentMethod);
+                        setStep("confirmation");
+                      }}
+                    >
                       {t("checkout.review_order", "Review Order")}
                     </Button>
                   )}

@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
+import { trackLogin, trackSignUp } from "../../lib/analytics/ecommerce";
 import { mergeGuestCartIntoUser } from "../../lib/api/cart";
 import { apiFetch } from "../../lib/api/client";
 import { clearToken, getToken, setToken } from "../../lib/auth/session";
@@ -88,7 +89,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // before they land in the app. Google never supplies a phone number, so a
     // brand-new account has none — but an account previously created via guest
     // checkout may already carry one to confirm.
-    if (session.is_new) setPhoneSetupRequired(true);
+    if (session.is_new) {
+      setPhoneSetupRequired(true);
+      trackSignUp("Google");
+    } else {
+      trackLogin("Google");
+    }
   }
 
   async function completePhoneSetup(phone: string) {

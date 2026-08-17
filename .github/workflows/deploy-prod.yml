@@ -31,6 +31,9 @@ env:
   # Without this the Dockerfile default ("sandbox") would silently ship a
   # sandbox widget to production.
   VITE_REVOLUT_ENV: prod
+  # Google Analytics 4 Measurement ID for the prod property. Not secret (it
+  # ships to the browser), so it lives here. Leave empty to keep analytics off.
+  VITE_GA_MEASUREMENT_ID: G-T02R7XERDV
 
 jobs:
   deploy:
@@ -62,6 +65,7 @@ jobs:
             --build-arg VITE_API_BASE_URL="${{ env.VITE_API_BASE_URL }}" \
             --build-arg VITE_GOOGLE_CLIENT_ID="${{ env.VITE_GOOGLE_CLIENT_ID }}" \
             --build-arg VITE_REVOLUT_ENV="${{ env.VITE_REVOLUT_ENV }}" \
+            --build-arg VITE_GA_MEASUREMENT_ID="${{ env.VITE_GA_MEASUREMENT_ID }}" \
             -t "${{ env.REGISTRY }}/webstore-fe:${{ github.sha }}" apps/web
           docker push "${{ env.REGISTRY }}/webstore-fe:${{ github.sha }}"
 

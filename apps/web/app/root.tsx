@@ -9,8 +9,12 @@ import {
 
 import type { Route } from "./+types/root";
 import "./app.css";
+import { GoogleAnalytics } from "./features/analytics/GoogleAnalytics";
+import { usePageViews } from "./features/analytics/usePageViews";
 import { AuthProvider } from "./features/auth/AuthContext";
 import { CartProvider } from "./features/cart/CartContext";
+import { ConsentBanner } from "./features/consent/ConsentBanner";
+import { ConsentProvider } from "./features/consent/ConsentContext";
 import { LanguageProvider } from "./features/i18n/LanguageContext";
 import { StoreSettingsProvider } from "./features/store-settings/StoreSettingsContext";
 import { WishlistProvider } from "./features/wishlist/WishlistContext";
@@ -36,6 +40,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <Meta />
         <Links />
+        <GoogleAnalytics />
       </head>
       <body>
         {children}
@@ -47,17 +52,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
+  usePageViews();
   return (
     <LanguageProvider>
-      <StoreSettingsProvider>
-        <AuthProvider>
-          <CartProvider>
-            <WishlistProvider>
-              <Outlet />
-            </WishlistProvider>
-          </CartProvider>
-        </AuthProvider>
-      </StoreSettingsProvider>
+      <ConsentProvider>
+        <StoreSettingsProvider>
+          <AuthProvider>
+            <CartProvider>
+              <WishlistProvider>
+                <Outlet />
+              </WishlistProvider>
+            </CartProvider>
+          </AuthProvider>
+        </StoreSettingsProvider>
+        <ConsentBanner />
+      </ConsentProvider>
     </LanguageProvider>
   );
 }
