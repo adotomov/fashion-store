@@ -32,6 +32,7 @@ func (h *Handler) RegisterRoutes(r chi.Router, requireAdmin func(http.Handler) h
 			r.Patch("/{id}", h.updateSKU)
 			r.Post("/{id}/adjust", h.adjust)
 			r.Get("/{id}/movements", h.listMovements)
+			r.Get("/{id}/sku-history", h.listSKUHistory)
 		})
 	})
 }
@@ -86,6 +87,30 @@ func toMovementResponse(m domain.InventoryMovement) movementResponse {
 	if m.CreatedBy != nil {
 		s := m.CreatedBy.String()
 		resp.CreatedBy = &s
+	}
+	return resp
+}
+
+type skuChangeResponse struct {
+	ID        string  `json:"id"`
+	OldSKU    string  `json:"old_sku"`
+	NewSKU    string  `json:"new_sku"`
+	Reason    string  `json:"reason"`
+	ChangedBy *string `json:"changed_by,omitempty"`
+	ChangedAt string  `json:"changed_at"`
+}
+
+func toSKUChangeResponse(c domain.SKUChange) skuChangeResponse {
+	resp := skuChangeResponse{
+		ID:        c.ID.String(),
+		OldSKU:    c.OldSKU,
+		NewSKU:    c.NewSKU,
+		Reason:    c.Reason,
+		ChangedAt: c.ChangedAt.Format(timeFormat),
+	}
+	if c.ChangedBy != nil {
+		s := c.ChangedBy.String()
+		resp.ChangedBy = &s
 	}
 	return resp
 }
@@ -155,20 +180,41 @@ func (h *Handler) updateSKU(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req struct {
-		SKU string `json:"sku"`
+		SKU    string `json:"sku"`
+		Reason string `json:"reason"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "request body is invalid")
 		return
 	}
 
-	item, err := h.service.UpdateSKU(r.Context(), id, req.SKU)
+	item, err := h.service.UpdateSKU(r.Context(), id, req.SKU, req.Reason, adminUserID(r))
 	if err != nil {
 		writeInventoryError(w, err)
 		return
 	}
 
 	httpx.WriteJSON(w, http.StatusOK, toItemResponse(*item))
+}
+
+func (h *Handler) listSKUHistory(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_id", "item id is invalid")
+		return
+	}
+
+	changes, err := h.service.ListSKUHistory(r.Context(), id)
+	if err != nil {
+		writeInventoryError(w, err)
+		return
+	}
+
+	resp := make([]skuChangeResponse, 0, len(changes))
+	for _, c := range changes {
+		resp = append(resp, toSKUChangeResponse(c))
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h *Handler) adjust(w http.ResponseWriter, r *http.Request) {

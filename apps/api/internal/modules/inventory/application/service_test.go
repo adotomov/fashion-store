@@ -11,18 +11,20 @@ import (
 )
 
 type fakeRepo struct {
-	byID      map[uuid.UUID]domain.InventoryItem
-	byVariant map[uuid.UUID]uuid.UUID
-	skusUsed  map[string]bool
-	movements map[uuid.UUID][]domain.InventoryMovement
+	byID       map[uuid.UUID]domain.InventoryItem
+	byVariant  map[uuid.UUID]uuid.UUID
+	skusUsed   map[string]bool
+	movements  map[uuid.UUID][]domain.InventoryMovement
+	skuHistory map[uuid.UUID][]domain.SKUChange
 }
 
 func newFakeRepo() *fakeRepo {
 	return &fakeRepo{
-		byID:      map[uuid.UUID]domain.InventoryItem{},
-		byVariant: map[uuid.UUID]uuid.UUID{},
-		skusUsed:  map[string]bool{},
-		movements: map[uuid.UUID][]domain.InventoryMovement{},
+		byID:       map[uuid.UUID]domain.InventoryItem{},
+		byVariant:  map[uuid.UUID]uuid.UUID{},
+		skusUsed:   map[string]bool{},
+		movements:  map[uuid.UUID][]domain.InventoryMovement{},
+		skuHistory: map[uuid.UUID][]domain.SKUChange{},
 	}
 }
 
@@ -65,17 +67,29 @@ func (f *fakeRepo) FindByVariantID(_ context.Context, variantID uuid.UUID) (*dom
 	return &i, nil
 }
 
-func (f *fakeRepo) UpdateSKU(_ context.Context, id uuid.UUID, sku string) (*domain.InventoryItem, error) {
+func (f *fakeRepo) UpdateSKU(_ context.Context, id uuid.UUID, sku, reason string, changedBy *uuid.UUID) (*domain.InventoryItem, error) {
 	i, ok := f.byID[id]
 	if !ok {
 		return nil, domain.ErrItemNotFound
 	}
+	if sku == i.SKU {
+		return &i, nil
+	}
 	if f.skusUsed[sku] {
 		return nil, domain.ErrSKUConflict
 	}
+	f.skuHistory[id] = append(f.skuHistory[id], domain.SKUChange{
+		ID: uuid.New(), InventoryItemID: id, OldSKU: i.SKU, NewSKU: sku, Reason: reason, ChangedBy: changedBy,
+	})
+	delete(f.skusUsed, i.SKU)
 	i.SKU = sku
+	f.skusUsed[sku] = true
 	f.byID[id] = i
 	return &i, nil
+}
+
+func (f *fakeRepo) ListSKUHistory(_ context.Context, itemID uuid.UUID) ([]domain.SKUChange, error) {
+	return f.skuHistory[itemID], nil
 }
 
 func (f *fakeRepo) AdjustStock(_ context.Context, itemID uuid.UUID, movementType domain.MovementType, quantityDelta int, note string, createdBy *uuid.UUID) (*domain.InventoryItem, *domain.InventoryMovement, error) {

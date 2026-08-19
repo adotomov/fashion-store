@@ -49,11 +49,15 @@ func (s *Service) GetItem(ctx context.Context, id uuid.UUID) (*domain.InventoryI
 	return s.repo.FindByID(ctx, id)
 }
 
-func (s *Service) UpdateSKU(ctx context.Context, id uuid.UUID, sku string) (*domain.InventoryItem, error) {
+func (s *Service) UpdateSKU(ctx context.Context, id uuid.UUID, sku, reason string, changedBy *uuid.UUID) (*domain.InventoryItem, error) {
 	if sku == "" {
 		return nil, domain.ValidationError("sku is required")
 	}
-	return s.repo.UpdateSKU(ctx, id, sku)
+	return s.repo.UpdateSKU(ctx, id, sku, reason, changedBy)
+}
+
+func (s *Service) ListSKUHistory(ctx context.Context, itemID uuid.UUID) ([]domain.SKUChange, error) {
+	return s.repo.ListSKUHistory(ctx, itemID)
 }
 
 // AdjustStock is the admin-facing stock change entry point. Only

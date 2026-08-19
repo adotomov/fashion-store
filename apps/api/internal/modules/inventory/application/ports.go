@@ -21,7 +21,12 @@ type Repository interface {
 	ListItems(ctx context.Context) ([]domain.InventoryItem, error)
 	FindByID(ctx context.Context, id uuid.UUID) (*domain.InventoryItem, error)
 	FindByVariantID(ctx context.Context, variantID uuid.UUID) (*domain.InventoryItem, error)
-	UpdateSKU(ctx context.Context, id uuid.UUID, sku string) (*domain.InventoryItem, error)
+	// UpdateSKU changes the item's SKU and, when the value actually changes,
+	// records an inventory_sku_history row in the same transaction. A no-op
+	// change (same SKU) writes no history entry.
+	UpdateSKU(ctx context.Context, id uuid.UUID, sku, reason string, changedBy *uuid.UUID) (*domain.InventoryItem, error)
+	// ListSKUHistory returns an item's SKU change audit trail, newest first.
+	ListSKUHistory(ctx context.Context, itemID uuid.UUID) ([]domain.SKUChange, error)
 
 	// AdjustStock atomically inserts a movement row and updates the item's
 	// quantity_on_hand by quantityDelta in a single transaction.

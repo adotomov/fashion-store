@@ -88,8 +88,24 @@ func (r *PostgresRepository) FindByVariantID(ctx context.Context, variantID uuid
 	return scanItem(row)
 }
 
-func (r *PostgresRepository) UpdateSKU(ctx context.Context, id uuid.UUID, sku string) (*domain.InventoryItem, error) {
-	row := r.db.QueryRow(ctx, `
+func (r *PostgresRepository) UpdateSKU(ctx context.Context, id uuid.UUID, sku, reason string, changedBy *uuid.UUID) (*domain.InventoryItem, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback(ctx)
+
+	// Lock the row and read the current SKU so we can both skip no-op updates
+	// and capture the old value for the audit trail.
+	var currentSKU string
+	if err := tx.QueryRow(ctx, `SELECT sku FROM inventory_items WHERE id = $1 FOR UPDATE`, id).Scan(&currentSKU); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, domain.ErrItemNotFound
+		}
+		return nil, err
+	}
+
+	row := tx.QueryRow(ctx, `
 		UPDATE inventory_items SET sku = $2, updated_at = NOW()
 		WHERE id = $1
 		RETURNING id, variant_id, sku, quantity_on_hand, quantity_reserved, created_at, updated_at`,
@@ -103,7 +119,51 @@ func (r *PostgresRepository) UpdateSKU(ctx context.Context, id uuid.UUID, sku st
 		}
 		return nil, err
 	}
+
+	// Only record history when the SKU actually changed — re-saving the same
+	// value shouldn't clutter the audit trail.
+	if currentSKU != sku {
+		if _, err := tx.Exec(ctx, `
+			INSERT INTO inventory_sku_history (inventory_item_id, old_sku, new_sku, reason, changed_by)
+			VALUES ($1, $2, $3, $4, $5)`,
+			id, currentSKU, sku, nullIfEmpty(reason), changedBy); err != nil {
+			return nil, err
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
 	return updated, nil
+}
+
+// nullIfEmpty maps an empty string to nil so it's stored as SQL NULL rather
+// than an empty string (keeps the optional reason column genuinely absent).
+func nullIfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+func (r *PostgresRepository) ListSKUHistory(ctx context.Context, itemID uuid.UUID) ([]domain.SKUChange, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT id, inventory_item_id, old_sku, new_sku, COALESCE(reason, ''), changed_by, changed_at
+		FROM inventory_sku_history WHERE inventory_item_id = $1 ORDER BY changed_at DESC`, itemID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	changes := []domain.SKUChange{}
+	for rows.Next() {
+		var c domain.SKUChange
+		if err := rows.Scan(&c.ID, &c.InventoryItemID, &c.OldSKU, &c.NewSKU, &c.Reason, &c.ChangedBy, &c.ChangedAt); err != nil {
+			return nil, err
+		}
+		changes = append(changes, c)
+	}
+	return changes, rows.Err()
 }
 
 func (r *PostgresRepository) AdjustStock(ctx context.Context, itemID uuid.UUID, movementType domain.MovementType, quantityDelta int, note string, createdBy *uuid.UUID) (*domain.InventoryItem, *domain.InventoryMovement, error) {
