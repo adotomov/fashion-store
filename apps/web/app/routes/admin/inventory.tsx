@@ -13,15 +13,19 @@ import { Modal } from "../../components/ui/Modal";
 import { Pagination } from "../../components/ui/Pagination";
 import { Select } from "../../components/ui/Select";
 import { Text } from "../../components/ui/Text";
+import { Textarea } from "../../components/ui/Textarea";
 import { usePagination } from "../../lib/usePagination";
 import {
   type AdminAdjustableMovementType,
   type InventoryItem,
   type InventoryMovement,
+  type SKUChange,
   adjustStock,
   createInventoryItem,
   listInventoryItems,
   listMovements,
+  listSkuHistory,
+  updateInventorySKU,
 } from "../../lib/api/inventory";
 import { getProduct, listProducts, type ProductVariant } from "../../lib/api/products";
 import { listCategories } from "../../lib/api/categories";
@@ -78,6 +82,13 @@ export default function AdminInventory() {
 
   const [movementsItem, setMovementsItem] = useState<InventoryItem | null>(null);
   const [movements, setMovements] = useState<InventoryMovement[] | null>(null);
+
+  const [skuItem, setSkuItem] = useState<InventoryItem | null>(null);
+  const [skuValue, setSkuValue] = useState("");
+  const [skuReason, setSkuReason] = useState("");
+  const [skuError, setSkuError] = useState<string | null>(null);
+  const [skuSaving, setSkuSaving] = useState(false);
+  const [skuHistory, setSkuHistory] = useState<SKUChange[] | null>(null);
 
   async function refresh() {
     try {
@@ -226,6 +237,47 @@ export default function AdminInventory() {
     }
   }
 
+  async function openSkuModal(item: InventoryItem) {
+    setSkuItem(item);
+    setSkuValue(item.sku);
+    setSkuReason("");
+    setSkuError(null);
+    setSkuHistory(null);
+    try {
+      setSkuHistory(await listSkuHistory(item.id));
+    } catch {
+      setSkuHistory([]);
+    }
+  }
+
+  async function handleSaveSku() {
+    if (!skuItem) return;
+    const trimmed = skuValue.trim();
+    if (!trimmed) {
+      setSkuError("SKU is required.");
+      return;
+    }
+    if (trimmed === skuItem.sku) {
+      setSkuItem(null);
+      return;
+    }
+    setSkuSaving(true);
+    setSkuError(null);
+    try {
+      await updateInventorySKU(skuItem.id, trimmed, skuReason.trim());
+      setSkuItem(null);
+      await refresh();
+    } catch (err) {
+      setSkuError(
+        err instanceof Error && /sku already in use/i.test(err.message)
+          ? "That SKU is already used by another item."
+          : "Could not update the SKU. Try again.",
+      );
+    } finally {
+      setSkuSaving(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-end">
@@ -288,6 +340,9 @@ export default function AdminInventory() {
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => openSkuModal(item)} disabled={isReadOnly}>
+                        Edit SKU
+                      </Button>
                       <Button variant="ghost" size="sm" onClick={() => openAdjustModal(item)} disabled={isReadOnly}>
                         Adjust
                       </Button>
@@ -453,6 +508,74 @@ export default function AdminInventory() {
             ))}
           </ul>
         )}
+      </Modal>
+
+      <Modal open={skuItem !== null} onClose={() => setSkuItem(null)} title="Edit SKU">
+        <div className="flex flex-col gap-4">
+          {skuItem && (
+            <Text size="sm" tone="muted">
+              {skuItem.product_name} — {skuItem.variant_label || "Default"}
+            </Text>
+          )}
+          <FormField label="SKU" htmlFor="edit-sku" error={skuError ?? undefined}>
+            <Input id="edit-sku" value={skuValue} onChange={(e) => setSkuValue(e.target.value)} autoFocus />
+          </FormField>
+          <FormField
+            label="Reason"
+            htmlFor="edit-sku-reason"
+            hint="Optional — recorded in the SKU history for traceability (e.g. realigned prefix after a category move)"
+          >
+            <Textarea
+              id="edit-sku-reason"
+              value={skuReason}
+              onChange={(e) => setSkuReason(e.target.value)}
+              placeholder="Why is this SKU changing?"
+            />
+          </FormField>
+
+          <div>
+            <Text size="xs" tone="muted" className="mb-2 font-medium uppercase tracking-wide">
+              Change history
+            </Text>
+            {skuHistory === null ? (
+              <Text size="sm" tone="muted">
+                Loading…
+              </Text>
+            ) : skuHistory.length === 0 ? (
+              <Text size="sm" tone="muted">
+                No SKU changes recorded yet.
+              </Text>
+            ) : (
+              <ul className="flex max-h-64 flex-col gap-2 overflow-y-auto">
+                {skuHistory.map((c) => (
+                  <li key={c.id} className="rounded-sm border border-stone-200 p-3 text-sm">
+                    <div className="flex items-center gap-2 font-mono text-xs">
+                      <span className="text-stone-400 line-through">{c.old_sku}</span>
+                      <Icon name="chevronRight" size={13} className="text-stone-400" />
+                      <span className="text-stone-900">{c.new_sku}</span>
+                    </div>
+                    {c.reason && (
+                      <Text size="xs" tone="muted" className="mt-1">
+                        {c.reason}
+                      </Text>
+                    )}
+                    <Text size="xs" tone="muted" className="mt-1">
+                      {formatDate(c.changed_at)}
+                    </Text>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </div>
+        <div className="mt-6 flex justify-end gap-3">
+          <Button variant="outline" onClick={() => setSkuItem(null)} disabled={skuSaving}>
+            Cancel
+          </Button>
+          <Button variant="primary" onClick={handleSaveSku} disabled={skuSaving || isReadOnly}>
+            {skuSaving ? "Saving…" : "Save"}
+          </Button>
+        </div>
       </Modal>
     </div>
   );

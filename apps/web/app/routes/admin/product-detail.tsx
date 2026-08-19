@@ -19,6 +19,7 @@ import { Eyebrow, Heading, Text } from "../../components/ui/Text";
 import { type Attribute, listAttributes } from "../../lib/api/attributes";
 import { type Catalog, listCatalogs } from "../../lib/api/catalogs";
 import { type Category, categoryPath, listCategories } from "../../lib/api/categories";
+import { type ProductType, listProductTypes } from "../../lib/api/product-types";
 import {
   type Product,
   type ProductStatus,
@@ -65,6 +66,7 @@ export default function ProductDetail() {
   const { id } = useParams<{ id: string }>();
   const [product, setProduct] = useState<Product | null>(null);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [productTypes, setProductTypes] = useState<ProductType[]>([]);
   const [catalogs, setCatalogs] = useState<Catalog[]>([]);
   const [attributes, setAttributes] = useState<Attribute[]>([]);
   const [taxGroups, setTaxGroups] = useState<TaxGroup[]>([]);
@@ -136,6 +138,7 @@ export default function ProductDetail() {
   useEffect(() => {
     loadProduct();
     listCategories().then(setCategories).catch(() => {});
+    listProductTypes().then(setProductTypes).catch(() => {});
     listCatalogs().then(setCatalogs).catch(() => {});
     listAttributes().then(setAttributes).catch(() => {});
     listTaxGroups().then(setTaxGroups).catch(() => {});
@@ -424,7 +427,7 @@ export default function ProductDetail() {
                 .filter((c) => !c.is_placeholder)
                 .map((c) => (
                   <option key={c.id} value={c.id}>
-                    {categoryPath(c, categories)}
+                    {categoryPath(c, categories, productTypes)}
                     {c.internal_identifier ? ` (${c.internal_identifier})` : ""}
                   </option>
                 ))}

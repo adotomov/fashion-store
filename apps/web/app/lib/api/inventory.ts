@@ -39,8 +39,25 @@ export function createInventoryItem(variantId: string, sku: string, initialQuant
   });
 }
 
-export function updateInventorySKU(id: string, sku: string): Promise<InventoryItem> {
-  return apiFetch<InventoryItem>(`/api/v1/admin/inventory/items/${id}`, { method: "PATCH", body: { sku } });
+export function updateInventorySKU(id: string, sku: string, reason?: string): Promise<InventoryItem> {
+  return apiFetch<InventoryItem>(`/api/v1/admin/inventory/items/${id}`, {
+    method: "PATCH",
+    body: { sku, reason: reason ?? "" },
+  });
+}
+
+// One entry in an inventory item's SKU audit trail (see listSkuHistory).
+export type SKUChange = {
+  id: string;
+  old_sku: string;
+  new_sku: string;
+  reason: string;
+  changed_by?: string;
+  changed_at: string;
+};
+
+export function listSkuHistory(itemId: string): Promise<SKUChange[]> {
+  return apiFetch<SKUChange[]>(`/api/v1/admin/inventory/items/${itemId}/sku-history`);
 }
 
 export function adjustStock(

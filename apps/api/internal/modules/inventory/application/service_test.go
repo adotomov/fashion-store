@@ -153,6 +153,68 @@ func TestCreateItem_RejectsEmptySKU(t *testing.T) {
 	}
 }
 
+func TestUpdateSKU_RecordsHistoryOnChange(t *testing.T) {
+	svc := application.NewService(newFakeRepo())
+	item, err := svc.CreateItem(context.Background(), uuid.New(), "OLD-01", 0, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	actor := uuid.New()
+	if _, err := svc.UpdateSKU(context.Background(), item.ID, "NEW-01", "realigned prefix after category move", &actor); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	history, err := svc.ListSKUHistory(context.Background(), item.ID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("expected one history entry, got %d", len(history))
+	}
+	h := history[0]
+	if h.OldSKU != "OLD-01" || h.NewSKU != "NEW-01" {
+		t.Errorf("expected OLD-01→NEW-01, got %s→%s", h.OldSKU, h.NewSKU)
+	}
+	if h.Reason != "realigned prefix after category move" {
+		t.Errorf("unexpected reason: %q", h.Reason)
+	}
+	if h.ChangedBy == nil || *h.ChangedBy != actor {
+		t.Errorf("expected changed_by %v, got %v", actor, h.ChangedBy)
+	}
+}
+
+func TestUpdateSKU_NoHistoryWhenUnchanged(t *testing.T) {
+	svc := application.NewService(newFakeRepo())
+	item, err := svc.CreateItem(context.Background(), uuid.New(), "SAME-01", 0, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if _, err := svc.UpdateSKU(context.Background(), item.ID, "SAME-01", "", nil); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	history, err := svc.ListSKUHistory(context.Background(), item.ID)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("expected no history for a no-op SKU update, got %d", len(history))
+	}
+}
+
+func TestUpdateSKU_RejectsEmptySKU(t *testing.T) {
+	svc := application.NewService(newFakeRepo())
+	item, err := svc.CreateItem(context.Background(), uuid.New(), "SKU-X", 0, nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if _, err := svc.UpdateSKU(context.Background(), item.ID, "", "", nil); err == nil {
+		t.Fatal("expected error for empty sku")
+	}
+}
+
 func TestAdjustStock_RejectsNonAdminAdjustableType(t *testing.T) {
 	repo := newFakeRepo()
 	svc := application.NewService(repo)

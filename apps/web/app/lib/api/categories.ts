@@ -59,11 +59,13 @@ export function updateCategory(
   return apiFetch<Category>(`/api/v1/admin/categories/${id}`, { method: "PATCH", body: input });
 }
 
-// Builds a category's ancestor path as "Grandparent › Parent › Name" by
-// walking parent_id up the flat category list. Used to disambiguate same-named
-// categories (e.g. two "Bracelets") in admin pickers without a stored label.
-// Cycle-guarded so a malformed parent chain can't loop forever.
-export function categoryPath(category: Category, all: Category[]): string {
+// Builds a category's path as "Type › Parent › Name" by walking parent_id up
+// the flat category list. Used to disambiguate same-named categories (e.g.
+// three "Women" placeholders under different types) in admin pickers without a
+// stored label. Pass `types` to prepend the product type — the top of the
+// hierarchy and usually what tells the duplicates apart. Cycle-guarded so a
+// malformed parent chain can't loop forever.
+export function categoryPath(category: Category, all: Category[], types?: { id: string; name: string }[]): string {
   const byId = new Map(all.map((c) => [c.id, c]));
   const names: string[] = [];
   const seen = new Set<string>();
@@ -73,6 +75,8 @@ export function categoryPath(category: Category, all: Category[]): string {
     names.unshift(current.name);
     current = current.parent_id ? byId.get(current.parent_id) : undefined;
   }
+  const typeName = types?.find((t) => t.id === category.product_type_id)?.name;
+  if (typeName) names.unshift(typeName);
   return names.join(" › ");
 }
 

@@ -204,7 +204,8 @@ export function CategoriesTab() {
 
   function parentName(category: Category): string {
     if (!category.parent_id) return "—";
-    return categories?.find((c) => c.id === category.parent_id)?.name ?? "—";
+    const parent = categories?.find((c) => c.id === category.parent_id);
+    return parent ? categoryPath(parent, categories ?? [], productTypes) : "—";
   }
 
   function productTypeName(category: Category): string {
@@ -348,7 +349,7 @@ export function CategoriesTab() {
                 ?.filter((c) => c.id !== editingCategory?.id)
                 .map((c) => (
                   <option key={c.id} value={c.id}>
-                    {categoryPath(c, categories)}
+                    {categoryPath(c, categories, productTypes)}
                   </option>
                 ))}
             </Select>
