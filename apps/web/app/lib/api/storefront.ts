@@ -17,6 +17,9 @@ export type NavCategory = {
   slug: string;
   image_url?: string;
   has_promotion?: boolean;
+  // Grouping-only category (e.g. "Men", "Women") — the nav renders its
+  // thumbnail smaller than a real subcategory's.
+  is_placeholder?: boolean;
   children?: NavCategory[];
 };
 

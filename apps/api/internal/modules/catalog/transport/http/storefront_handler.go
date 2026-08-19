@@ -132,6 +132,9 @@ type navCategoryResponse struct {
 	Slug         string  `json:"slug"`
 	ImageURL     *string `json:"image_url,omitempty"`
 	HasPromotion bool    `json:"has_promotion"`
+	// IsPlaceholder marks a grouping-only category (e.g. "Men", "Women") so
+	// the storefront nav can present it differently from a real subcategory.
+	IsPlaceholder bool `json:"is_placeholder"`
 	// Children are the subcategories nested under this top-level category in
 	// the mega-menu. Empty for subcategories themselves (nav is one level deep).
 	Children []navCategoryResponse `json:"children,omitempty"`
@@ -175,7 +178,7 @@ func (h *StorefrontHandler) nav(w http.ResponseWriter, r *http.Request) {
 		if v, ok := categoryTranslations[c.ID]["name"]; ok {
 			name = v
 		}
-		navCat := navCategoryResponse{ID: c.ID.String(), Name: name, Slug: c.Slug}
+		navCat := navCategoryResponse{ID: c.ID.String(), Name: name, Slug: c.Slug, IsPlaceholder: c.IsPlaceholder}
 		if c.HasThumbnail() {
 			url := "/api/v1/storefront/categories/" + c.ID.String() + "/thumbnail/file"
 			navCat.ImageURL = &url

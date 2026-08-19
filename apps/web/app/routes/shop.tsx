@@ -70,7 +70,9 @@ export default function Shop() {
   const [facets, setFacets] = useState<AttributeFacet[]>([]);
   const [products, setProducts] = useState<StorefrontProduct[] | null>(null);
   const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
+  // Restore the page the shopper was last on (product-detail → back), unless
+  // this is a fresh filter context (nav/home tiles pass resetFilters).
+  const [page, setPage] = useState(() => restored?.page ?? 1);
   const [error, setError] = useState<string | null>(null);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
@@ -142,8 +144,9 @@ export default function Shop() {
       catalogId: selectedCatalogId,
       attributeValueIds: selectedAttributeValueIds,
       onSale: onSaleOnly,
+      page,
     });
-  }, [selectedTypeSlugs, selectedCategoryIds, selectedCatalogId, selectedAttributeValueIds, onSaleOnly]);
+  }, [selectedTypeSlugs, selectedCategoryIds, selectedCatalogId, selectedAttributeValueIds, onSaleOnly, page]);
 
   // Stable string keys so effects don't re-fire every render over a fresh
   // array reference.
@@ -289,37 +292,48 @@ export default function Shop() {
     return list.includes(value) ? list.filter((v) => v !== value) : [...list, value];
   }
 
-  function handleToggle(groupId: string, optionId: string) {
-    if (groupId === "type") {
-      const type = navTypes.find((nt) => nt.slug === optionId);
-      const isCurrentlySelected = selectedTypeSlugs.includes(optionId);
-      setSelectedTypeSlugs((prev) => toggleInList(prev, optionId));
-      // Keep the category group in sync: adding a type pre-selects its
-      // categories, removing it drops them, matching how arriving from
-      // the nav (type click) scopes the page.
-      if (type) {
-        const categoryIds = type.categories.flatMap((c) => [c.id, ...(c.children ?? []).map((ch) => ch.id)]);
-        setSelectedCategoryIds((prev) =>
-          isCurrentlySelected
-            ? prev.filter((id) => !categoryIds.includes(id))
-            : Array.from(new Set([...prev, ...categoryIds])),
-        );
+  // Toggle a type slug: selecting a type cascades to all its category ids
+  // (parents + children), matching how arriving from the nav scopes the page.
+  function toggleType(slug: string) {
+    const type = navTypes.find((nt) => nt.slug === slug);
+    const isCurrentlySelected = selectedTypeSlugs.includes(slug);
+    setSelectedTypeSlugs((prev) => toggleInList(prev, slug));
+    if (type) {
+      const categoryIds = type.categories.flatMap((c) => [c.id, ...(c.children ?? []).map((ch) => ch.id)]);
+      setSelectedCategoryIds((prev) =>
+        isCurrentlySelected
+          ? prev.filter((id) => !categoryIds.includes(id))
+          : Array.from(new Set([...prev, ...categoryIds])),
+      );
+    }
+  }
+
+  // Toggle a category id: a parent category cascades to all its subcategories,
+  // so the grid shows products filed under the children too (child ids are
+  // what the product query filters on). A leaf finds no children and toggles
+  // on its own.
+  function toggleCategory(id: string) {
+    const parent = navTypes.flatMap((nt) => nt.categories).find((c) => c.id === id);
+    const childIds = parent?.children?.map((ch) => ch.id) ?? [];
+    const isSelected = selectedCategoryIds.includes(id);
+    setSelectedCategoryIds((prev) => {
+      if (isSelected) {
+        const remove = new Set([id, ...childIds]);
+        return prev.filter((x) => !remove.has(x));
       }
-    } else if (groupId === "category") {
-      // Toggling a parent category cascades to all its subcategories, so the
-      // grid shows products filed under the children too (child ids are what
-      // the product query filters on). A child toggle finds no parent match
-      // here and falls back to a plain single toggle.
-      const parent = visibleCategories.find((c) => c.id === optionId);
-      const childIds = parent?.children?.map((ch) => ch.id) ?? [];
-      const isSelected = selectedCategoryIds.includes(optionId);
-      setSelectedCategoryIds((prev) => {
-        if (isSelected) {
-          const remove = new Set([optionId, ...childIds]);
-          return prev.filter((id) => !remove.has(id));
-        }
-        return Array.from(new Set([...prev, optionId, ...childIds]));
-      });
+      return Array.from(new Set([...prev, id, ...childIds]));
+    });
+  }
+
+  function handleToggle(groupId: string, optionId: string) {
+    if (groupId === "catalog") {
+      // Tree node ids are prefixed so one group can carry both tiers: types
+      // (`type:<slug>`) and categories (`cat:<id>`).
+      if (optionId.startsWith("type:")) {
+        toggleType(optionId.slice("type:".length));
+      } else if (optionId.startsWith("cat:")) {
+        toggleCategory(optionId.slice("cat:".length));
+      }
     } else if (groupId === "offers") {
       setOnSaleOnly((prev) => !prev);
     } else {
@@ -343,19 +357,20 @@ export default function Shop() {
       options: [{ id: "on_sale", label: t("shop.filter_on_sale", "On Sale") }],
     },
     {
-      id: "type",
-      label: t("shop.filter_type", "Type"),
-      type: "checkbox",
-      options: navTypes.map((nt) => ({ id: nt.slug, label: nt.name })),
-    },
-    {
-      id: "category",
+      // One merged tree replacing the old flat Type + Category groups:
+      // Type → placeholder category → subcategory (e.g. Clothes › Women › Jeans).
+      id: "catalog",
       label: t("shop.filter_category", "Category"),
-      type: "checkbox",
-      options: visibleCategories.flatMap((c) => [
-        { id: c.id, label: c.name },
-        ...(c.children ?? []).map((child) => ({ id: child.id, label: child.name, depth: 1 })),
-      ]),
+      type: "tree",
+      nodes: navTypes.map((nt) => ({
+        id: `type:${nt.slug}`,
+        label: nt.name,
+        children: nt.categories.map((c) => ({
+          id: `cat:${c.id}`,
+          label: c.name,
+          children: (c.children ?? []).map((child) => ({ id: `cat:${child.id}`, label: child.name })),
+        })),
+      })),
     },
     ...facets.map((facet): FilterGroup =>
       facet.attribute_type === "color"
@@ -376,8 +391,10 @@ export default function Shop() {
 
   const selected: Record<string, string[]> = {
     offers: onSaleOnly ? ["on_sale"] : [],
-    type: selectedTypeSlugs,
-    category: selectedCategoryIds,
+    catalog: [
+      ...selectedTypeSlugs.map((slug) => `type:${slug}`),
+      ...selectedCategoryIds.map((id) => `cat:${id}`),
+    ],
   };
   for (const facet of facets) {
     selected[facet.attribute_id] = selectedAttributeValueIds.filter((id) =>

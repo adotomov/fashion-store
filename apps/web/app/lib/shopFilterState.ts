@@ -10,6 +10,9 @@ export type ShopFilterState = {
   catalogId?: string;
   attributeValueIds: string[];
   onSale?: boolean;
+  // The grid page the shopper was last on, so returning from a product detail
+  // page lands them back where they were rather than resetting to page 1.
+  page?: number;
 };
 
 export function loadShopFilterState(): ShopFilterState | null {

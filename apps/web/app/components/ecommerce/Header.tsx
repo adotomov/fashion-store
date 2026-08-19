@@ -305,8 +305,16 @@ function CategoryThumbnail({
   category: NavType["categories"][number];
   size?: "lg" | "sm";
 }) {
-  const box = size === "sm" ? "h-16 w-16 shrink-0" : "aspect-square w-full";
-  const fallbackText = size === "sm" ? "text-lg" : "text-2xl";
+  // Placeholder categories (e.g. "Men", "Women") are grouping nodes, not real
+  // destinations — render their thumbnail at half the size of a subcategory's
+  // so the mega-menu reads as a hierarchy rather than a flat grid of equals.
+  const box =
+    size === "sm"
+      ? "h-16 w-16 shrink-0"
+      : category.is_placeholder
+        ? "aspect-square w-1/2 mx-auto"
+        : "aspect-square w-full";
+  const fallbackText = size === "sm" || category.is_placeholder ? "text-lg" : "text-2xl";
 
   if (category.image_url) {
     return (
