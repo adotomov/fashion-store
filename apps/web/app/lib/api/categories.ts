@@ -12,6 +12,9 @@ export type Category = {
   // Internal identifier (e.g. "DR-01") used as the fixed prefix for variant
   // SKUs of products in this category. Empty string means none assigned.
   internal_identifier: string;
+  // A placeholder is a grouping-only node (e.g. "Men", "Women") that products
+  // can never be assigned to directly — only its leaf descendants hold products.
+  is_placeholder: boolean;
   // Present once a thumbnail has been uploaded — a relative, admin-gated
   // proxy path (see uploadCategoryThumbnail/loadCategoryThumbnailBlobUrl),
   // not a plain external URL.
@@ -29,18 +32,48 @@ export function createCategory(
   productTypeId: string,
   parentId?: string,
   internalIdentifier?: string,
+  isPlaceholder?: boolean,
 ): Promise<Category> {
   return apiFetch<Category>("/api/v1/admin/categories", {
     method: "POST",
-    body: { name, parent_id: parentId, product_type_id: productTypeId, internal_identifier: internalIdentifier },
+    body: {
+      name,
+      parent_id: parentId,
+      product_type_id: productTypeId,
+      internal_identifier: internalIdentifier,
+      is_placeholder: isPlaceholder ?? false,
+    },
   });
 }
 
 export function updateCategory(
   id: string,
-  input: Partial<{ name: string; parent_id: string | null; product_type_id: string; internal_identifier: string }>,
+  input: Partial<{
+    name: string;
+    parent_id: string | null;
+    product_type_id: string;
+    internal_identifier: string;
+    is_placeholder: boolean;
+  }>,
 ): Promise<Category> {
   return apiFetch<Category>(`/api/v1/admin/categories/${id}`, { method: "PATCH", body: input });
+}
+
+// Builds a category's ancestor path as "Grandparent › Parent › Name" by
+// walking parent_id up the flat category list. Used to disambiguate same-named
+// categories (e.g. two "Bracelets") in admin pickers without a stored label.
+// Cycle-guarded so a malformed parent chain can't loop forever.
+export function categoryPath(category: Category, all: Category[]): string {
+  const byId = new Map(all.map((c) => [c.id, c]));
+  const names: string[] = [];
+  const seen = new Set<string>();
+  let current: Category | undefined = category;
+  while (current && !seen.has(current.id)) {
+    seen.add(current.id);
+    names.unshift(current.name);
+    current = current.parent_id ? byId.get(current.parent_id) : undefined;
+  }
+  return names.join(" › ");
 }
 
 export function deleteCategory(id: string): Promise<void> {

@@ -243,6 +243,30 @@ func (r *PostgresProductRepository) SetCategories(ctx context.Context, productID
 	return r.replaceJoinRows(ctx, "product_categories", "product_id", "category_id", productID, categoryIDs)
 }
 
+// PlaceholderCategoryIDs returns which of the given category IDs are marked as
+// placeholders (grouping-only, not directly assignable).
+func (r *PostgresProductRepository) PlaceholderCategoryIDs(ctx context.Context, categoryIDs []uuid.UUID) ([]uuid.UUID, error) {
+	if len(categoryIDs) == 0 {
+		return nil, nil
+	}
+	rows, err := r.db.Query(ctx,
+		`SELECT id FROM categories WHERE id = ANY($1) AND is_placeholder`, categoryIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var ids []uuid.UUID
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 func (r *PostgresProductRepository) SetCatalogs(ctx context.Context, productID uuid.UUID, catalogIDs []uuid.UUID) error {
 	return r.replaceJoinRows(ctx, "catalog_products", "product_id", "catalog_id", productID, catalogIDs)
 }

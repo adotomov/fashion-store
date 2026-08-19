@@ -44,6 +44,7 @@ func (s *CategoryService) CreateCategory(ctx context.Context, input CreateCatego
 			ParentID:           input.ParentID,
 			ProductTypeID:      input.ProductTypeID,
 			InternalIdentifier: input.InternalIdentifier,
+			IsPlaceholder:      input.IsPlaceholder,
 		})
 		if err == nil {
 			return category, nil
@@ -88,6 +89,21 @@ func (s *CategoryService) UpdateCategory(ctx context.Context, id uuid.UUID, inpu
 	}
 	if input.InternalIdentifier != nil {
 		category.InternalIdentifier = *input.InternalIdentifier
+	}
+	if input.IsPlaceholder != nil {
+		// Turning a category into a placeholder is only safe once it holds no
+		// products — otherwise those products would be stranded on a category
+		// they can no longer be (re)assigned to.
+		if *input.IsPlaceholder && !category.IsPlaceholder {
+			hasProducts, err := s.repo.HasProducts(ctx, category.ID)
+			if err != nil {
+				return nil, err
+			}
+			if hasProducts {
+				return nil, domain.ErrCategoryHasProducts
+			}
+		}
+		category.IsPlaceholder = *input.IsPlaceholder
 	}
 
 	return s.repo.Update(ctx, *category)

@@ -18,7 +18,7 @@ import { Textarea } from "../../components/ui/Textarea";
 import { Eyebrow, Heading, Text } from "../../components/ui/Text";
 import { type Attribute, listAttributes } from "../../lib/api/attributes";
 import { type Catalog, listCatalogs } from "../../lib/api/catalogs";
-import { type Category, listCategories } from "../../lib/api/categories";
+import { type Category, categoryPath, listCategories } from "../../lib/api/categories";
 import {
   type Product,
   type ProductStatus,
@@ -420,12 +420,14 @@ export default function ProductDetail() {
           >
             <Select id="category" value={selectedCategoryId} onChange={(e) => setSelectedCategoryId(e.target.value)}>
               <option value="">No category</option>
-              {categories.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                  {c.internal_identifier ? ` (${c.internal_identifier})` : ""}
-                </option>
-              ))}
+              {categories
+                .filter((c) => !c.is_placeholder)
+                .map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {categoryPath(c, categories)}
+                    {c.internal_identifier ? ` (${c.internal_identifier})` : ""}
+                  </option>
+                ))}
             </Select>
           </FormField>
         </Card>

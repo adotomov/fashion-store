@@ -44,6 +44,7 @@ type categoryRequest struct {
 	ParentID           *string `json:"parent_id,omitempty"`
 	ProductTypeID      string  `json:"product_type_id"`
 	InternalIdentifier string  `json:"internal_identifier"`
+	IsPlaceholder      bool    `json:"is_placeholder"`
 }
 
 type categoryResponse struct {
@@ -53,6 +54,7 @@ type categoryResponse struct {
 	ParentID           *string `json:"parent_id,omitempty"`
 	ProductTypeID      string  `json:"product_type_id"`
 	InternalIdentifier string  `json:"internal_identifier"`
+	IsPlaceholder      bool    `json:"is_placeholder"`
 	ImageURL           *string `json:"image_url,omitempty"`
 	CreatedAt          string  `json:"created_at"`
 	UpdatedAt          string  `json:"updated_at"`
@@ -71,6 +73,7 @@ func toCategoryResponse(c domain.Category) categoryResponse {
 		ParentID:           parentID,
 		ProductTypeID:      c.ProductTypeID.String(),
 		InternalIdentifier: c.InternalIdentifier,
+		IsPlaceholder:      c.IsPlaceholder,
 		CreatedAt:          c.CreatedAt.Format(timeFormat),
 		UpdatedAt:          c.UpdatedAt.Format(timeFormat),
 	}
@@ -116,6 +119,7 @@ func (h *CategoryHandler) create(w http.ResponseWriter, r *http.Request) {
 		ParentID:           parentID,
 		ProductTypeID:      productTypeID,
 		InternalIdentifier: strings.TrimSpace(req.InternalIdentifier),
+		IsPlaceholder:      req.IsPlaceholder,
 	})
 	if err != nil {
 		writeCatalogModuleError(w, err)
@@ -151,6 +155,7 @@ func (h *CategoryHandler) update(w http.ResponseWriter, r *http.Request) {
 		ParentID           *string `json:"parent_id,omitempty"`
 		ProductTypeID      *string `json:"product_type_id,omitempty"`
 		InternalIdentifier *string `json:"internal_identifier,omitempty"`
+		IsPlaceholder      *bool   `json:"is_placeholder,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "request body is invalid")
@@ -163,7 +168,7 @@ func (h *CategoryHandler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := application.UpdateCategoryInput{Name: req.Name}
+	input := application.UpdateCategoryInput{Name: req.Name, IsPlaceholder: req.IsPlaceholder}
 	if req.ParentID != nil {
 		input.ParentID = parentID
 	}
@@ -308,6 +313,10 @@ func writeCatalogModuleError(w http.ResponseWriter, err error) {
 		httpx.WriteError(w, http.StatusConflict, "slug_conflict", "could not allocate a unique slug")
 	case errors.Is(err, domain.ErrCategoryIdentifierConflict):
 		httpx.WriteError(w, http.StatusConflict, "identifier_conflict", err.Error())
+	case errors.Is(err, domain.ErrCategoryNotAssignable):
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "category_not_assignable", err.Error())
+	case errors.Is(err, domain.ErrCategoryHasProducts):
+		httpx.WriteError(w, http.StatusUnprocessableEntity, "category_has_products", err.Error())
 	case errors.As(err, new(domain.ValidationError)):
 		httpx.WriteError(w, http.StatusBadRequest, "validation_failed", err.Error())
 	default:

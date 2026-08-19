@@ -119,6 +119,15 @@ func (s *ProductService) GetTaxGroupID(ctx context.Context, productID uuid.UUID)
 }
 
 func (s *ProductService) SetCategories(ctx context.Context, productID uuid.UUID, categoryIDs []uuid.UUID) error {
+	if len(categoryIDs) > 0 {
+		placeholders, err := s.repo.PlaceholderCategoryIDs(ctx, categoryIDs)
+		if err != nil {
+			return err
+		}
+		if len(placeholders) > 0 {
+			return domain.ErrCategoryNotAssignable
+		}
+	}
 	return s.repo.SetCategories(ctx, productID, categoryIDs)
 }
 

@@ -37,6 +37,9 @@ type CategoryRepository interface {
 	FindByID(ctx context.Context, id uuid.UUID) (*domain.Category, error)
 	Update(ctx context.Context, category domain.Category) (*domain.Category, error)
 	Delete(ctx context.Context, id uuid.UUID) error
+	// HasProducts reports whether any product is assigned directly to this
+	// category — used to block marking an occupied category as a placeholder.
+	HasProducts(ctx context.Context, id uuid.UUID) (bool, error)
 }
 
 type ProductTypeRepository interface {
@@ -72,6 +75,11 @@ type ProductRepository interface {
 	SetCategories(ctx context.Context, productID uuid.UUID, categoryIDs []uuid.UUID) error
 	SetCatalogs(ctx context.Context, productID uuid.UUID, catalogIDs []uuid.UUID) error
 	SetAttributes(ctx context.Context, productID uuid.UUID, attributeIDs []uuid.UUID) error
+
+	// PlaceholderCategoryIDs returns the subset of the given category IDs that
+	// are placeholders (grouping-only), so the service can reject assigning a
+	// product to them.
+	PlaceholderCategoryIDs(ctx context.Context, categoryIDs []uuid.UUID) ([]uuid.UUID, error)
 
 	// ProductIDsByCategory/ByCatalog support storefront filtering — List
 	// deliberately omits category/catalog assignments per product (loaded

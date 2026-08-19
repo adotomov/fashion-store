@@ -2,6 +2,7 @@ package application_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"testing"
 
@@ -23,12 +24,13 @@ func (fakeMediaStorage) Open(context.Context, string, string) (io.ReadCloser, st
 func (fakeMediaStorage) Delete(context.Context, string, string) error { return nil }
 
 type fakeCategoryRepo struct {
-	byID      map[uuid.UUID]domain.Category
-	slugsUsed map[string]bool
+	byID         map[uuid.UUID]domain.Category
+	slugsUsed    map[string]bool
+	withProducts map[uuid.UUID]bool
 }
 
 func newFakeCategoryRepo() *fakeCategoryRepo {
-	return &fakeCategoryRepo{byID: map[uuid.UUID]domain.Category{}, slugsUsed: map[string]bool{}}
+	return &fakeCategoryRepo{byID: map[uuid.UUID]domain.Category{}, slugsUsed: map[string]bool{}, withProducts: map[uuid.UUID]bool{}}
 }
 
 func (f *fakeCategoryRepo) Create(_ context.Context, category domain.Category) (*domain.Category, error) {
@@ -73,6 +75,10 @@ func (f *fakeCategoryRepo) Delete(_ context.Context, id uuid.UUID) error {
 	return nil
 }
 
+func (f *fakeCategoryRepo) HasProducts(_ context.Context, id uuid.UUID) (bool, error) {
+	return f.withProducts[id], nil
+}
+
 func TestCreateCategory_SupportsParent(t *testing.T) {
 	svc := application.NewCategoryService(newFakeCategoryRepo(), fakeMediaStorage{}, "category-media")
 	productTypeID := uuid.New()
@@ -108,5 +114,57 @@ func TestCreateCategory_RejectsMissingProductType(t *testing.T) {
 
 	if _, err := svc.CreateCategory(context.Background(), application.CreateCategoryInput{Name: "Clothing"}); err == nil {
 		t.Fatal("expected error for missing product_type_id")
+	}
+}
+
+func TestCreateCategory_PlaceholderRoundTrips(t *testing.T) {
+	svc := application.NewCategoryService(newFakeCategoryRepo(), fakeMediaStorage{}, "category-media")
+
+	category, err := svc.CreateCategory(context.Background(), application.CreateCategoryInput{
+		Name:          "Men",
+		ProductTypeID: uuid.New(),
+		IsPlaceholder: true,
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !category.IsPlaceholder {
+		t.Error("expected created category to be a placeholder")
+	}
+}
+
+func TestUpdateCategory_RejectsPlaceholderWhenProductsAssigned(t *testing.T) {
+	repo := newFakeCategoryRepo()
+	svc := application.NewCategoryService(repo, fakeMediaStorage{}, "category-media")
+
+	category, err := svc.CreateCategory(context.Background(), application.CreateCategoryInput{Name: "Bracelets", ProductTypeID: uuid.New()})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	repo.withProducts[category.ID] = true
+
+	placeholder := true
+	_, err = svc.UpdateCategory(context.Background(), category.ID, application.UpdateCategoryInput{IsPlaceholder: &placeholder})
+	if !errors.Is(err, domain.ErrCategoryHasProducts) {
+		t.Fatalf("expected ErrCategoryHasProducts, got %v", err)
+	}
+}
+
+func TestUpdateCategory_AllowsPlaceholderWhenEmpty(t *testing.T) {
+	repo := newFakeCategoryRepo()
+	svc := application.NewCategoryService(repo, fakeMediaStorage{}, "category-media")
+
+	category, err := svc.CreateCategory(context.Background(), application.CreateCategoryInput{Name: "Women", ProductTypeID: uuid.New()})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	placeholder := true
+	updated, err := svc.UpdateCategory(context.Background(), category.ID, application.UpdateCategoryInput{IsPlaceholder: &placeholder})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !updated.IsPlaceholder {
+		t.Error("expected category to be marked as placeholder")
 	}
 }

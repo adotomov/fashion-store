@@ -22,6 +22,7 @@ type CreateCategoryInput struct {
 	ParentID           *uuid.UUID
 	ProductTypeID      uuid.UUID
 	InternalIdentifier string
+	IsPlaceholder      bool
 }
 
 type UpdateCategoryInput struct {
@@ -29,6 +30,7 @@ type UpdateCategoryInput struct {
 	ParentID           *uuid.UUID
 	ProductTypeID      *uuid.UUID
 	InternalIdentifier *string
+	IsPlaceholder      *bool
 }
 
 type CreateProductTypeInput struct {

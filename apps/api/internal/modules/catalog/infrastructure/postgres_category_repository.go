@@ -21,16 +21,16 @@ func NewPostgresCategoryRepository(db *pgxpool.Pool) *PostgresCategoryRepository
 	return &PostgresCategoryRepository{db: db}
 }
 
-const categoryColumns = `id, name, slug, parent_id, product_type_id, internal_identifier,
+const categoryColumns = `id, name, slug, parent_id, product_type_id, internal_identifier, is_placeholder,
 	thumbnail_bucket, thumbnail_object_key, thumbnail_content_type, thumbnail_size_bytes,
 	created_at, updated_at`
 
 func (r *PostgresCategoryRepository) Create(ctx context.Context, category domain.Category) (*domain.Category, error) {
 	row := r.db.QueryRow(ctx, `
-		INSERT INTO categories (name, slug, parent_id, product_type_id, internal_identifier)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO categories (name, slug, parent_id, product_type_id, internal_identifier, is_placeholder)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING `+categoryColumns,
-		category.Name, category.Slug, category.ParentID, category.ProductTypeID, nullIfEmpty(category.InternalIdentifier))
+		category.Name, category.Slug, category.ParentID, category.ProductTypeID, nullIfEmpty(category.InternalIdentifier), category.IsPlaceholder)
 
 	created, err := scanCategory(row)
 	if err != nil {
@@ -73,12 +73,12 @@ func (r *PostgresCategoryRepository) FindByID(ctx context.Context, id uuid.UUID)
 func (r *PostgresCategoryRepository) Update(ctx context.Context, category domain.Category) (*domain.Category, error) {
 	row := r.db.QueryRow(ctx, `
 		UPDATE categories SET
-			name = $2, parent_id = $3, product_type_id = $4, internal_identifier = $5,
-			thumbnail_bucket = $6, thumbnail_object_key = $7, thumbnail_content_type = $8, thumbnail_size_bytes = $9,
+			name = $2, parent_id = $3, product_type_id = $4, internal_identifier = $5, is_placeholder = $6,
+			thumbnail_bucket = $7, thumbnail_object_key = $8, thumbnail_content_type = $9, thumbnail_size_bytes = $10,
 			updated_at = NOW()
 		WHERE id = $1
 		RETURNING `+categoryColumns,
-		category.ID, category.Name, category.ParentID, category.ProductTypeID, nullIfEmpty(category.InternalIdentifier),
+		category.ID, category.Name, category.ParentID, category.ProductTypeID, nullIfEmpty(category.InternalIdentifier), category.IsPlaceholder,
 		category.ThumbnailBucket, category.ThumbnailObjectKey, category.ThumbnailContentType, category.ThumbnailSizeBytes)
 
 	updated, err := scanCategory(row)
@@ -99,6 +99,18 @@ func isIdentifierConflict(err error) bool {
 		pgErr.ConstraintName == "categories_internal_identifier_key"
 }
 
+// HasProducts reports whether any product is assigned directly to this
+// category. Direct membership only — descendant leaves are separate rows.
+func (r *PostgresCategoryRepository) HasProducts(ctx context.Context, id uuid.UUID) (bool, error) {
+	var exists bool
+	err := r.db.QueryRow(ctx,
+		`SELECT EXISTS (SELECT 1 FROM product_categories WHERE category_id = $1)`, id).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
 func (r *PostgresCategoryRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	tag, err := r.db.Exec(ctx, `DELETE FROM categories WHERE id = $1`, id)
 	if err != nil {
@@ -114,7 +126,7 @@ func scanCategory(row pgx.Row) (*domain.Category, error) {
 	var c domain.Category
 	var internalIdentifier *string
 	err := row.Scan(
-		&c.ID, &c.Name, &c.Slug, &c.ParentID, &c.ProductTypeID, &internalIdentifier,
+		&c.ID, &c.Name, &c.Slug, &c.ParentID, &c.ProductTypeID, &internalIdentifier, &c.IsPlaceholder,
 		&c.ThumbnailBucket, &c.ThumbnailObjectKey, &c.ThumbnailContentType, &c.ThumbnailSizeBytes,
 		&c.CreatedAt, &c.UpdatedAt,
 	)

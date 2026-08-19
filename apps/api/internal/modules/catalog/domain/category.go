@@ -16,6 +16,10 @@ type Category struct {
 	// fixed prefix when composing variant SKUs for products in this category.
 	// Empty string means none has been assigned yet.
 	InternalIdentifier string
+	// IsPlaceholder marks a pure grouping node (e.g. "Men", "Women") that
+	// exists only to organize the nav hierarchy — products can never be
+	// assigned to it directly, only to its leaf descendants.
+	IsPlaceholder bool
 	// Thumbnail* describe an optional image shown in the storefront nav
 	// menu, stored in object storage (GCS/fakegcs) the same way product
 	// media is — nil ThumbnailObjectKey means none has been uploaded yet.

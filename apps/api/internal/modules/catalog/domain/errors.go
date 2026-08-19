@@ -22,6 +22,12 @@ var (
 	// ErrCategoryIdentifierConflict signals the internal_identifier is already
 	// used by another category (partial unique index violation).
 	ErrCategoryIdentifierConflict = errors.New("internal identifier is already in use by another category")
+	// ErrCategoryNotAssignable signals an attempt to assign a product to a
+	// placeholder (grouping-only) category.
+	ErrCategoryNotAssignable = errors.New("category is a placeholder and cannot have products assigned to it")
+	// ErrCategoryHasProducts signals an attempt to mark a category as a
+	// placeholder while products are still assigned to it.
+	ErrCategoryHasProducts = errors.New("category has products assigned; reassign them before marking it a placeholder")
 )
 
 type ValidationError string

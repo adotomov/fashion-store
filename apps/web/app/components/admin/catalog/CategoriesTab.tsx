@@ -4,7 +4,9 @@ import { useAdminPermissions } from "../../../features/admin/AdminPermissionsCon
 
 import { EmptyState } from "../EmptyState";
 import { TranslationFields } from "../TranslationFields";
+import { Badge } from "../../ui/Badge";
 import { Button } from "../../ui/Button";
+import { Checkbox } from "../../ui/Checkbox";
 import { FormField } from "../../ui/FormField";
 import { Icon } from "../../ui/Icon";
 import { Input } from "../../ui/Input";
@@ -15,6 +17,7 @@ import { Text } from "../../ui/Text";
 import { usePagination } from "../../../lib/usePagination";
 import {
   type Category,
+  categoryPath,
   createCategory,
   deleteCategory,
   deleteCategoryThumbnail,
@@ -38,6 +41,7 @@ export function CategoriesTab() {
   const [newParentId, setNewParentId] = useState("");
   const [newProductTypeId, setNewProductTypeId] = useState("");
   const [newInternalIdentifier, setNewInternalIdentifier] = useState("");
+  const [newIsPlaceholder, setNewIsPlaceholder] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -86,6 +90,7 @@ export function CategoriesTab() {
     setNewParentId("");
     setNewProductTypeId("");
     setNewInternalIdentifier("");
+    setNewIsPlaceholder(false);
     setSaveError(null);
     setThumbnailError(null);
     setIsModalOpen(true);
@@ -97,6 +102,7 @@ export function CategoriesTab() {
     setNewParentId(category.parent_id ?? "");
     setNewProductTypeId(category.product_type_id);
     setNewInternalIdentifier(category.internal_identifier ?? "");
+    setNewIsPlaceholder(category.is_placeholder);
     setSaveError(null);
     setThumbnailError(null);
     setIsModalOpen(true);
@@ -111,7 +117,9 @@ export function CategoriesTab() {
       setSaveError("Product type is required");
       return;
     }
-    if (!newInternalIdentifier.trim()) {
+    // Placeholder categories never hold products, so they don't need a SKU
+    // prefix — only leaf (assignable) categories require an identifier.
+    if (!newIsPlaceholder && !newInternalIdentifier.trim()) {
       setSaveError("Internal identifier is required");
       return;
     }
@@ -124,6 +132,7 @@ export function CategoriesTab() {
           parent_id: newParentId || null,
           product_type_id: newProductTypeId,
           internal_identifier: newInternalIdentifier.trim(),
+          is_placeholder: newIsPlaceholder,
         });
       } else {
         await createCategory(
@@ -131,12 +140,19 @@ export function CategoriesTab() {
           newProductTypeId,
           newParentId || undefined,
           newInternalIdentifier.trim(),
+          newIsPlaceholder,
         );
       }
       setIsModalOpen(false);
       await refresh();
-    } catch {
-      setSaveError(editingCategory ? "Could not save changes. Try again." : "Could not create category. Try again.");
+    } catch (err) {
+      const message =
+        err instanceof Error && /has products assigned/i.test(err.message)
+          ? "This category still has products assigned. Reassign them before marking it a placeholder."
+          : editingCategory
+            ? "Could not save changes. Try again."
+            : "Could not create category. Try again.";
+      setSaveError(message);
     } finally {
       setIsSaving(false);
     }
@@ -233,7 +249,12 @@ export function CategoriesTab() {
             <tbody>
               {pageItems.map((category) => (
                 <tr key={category.id} className="border-b border-stone-100 last:border-0">
-                  <td className="px-4 py-3 font-medium text-stone-900">{category.name}</td>
+                  <td className="px-4 py-3 font-medium text-stone-900">
+                    <span className="flex items-center gap-2">
+                      {category.name}
+                      {category.is_placeholder && <Badge variant="neutral">Placeholder</Badge>}
+                    </span>
+                  </td>
                   <td className="px-4 py-3 font-mono text-xs text-stone-600">
                     {category.internal_identifier || <span className="text-stone-400">—</span>}
                   </td>
@@ -292,13 +313,18 @@ export function CategoriesTab() {
           <FormField
             label="Internal identifier"
             htmlFor="category-identifier"
-            hint="Required — used as the SKU prefix for this category's products (e.g. DR-01)"
+            hint={
+              newIsPlaceholder
+                ? "Not needed for placeholders — they never hold products"
+                : "Required — used as the SKU prefix for this category's products (e.g. DR-01)"
+            }
           >
             <Input
               id="category-identifier"
               value={newInternalIdentifier}
               onChange={(e) => setNewInternalIdentifier(e.target.value)}
               placeholder="DR-01"
+              disabled={newIsPlaceholder}
             />
           </FormField>
           <FormField label="Product type" htmlFor="category-product-type">
@@ -322,10 +348,22 @@ export function CategoriesTab() {
                 ?.filter((c) => c.id !== editingCategory?.id)
                 .map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name}
+                    {categoryPath(c, categories)}
                   </option>
                 ))}
             </Select>
+          </FormField>
+          <FormField
+            label="Placeholder"
+            htmlFor="category-placeholder"
+            hint="A grouping-only node (e.g. Men, Women). Products can't be assigned to it — only to its sub-categories."
+          >
+            <Checkbox
+              id="category-placeholder"
+              label="This category is a placeholder"
+              checked={newIsPlaceholder}
+              onChange={(e) => setNewIsPlaceholder(e.target.checked)}
+            />
           </FormField>
           <FormField
             label="Thumbnail"
