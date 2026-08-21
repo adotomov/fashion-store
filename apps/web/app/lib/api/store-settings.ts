@@ -13,8 +13,11 @@ export type StoreSettings = {
   company_description?: string;
   facebook_url?: string;
   instagram_url?: string;
-  // Relative, admin-gated proxy path — never a plain external URL.
+  opening_hours?: string;
+  // Relative, admin-gated proxy paths — never plain external URLs.
   logo_url?: string;
+  about_cover_url?: string;
+  store_image_url?: string;
   updated_at: string;
 };
 
@@ -33,6 +36,7 @@ export function updateStoreSettings(
     company_description: string;
     facebook_url: string;
     instagram_url: string;
+    opening_hours: string;
   }>,
 ): Promise<StoreSettings> {
   return apiFetch<StoreSettings>("/api/v1/admin/store-settings", { method: "PATCH", body: input });
@@ -87,4 +91,30 @@ export function deleteStoreLogo(): Promise<StoreSettings> {
 
 export function loadStoreLogoBlobUrl(): Promise<string> {
   return loadBlobUrl("/api/v1/admin/store-settings/logo/file");
+}
+
+// About Us cover photo — same admin-gated upload/serve/delete pattern as the logo.
+export function uploadAboutCover(file: File): Promise<StoreSettings> {
+  return uploadFile("/api/v1/admin/store-settings/about-cover", file);
+}
+
+export function deleteAboutCover(): Promise<StoreSettings> {
+  return apiFetch<StoreSettings>("/api/v1/admin/store-settings/about-cover", { method: "DELETE" });
+}
+
+export function loadAboutCoverBlobUrl(): Promise<string> {
+  return loadBlobUrl("/api/v1/admin/store-settings/about-cover/file");
+}
+
+// Contact Us store photo.
+export function uploadStoreImage(file: File): Promise<StoreSettings> {
+  return uploadFile("/api/v1/admin/store-settings/store-image", file);
+}
+
+export function deleteStoreImage(): Promise<StoreSettings> {
+  return apiFetch<StoreSettings>("/api/v1/admin/store-settings/store-image", { method: "DELETE" });
+}
+
+export function loadStoreImageBlobUrl(): Promise<string> {
+  return loadBlobUrl("/api/v1/admin/store-settings/store-image/file");
 }

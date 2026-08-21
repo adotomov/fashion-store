@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime/multipart"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -33,6 +34,12 @@ func (h *StoreSettingsHandler) RegisterRoutes(r chi.Router, requireAdmin func(ht
 			r.Post("/logo", h.uploadLogo)
 			r.Get("/logo/file", h.serveLogo)
 			r.Delete("/logo", h.deleteLogo)
+			r.Post("/about-cover", h.uploadAboutCover)
+			r.Get("/about-cover/file", h.serveAboutCover)
+			r.Delete("/about-cover", h.deleteAboutCover)
+			r.Post("/store-image", h.uploadStoreImage)
+			r.Get("/store-image/file", h.serveStoreImage)
+			r.Delete("/store-image", h.deleteStoreImage)
 		})
 		r.Get("/admin/hero", h.getHeroSettings)
 		r.Put("/admin/hero", h.saveHeroSettings)
@@ -68,7 +75,10 @@ type storeSettingsResponse struct {
 	CompanyDescription *string `json:"company_description,omitempty"`
 	FacebookURL        *string `json:"facebook_url,omitempty"`
 	InstagramURL       *string `json:"instagram_url,omitempty"`
+	OpeningHours       *string `json:"opening_hours,omitempty"`
 	LogoURL            *string `json:"logo_url,omitempty"`
+	AboutCoverURL      *string `json:"about_cover_url,omitempty"`
+	StoreImageURL      *string `json:"store_image_url,omitempty"`
 	UpdatedAt          string  `json:"updated_at"`
 }
 
@@ -86,11 +96,20 @@ func toStoreSettingsResponse(s domain.StoreSettings, basePath string) storeSetti
 		CompanyDescription: s.CompanyDescription,
 		FacebookURL:        s.FacebookURL,
 		InstagramURL:       s.InstagramURL,
+		OpeningHours:       s.OpeningHours,
 		UpdatedAt:          s.UpdatedAt.Format(timeFormat),
 	}
 	if s.HasLogo() {
 		url := basePath + "/logo/file"
 		resp.LogoURL = &url
+	}
+	if s.HasAboutCover() {
+		url := basePath + "/about-cover/file"
+		resp.AboutCoverURL = &url
+	}
+	if s.HasStoreImage() {
+		url := basePath + "/store-image/file"
+		resp.StoreImageURL = &url
 	}
 	return resp
 }
@@ -114,6 +133,7 @@ type updateStoreSettingsRequest struct {
 	CompanyDescription *string `json:"company_description,omitempty"`
 	FacebookURL        *string `json:"facebook_url,omitempty"`
 	InstagramURL       *string `json:"instagram_url,omitempty"`
+	OpeningHours       *string `json:"opening_hours,omitempty"`
 }
 
 func (h *StoreSettingsHandler) update(w http.ResponseWriter, r *http.Request) {
@@ -133,6 +153,7 @@ func (h *StoreSettingsHandler) update(w http.ResponseWriter, r *http.Request) {
 		CompanyDescription: req.CompanyDescription,
 		FacebookURL:        req.FacebookURL,
 		InstagramURL:       req.InstagramURL,
+		OpeningHours:       req.OpeningHours,
 	})
 	if err != nil {
 		writeAdminModuleError(w, err)
@@ -190,6 +211,99 @@ func (h *StoreSettingsHandler) serveLogo(w http.ResponseWriter, r *http.Request)
 
 func (h *StoreSettingsHandler) deleteLogo(w http.ResponseWriter, r *http.Request) {
 	settings, err := h.service.DeleteLogo(r.Context())
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toStoreSettingsResponse(*settings, "/api/v1/admin/store-settings"))
+}
+
+// readImageUpload parses a single multipart "file" (capped at the hero image
+// limit, larger than a logo) and returns the open file, its filename and
+// content type — shared by the About cover and Contact store-image uploaders.
+// The caller must Close the returned file when ok is true.
+func readImageUpload(w http.ResponseWriter, r *http.Request) (multipart.File, string, string, bool) {
+	if err := r.ParseMultipartForm(maxHeroBackgroundUploadBytes); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "could not parse multipart form")
+		return nil, "", "", false
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "missing_file", "file is required")
+		return nil, "", "", false
+	}
+	contentType := header.Header.Get("Content-Type")
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	return file, header.Filename, contentType, true
+}
+
+func (h *StoreSettingsHandler) uploadAboutCover(w http.ResponseWriter, r *http.Request) {
+	file, filename, contentType, ok := readImageUpload(w, r)
+	if !ok {
+		return
+	}
+	defer file.Close()
+	settings, err := h.service.UploadAboutCover(r.Context(), filename, contentType, file)
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toStoreSettingsResponse(*settings, "/api/v1/admin/store-settings"))
+}
+
+func (h *StoreSettingsHandler) serveAboutCover(w http.ResponseWriter, r *http.Request) {
+	reader, contentType, err := h.service.OpenAboutCover(r.Context())
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	defer reader.Close()
+	if contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	_, _ = io.Copy(w, reader)
+}
+
+func (h *StoreSettingsHandler) deleteAboutCover(w http.ResponseWriter, r *http.Request) {
+	settings, err := h.service.DeleteAboutCover(r.Context())
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toStoreSettingsResponse(*settings, "/api/v1/admin/store-settings"))
+}
+
+func (h *StoreSettingsHandler) uploadStoreImage(w http.ResponseWriter, r *http.Request) {
+	file, filename, contentType, ok := readImageUpload(w, r)
+	if !ok {
+		return
+	}
+	defer file.Close()
+	settings, err := h.service.UploadStoreImage(r.Context(), filename, contentType, file)
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toStoreSettingsResponse(*settings, "/api/v1/admin/store-settings"))
+}
+
+func (h *StoreSettingsHandler) serveStoreImage(w http.ResponseWriter, r *http.Request) {
+	reader, contentType, err := h.service.OpenStoreImage(r.Context())
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	defer reader.Close()
+	if contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	_, _ = io.Copy(w, reader)
+}
+
+func (h *StoreSettingsHandler) deleteStoreImage(w http.ResponseWriter, r *http.Request) {
+	settings, err := h.service.DeleteStoreImage(r.Context())
 	if err != nil {
 		writeAdminModuleError(w, err)
 		return
@@ -678,7 +792,11 @@ func writeAdminModuleError(w http.ResponseWriter, err error) {
 	case errors.Is(err, domain.ErrDocumentNotFound):
 		httpx.WriteError(w, http.StatusNotFound, "document_not_found", "document not found")
 	case errors.Is(err, domain.ErrInvalidDocumentType):
-		httpx.WriteError(w, http.StatusBadRequest, "invalid_document_type", "document type must be 'terms', 'privacy', 'faq' or 'shipping'")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_document_type", "document type must be 'terms', 'privacy', 'faq', 'shipping', 'about' or 'size_guide'")
+	case errors.Is(err, domain.ErrAboutCoverNotFound):
+		httpx.WriteError(w, http.StatusNotFound, "about_cover_not_found", "about cover image not found")
+	case errors.Is(err, domain.ErrStoreImageNotFound):
+		httpx.WriteError(w, http.StatusNotFound, "store_image_not_found", "store image not found")
 	case errors.Is(err, domain.ErrAddressNotFound):
 		httpx.WriteError(w, http.StatusNotFound, "address_not_found", "store address not found")
 	case errors.Is(err, domain.ErrHeroBackgroundNotFound):

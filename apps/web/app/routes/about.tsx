@@ -1,9 +1,17 @@
 import { useEffect, useState } from "react";
 
+import { Link } from "react-router";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+
 import { Footer } from "../components/ecommerce/Footer";
 import { Header } from "../components/ecommerce/Header";
-import { Heading, Text } from "../components/ui/Text";
+import { buttonStyles } from "../components/ui/Button";
+import { Icon } from "../components/ui/Icon";
+import { Text } from "../components/ui/Text";
 import { useLanguage } from "../features/i18n/LanguageContext";
+import { useStoreBranding } from "../features/store-settings/StoreSettingsContext";
+import { getStorefrontLegalContent } from "../lib/api/store-documents";
 import { type StorefrontStoreSettings, getStoreSettings, resolveImageUrl } from "../lib/api/storefront";
 import { buildMeta } from "../lib/seo/meta";
 
@@ -16,8 +24,10 @@ export function meta() {
 }
 
 export default function About() {
-  const { t } = useLanguage();
+  const { locale, t } = useLanguage();
+  const { storeName } = useStoreBranding();
   const [settings, setSettings] = useState<StorefrontStoreSettings | null>(null);
+  const [content, setContent] = useState<string | null>(null);
 
   useEffect(() => {
     getStoreSettings()
@@ -25,24 +35,55 @@ export default function About() {
       .catch(() => setSettings(null));
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    setContent(null);
+    getStorefrontLegalContent("about", locale)
+      .then((r) => {
+        if (!cancelled) setContent(r.content_md);
+      })
+      .catch(() => {
+        if (!cancelled) setContent("");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [locale]);
+
+  const coverUrl = settings?.about_cover_url ? resolveImageUrl(settings.about_cover_url) : null;
+
   return (
     <div className="flex min-h-screen flex-col">
       <Header />
       <main className="flex-1">
-        <div className="mx-auto max-w-3xl px-4 py-16 sm:px-6 lg:px-8">
-          {settings?.logo_url && (
-            <img
-              src={resolveImageUrl(settings.logo_url)}
-              alt={settings.store_name}
-              className="mb-8 h-12 w-auto object-contain"
-            />
+        {/* Cover photo */}
+        <div className="relative h-64 w-full overflow-hidden bg-stone-100 sm:h-80 lg:h-[28rem]">
+          {coverUrl ? (
+            <img src={coverUrl} alt={storeName} className="h-full w-full object-cover" />
+          ) : (
+            <div className="h-full w-full bg-gradient-to-br from-stone-200 via-stone-100 to-clay-100" />
           )}
-          <Heading as="h1" size="lg">
-            About {settings?.store_name ?? "Us"}
-          </Heading>
-          <Text className="mt-6 whitespace-pre-line leading-relaxed" tone="muted">
-            {settings?.company_description ?? t("about.placeholder", "More information about us is coming soon.")}
-          </Text>
+        </div>
+
+        <div className="mx-auto max-w-3xl px-4 py-14 sm:px-6 lg:px-8">
+          {content === null ? (
+            <Text tone="muted">{t("common.loading", "Loading…")}</Text>
+          ) : content.trim() ? (
+            <div className="prose prose-stone max-w-none">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+            </div>
+          ) : (
+            <Text className="whitespace-pre-line leading-relaxed" tone="muted">
+              {t("about.unavailable", "Our story is coming soon.")}
+            </Text>
+          )}
+
+          <div className="mt-12 flex justify-center border-t border-stone-200 pt-10">
+            <Link to="/help/contact" className={buttonStyles({ variant: "primary", size: "lg" })}>
+              {t("about.contact_cta", "Contact Us")}
+              <Icon name="chevronRight" size={18} />
+            </Link>
+          </div>
         </div>
       </main>
       <Footer />

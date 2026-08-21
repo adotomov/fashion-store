@@ -9,4 +9,6 @@ var (
 	ErrAddressNotFound           = errors.New("store address not found")
 	ErrHeroBackgroundNotFound    = errors.New("hero background image not found")
 	ErrEditorialBannerImageNotFound = errors.New("editorial banner image not found")
+	ErrAboutCoverNotFound        = errors.New("about cover image not found")
+	ErrStoreImageNotFound        = errors.New("store image not found")
 )

@@ -233,7 +233,10 @@ export type StorefrontStoreSettings = {
   company_description?: string;
   facebook_url?: string;
   instagram_url?: string;
+  opening_hours?: string;
   logo_url?: string;
+  about_cover_url?: string;
+  store_image_url?: string;
 };
 
 export function getStoreSettings(): Promise<StorefrontStoreSettings> {

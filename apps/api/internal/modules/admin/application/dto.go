@@ -12,6 +12,7 @@ type UpdateStoreSettingsInput struct {
 	CompanyDescription *string
 	FacebookURL        *string
 	InstagramURL       *string
+	OpeningHours       *string
 }
 
 // UpsertStoreAddressInput carries the fields for creating or updating a

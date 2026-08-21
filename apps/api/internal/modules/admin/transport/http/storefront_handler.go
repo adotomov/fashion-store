@@ -28,6 +28,8 @@ func (h *StorefrontHandler) RegisterRoutes(r chi.Router) {
 	r.Route("/storefront/store-settings", func(r chi.Router) {
 		r.Get("/", h.get)
 		r.Get("/logo/file", h.serveLogo)
+		r.Get("/about-cover/file", h.serveAboutCover)
+		r.Get("/store-image/file", h.serveStoreImage)
 	})
 	h.addressHandler.RegisterStorefrontRoutes(r)
 	h.documentHandler.RegisterStorefrontRoutes(r)
@@ -50,6 +52,32 @@ func (h *StorefrontHandler) serveLogo(w http.ResponseWriter, r *http.Request) {
 	}
 	defer reader.Close()
 
+	if contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	_, _ = io.Copy(w, reader)
+}
+
+func (h *StorefrontHandler) serveAboutCover(w http.ResponseWriter, r *http.Request) {
+	reader, contentType, err := h.service.OpenAboutCover(r.Context())
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	defer reader.Close()
+	if contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
+	_, _ = io.Copy(w, reader)
+}
+
+func (h *StorefrontHandler) serveStoreImage(w http.ResponseWriter, r *http.Request) {
+	reader, contentType, err := h.service.OpenStoreImage(r.Context())
+	if err != nil {
+		writeAdminModuleError(w, err)
+		return
+	}
+	defer reader.Close()
 	if contentType != "" {
 		w.Header().Set("Content-Type", contentType)
 	}

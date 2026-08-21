@@ -40,10 +40,16 @@ import {
 } from "../../lib/api/store-documents";
 import {
   type StoreSettings,
+  deleteAboutCover,
+  deleteStoreImage,
   deleteStoreLogo,
   getStoreSettings,
+  loadAboutCoverBlobUrl,
+  loadStoreImageBlobUrl,
   loadStoreLogoBlobUrl,
   updateStoreSettings,
+  uploadAboutCover,
+  uploadStoreImage,
   uploadStoreLogo,
 } from "../../lib/api/store-settings";
 
@@ -52,9 +58,11 @@ export const handle = { title: "Store Settings" };
 const TABS = [
   { id: "identity", label: "Identity" },
   { id: "contacts", label: "Contacts" },
+  { id: "about", label: "About Us" },
   { id: "legal", label: "Legal Documents" },
   { id: "faq", label: "FAQ" },
   { id: "shipping", label: "Shipping & Returns" },
+  { id: "sizeguide", label: "Size Guide" },
   { id: "languages", label: "Store Language" },
 ];
 
@@ -66,11 +74,184 @@ export default function AdminSettings() {
       <Tabs tabs={TABS} activeTab={activeTab} onChange={setActiveTab}>
         {activeTab === "identity" && <IdentityTab />}
         {activeTab === "contacts" && <ContactsTab />}
+        {activeTab === "about" && <AboutTab />}
         {activeTab === "legal" && <LegalDocumentsTab />}
         {activeTab === "faq" && <DocumentEditor type="faq" title="Frequently Asked Questions" />}
         {activeTab === "shipping" && <DocumentEditor type="shipping" title="Shipping & Returns" />}
+        {activeTab === "sizeguide" && <DocumentEditor type="size_guide" title="Size Guide" />}
         {activeTab === "languages" && <LanguagesTab />}
       </Tabs>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ImageManager: reusable admin image slot (upload / replace / remove) backed by
+// the store-settings singleton. Mirrors the logo handling in IdentityTab but is
+// generic over which image field it manages, so About-cover and Contact
+// store-image share one implementation. `version` is bumped after each mutation
+// to force the preview blob to reload even when the proxy URL is unchanged.
+// ---------------------------------------------------------------------------
+
+function ImageManager({
+  label,
+  hint,
+  hasImage,
+  loadUrl,
+  upload,
+  remove,
+  onUpdated,
+  isReadOnly,
+}: {
+  label: string;
+  hint?: string;
+  hasImage: boolean;
+  loadUrl: () => Promise<string>;
+  upload: (file: File) => Promise<StoreSettings>;
+  remove: () => Promise<StoreSettings>;
+  onUpdated: (settings: StoreSettings) => void;
+  isReadOnly: boolean;
+}) {
+  const [preview, setPreview] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [version, setVersion] = useState(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!hasImage) {
+      setPreview(null);
+      return;
+    }
+    let cancelled = false;
+    let url: string | null = null;
+    loadUrl()
+      .then((loaded) => {
+        if (cancelled) return;
+        url = loaded;
+        setPreview(loaded);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasImage, version]);
+
+  async function handleSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsBusy(true);
+    setError(null);
+    try {
+      onUpdated(await upload(file));
+      setVersion((v) => v + 1);
+    } catch {
+      setError("Could not upload image.");
+    } finally {
+      setIsBusy(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  }
+
+  async function handleRemove() {
+    setIsBusy(true);
+    setError(null);
+    try {
+      onUpdated(await remove());
+      setVersion((v) => v + 1);
+    } catch {
+      setError("Could not remove image.");
+    } finally {
+      setIsBusy(false);
+    }
+  }
+
+  return (
+    <FormField label={label} htmlFor={`img-${label}`} hint={hint} error={error ?? undefined}>
+      <div className="flex items-center gap-4">
+        <div className="flex h-20 w-32 shrink-0 items-center justify-center overflow-hidden rounded-sm border border-dashed border-stone-300 bg-stone-50">
+          {preview ? (
+            <img src={preview} alt={`${label} preview`} className="h-full w-full object-cover" />
+          ) : (
+            <Icon name="catalog" size={20} className="text-stone-400" />
+          )}
+        </div>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            type="button"
+            disabled={isBusy || isReadOnly}
+            onClick={() => inputRef.current?.click()}
+          >
+            {isBusy ? "Uploading…" : preview ? "Replace" : "Upload"}
+          </Button>
+          {preview && (
+            <Button
+              variant="ghost"
+              size="sm"
+              type="button"
+              disabled={isBusy || isReadOnly}
+              onClick={handleRemove}
+              className="text-danger-600 hover:bg-danger-50"
+            >
+              Remove
+            </Button>
+          )}
+        </div>
+        <input
+          ref={inputRef}
+          id={`img-${label}`}
+          type="file"
+          accept="image/png,image/jpeg,image/webp"
+          onChange={handleSelected}
+          disabled={isBusy}
+          className="hidden"
+        />
+      </div>
+    </FormField>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// About Us: cover photo (image slot) + translatable Markdown body.
+// ---------------------------------------------------------------------------
+
+function AboutTab() {
+  const { isReadOnly } = useAdminPermissions();
+  const [settings, setSettings] = useState<StoreSettings | null>(null);
+
+  useEffect(() => {
+    getStoreSettings().then(setSettings).catch(() => {});
+  }, []);
+
+  return (
+    <div className="flex flex-col gap-8">
+      <section>
+        <Eyebrow>Cover Photo</Eyebrow>
+        <Card className="mt-3 p-6">
+          {settings ? (
+            <ImageManager
+              label="Cover photo"
+              hint="Shown across the top of the public About page. JPEG, PNG, or WebP."
+              hasImage={Boolean(settings.about_cover_url)}
+              loadUrl={loadAboutCoverBlobUrl}
+              upload={uploadAboutCover}
+              remove={deleteAboutCover}
+              onUpdated={setSettings}
+              isReadOnly={isReadOnly}
+            />
+          ) : (
+            <Text size="sm" tone="muted">
+              Loading…
+            </Text>
+          )}
+        </Card>
+      </section>
+
+      <DocumentEditor type="about" title="About Us Text" />
     </div>
   );
 }
@@ -262,7 +443,7 @@ function IdentityTab() {
               </div>
             </FormField>
 
-            <FormField label="Company description" htmlFor="company-description" hint="Shown on the public About page">
+            <FormField label="Company description" htmlFor="company-description" hint="Short internal summary of the store. The public About page is edited under the About Us tab.">
               <Textarea
                 id="company-description"
                 placeholder="Clothing, jewelry, bags, and accessories, thoughtfully made and delivered with care."
@@ -368,6 +549,7 @@ function ContactsTab() {
         await updateStoreSettings({
           contact_email: settings.contact_email ?? "",
           contact_phone: settings.contact_phone ?? "",
+          opening_hours: settings.opening_hours ?? "",
         }),
       );
       setSavedAt(Date.now());
@@ -409,6 +591,37 @@ function ContactsTab() {
                 <Input id="contactPhone" type="tel" placeholder="+359 2 123 4567" {...field("contact_phone")} />
               </FormField>
             </div>
+            <div className="mt-4">
+              <FormField
+                label="Opening hours"
+                htmlFor="openingHours"
+                hint="Shown on the public Contact page — one line per day. Write in your store languages as you'd like it to appear."
+              >
+                <Textarea
+                  id="openingHours"
+                  rows={5}
+                  placeholder={"Mon–Fri: 10:00–19:00\nSat: 10:00–16:00\nSun: Closed"}
+                  value={settings.opening_hours ?? ""}
+                  onChange={(e) => setSettings((s) => (s ? { ...s, opening_hours: e.target.value } : s))}
+                />
+              </FormField>
+            </div>
+          </Card>
+        </section>
+
+        <section>
+          <Eyebrow>Store Photo</Eyebrow>
+          <Card className="mt-3 p-6">
+            <ImageManager
+              label="Store photo"
+              hint="Represents your physical store across the top of the public Contact page. JPEG, PNG, or WebP."
+              hasImage={Boolean(settings.store_image_url)}
+              loadUrl={loadStoreImageBlobUrl}
+              upload={uploadStoreImage}
+              remove={deleteStoreImage}
+              onUpdated={setSettings}
+              isReadOnly={isReadOnly}
+            />
           </Card>
         </section>
 

@@ -1213,6 +1213,35 @@ var defaultUIStrings = map[string]string{
 	"footer.sustainability":   "Sustainability",
 	"footer.terms_of_service": "Terms of Service",
 
+	// Trust bar (under the hero)
+	"trust.shipping_title":     "Free shipping",
+	"trust.shipping_subtitle":  "On orders over $100",
+	"trust.returns_title":      "Easy returns",
+	"trust.returns_subtitle":   "30 days to change your mind",
+	"trust.secure_title":       "Secure checkout",
+	"trust.secure_subtitle":    "Encrypted payments",
+	"trust.authentic_title":    "Authentic products",
+	"trust.authentic_subtitle": "Quality guaranteed",
+
+	// About page
+	"about.contact_cta": "Contact Us",
+	"about.unavailable": "Our story is coming soon.",
+
+	// Contact page
+	"contact.title":           "Contact Us",
+	"contact.intro":           "We'd love to hear from you. Visit us in store or reach out anytime.",
+	"contact.details_heading": "Get in touch",
+	"contact.hours_heading":   "Opening hours",
+	"contact.find_us_heading": "Find us",
+	"contact.email_label":     "Email",
+	"contact.phone_label":     "Phone",
+	"contact.address_label":   "Address",
+	"contact.unavailable":     "Contact details are coming soon.",
+
+	// Size guide page
+	"sizeguide.title":       "Size Guide",
+	"sizeguide.unavailable": "The size guide is coming soon.",
+
 	// Common UI
 	"common.back":              "Back",
 	"common.cancel":            "Cancel",

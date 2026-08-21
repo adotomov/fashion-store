@@ -17,6 +17,8 @@ export default [
   ...prefix("help", [
     route("faq", "routes/help/faq.tsx"),
     route("shipping", "routes/help/shipping.tsx"),
+    route("sizing", "routes/help/sizing.tsx"),
+    route("contact", "routes/help/contact.tsx"),
   ]),
   ...prefix("account", [
     layout("routes/account/layout.tsx", [

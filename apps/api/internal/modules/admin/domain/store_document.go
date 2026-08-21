@@ -7,16 +7,19 @@ import "time"
 type DocumentType string
 
 const (
-	DocumentTypeTerms    DocumentType = "terms"
-	DocumentTypePrivacy  DocumentType = "privacy"
-	DocumentTypeFAQ      DocumentType = "faq"
-	DocumentTypeShipping DocumentType = "shipping"
+	DocumentTypeTerms     DocumentType = "terms"
+	DocumentTypePrivacy   DocumentType = "privacy"
+	DocumentTypeFAQ       DocumentType = "faq"
+	DocumentTypeShipping  DocumentType = "shipping"
+	DocumentTypeAbout     DocumentType = "about"
+	DocumentTypeSizeGuide DocumentType = "size_guide"
 )
 
 // IsValid reports whether t is a recognised document type.
 func (t DocumentType) IsValid() bool {
 	switch t {
-	case DocumentTypeTerms, DocumentTypePrivacy, DocumentTypeFAQ, DocumentTypeShipping:
+	case DocumentTypeTerms, DocumentTypePrivacy, DocumentTypeFAQ, DocumentTypeShipping,
+		DocumentTypeAbout, DocumentTypeSizeGuide:
 		return true
 	default:
 		return false

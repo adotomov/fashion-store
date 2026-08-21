@@ -77,6 +77,9 @@ func (s *StoreSettingsService) UpdateSettings(ctx context.Context, input UpdateS
 	if input.InstagramURL != nil {
 		settings.InstagramURL = input.InstagramURL
 	}
+	if input.OpeningHours != nil {
+		settings.OpeningHours = input.OpeningHours
+	}
 
 	return s.repo.Update(ctx, *settings)
 }
@@ -127,6 +130,106 @@ func (s *StoreSettingsService) DeleteLogo(ctx context.Context) (*domain.StoreSet
 	settings.LogoObjectKey = nil
 	settings.LogoContentType = nil
 	settings.LogoSizeBytes = nil
+	return s.repo.Update(ctx, *settings)
+}
+
+func (s *StoreSettingsService) UploadAboutCover(ctx context.Context, filename, contentType string, content io.Reader) (*domain.StoreSettings, error) {
+	settings, err := s.repo.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.storage.EnsureBucket(ctx, s.bucket); err != nil {
+		return nil, err
+	}
+	objectKey := fmt.Sprintf("store-settings/about-cover/%s-%s", uuid.NewString(), filename)
+	sizeBytes, err := s.storage.Upload(ctx, s.bucket, objectKey, contentType, content)
+	if err != nil {
+		return nil, err
+	}
+	if settings.HasAboutCover() {
+		_ = s.storage.Delete(ctx, *settings.AboutCoverBucket, *settings.AboutCoverObjectKey)
+	}
+	bucket := s.bucket
+	settings.AboutCoverBucket = &bucket
+	settings.AboutCoverObjectKey = &objectKey
+	settings.AboutCoverContentType = &contentType
+	settings.AboutCoverSizeBytes = &sizeBytes
+	return s.repo.Update(ctx, *settings)
+}
+
+func (s *StoreSettingsService) OpenAboutCover(ctx context.Context) (io.ReadCloser, string, error) {
+	settings, err := s.repo.Get(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if !settings.HasAboutCover() {
+		return nil, "", domain.ErrAboutCoverNotFound
+	}
+	return s.storage.Open(ctx, *settings.AboutCoverBucket, *settings.AboutCoverObjectKey)
+}
+
+func (s *StoreSettingsService) DeleteAboutCover(ctx context.Context) (*domain.StoreSettings, error) {
+	settings, err := s.repo.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if settings.HasAboutCover() {
+		_ = s.storage.Delete(ctx, *settings.AboutCoverBucket, *settings.AboutCoverObjectKey)
+	}
+	settings.AboutCoverBucket = nil
+	settings.AboutCoverObjectKey = nil
+	settings.AboutCoverContentType = nil
+	settings.AboutCoverSizeBytes = nil
+	return s.repo.Update(ctx, *settings)
+}
+
+func (s *StoreSettingsService) UploadStoreImage(ctx context.Context, filename, contentType string, content io.Reader) (*domain.StoreSettings, error) {
+	settings, err := s.repo.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.storage.EnsureBucket(ctx, s.bucket); err != nil {
+		return nil, err
+	}
+	objectKey := fmt.Sprintf("store-settings/store-image/%s-%s", uuid.NewString(), filename)
+	sizeBytes, err := s.storage.Upload(ctx, s.bucket, objectKey, contentType, content)
+	if err != nil {
+		return nil, err
+	}
+	if settings.HasStoreImage() {
+		_ = s.storage.Delete(ctx, *settings.StoreImageBucket, *settings.StoreImageObjectKey)
+	}
+	bucket := s.bucket
+	settings.StoreImageBucket = &bucket
+	settings.StoreImageObjectKey = &objectKey
+	settings.StoreImageContentType = &contentType
+	settings.StoreImageSizeBytes = &sizeBytes
+	return s.repo.Update(ctx, *settings)
+}
+
+func (s *StoreSettingsService) OpenStoreImage(ctx context.Context) (io.ReadCloser, string, error) {
+	settings, err := s.repo.Get(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	if !settings.HasStoreImage() {
+		return nil, "", domain.ErrStoreImageNotFound
+	}
+	return s.storage.Open(ctx, *settings.StoreImageBucket, *settings.StoreImageObjectKey)
+}
+
+func (s *StoreSettingsService) DeleteStoreImage(ctx context.Context) (*domain.StoreSettings, error) {
+	settings, err := s.repo.Get(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if settings.HasStoreImage() {
+		_ = s.storage.Delete(ctx, *settings.StoreImageBucket, *settings.StoreImageObjectKey)
+	}
+	settings.StoreImageBucket = nil
+	settings.StoreImageObjectKey = nil
+	settings.StoreImageContentType = nil
+	settings.StoreImageSizeBytes = nil
 	return s.repo.Update(ctx, *settings)
 }
 

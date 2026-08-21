@@ -23,14 +23,33 @@ type StoreSettings struct {
 	CompanyDescription *string
 	FacebookURL        *string
 	InstagramURL       *string
+	OpeningHours       *string
 	LogoBucket         *string
 	LogoObjectKey      *string
 	LogoContentType    *string
 	LogoSizeBytes      *int64
-	CreatedAt          time.Time
-	UpdatedAt          time.Time
+	// About Us cover photo (public About page) and Contact Us store photo
+	// (public Contact page) — nullable file references, same shape as the logo.
+	AboutCoverBucket      *string
+	AboutCoverObjectKey   *string
+	AboutCoverContentType *string
+	AboutCoverSizeBytes   *int64
+	StoreImageBucket      *string
+	StoreImageObjectKey   *string
+	StoreImageContentType *string
+	StoreImageSizeBytes   *int64
+	CreatedAt             time.Time
+	UpdatedAt             time.Time
 }
 
 func (s StoreSettings) HasLogo() bool {
 	return s.LogoObjectKey != nil && *s.LogoObjectKey != ""
+}
+
+func (s StoreSettings) HasAboutCover() bool {
+	return s.AboutCoverObjectKey != nil && *s.AboutCoverObjectKey != ""
+}
+
+func (s StoreSettings) HasStoreImage() bool {
+	return s.StoreImageObjectKey != nil && *s.StoreImageObjectKey != ""
 }

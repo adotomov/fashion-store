@@ -19,8 +19,10 @@ func NewPostgresStoreSettingsRepository(db *pgxpool.Pool) *PostgresStoreSettings
 }
 
 const storeSettingsColumns = `id, store_name, legal_entity_name, locale, currency,
-	contact_email, contact_phone, company_description, facebook_url, instagram_url,
+	contact_email, contact_phone, company_description, facebook_url, instagram_url, opening_hours,
 	logo_bucket, logo_object_key, logo_content_type, logo_size_bytes,
+	about_cover_bucket, about_cover_object_key, about_cover_content_type, about_cover_size_bytes,
+	store_image_bucket, store_image_object_key, store_image_content_type, store_image_size_bytes,
 	created_at, updated_at`
 
 // Get returns the single store_settings row, seeded by migration — there is
@@ -35,15 +37,19 @@ func (r *PostgresStoreSettingsRepository) Update(ctx context.Context, settings d
 		UPDATE store_settings SET
 			store_name = $2, legal_entity_name = $3, locale = $4, currency = $5,
 			contact_email = $6, contact_phone = $7, company_description = $8,
-			facebook_url = $9, instagram_url = $10,
-			logo_bucket = $11, logo_object_key = $12, logo_content_type = $13, logo_size_bytes = $14,
+			facebook_url = $9, instagram_url = $10, opening_hours = $11,
+			logo_bucket = $12, logo_object_key = $13, logo_content_type = $14, logo_size_bytes = $15,
+			about_cover_bucket = $16, about_cover_object_key = $17, about_cover_content_type = $18, about_cover_size_bytes = $19,
+			store_image_bucket = $20, store_image_object_key = $21, store_image_content_type = $22, store_image_size_bytes = $23,
 			updated_at = NOW()
 		WHERE id = $1
 		RETURNING `+storeSettingsColumns,
 		settings.ID, settings.StoreName, settings.LegalEntityName, settings.Locale, settings.Currency,
 		settings.ContactEmail, settings.ContactPhone, settings.CompanyDescription,
-		settings.FacebookURL, settings.InstagramURL,
-		settings.LogoBucket, settings.LogoObjectKey, settings.LogoContentType, settings.LogoSizeBytes)
+		settings.FacebookURL, settings.InstagramURL, settings.OpeningHours,
+		settings.LogoBucket, settings.LogoObjectKey, settings.LogoContentType, settings.LogoSizeBytes,
+		settings.AboutCoverBucket, settings.AboutCoverObjectKey, settings.AboutCoverContentType, settings.AboutCoverSizeBytes,
+		settings.StoreImageBucket, settings.StoreImageObjectKey, settings.StoreImageContentType, settings.StoreImageSizeBytes)
 
 	return scanStoreSettings(row)
 }
@@ -52,8 +58,10 @@ func scanStoreSettings(row pgx.Row) (*domain.StoreSettings, error) {
 	var s domain.StoreSettings
 	err := row.Scan(
 		&s.ID, &s.StoreName, &s.LegalEntityName, &s.Locale, &s.Currency,
-		&s.ContactEmail, &s.ContactPhone, &s.CompanyDescription, &s.FacebookURL, &s.InstagramURL,
+		&s.ContactEmail, &s.ContactPhone, &s.CompanyDescription, &s.FacebookURL, &s.InstagramURL, &s.OpeningHours,
 		&s.LogoBucket, &s.LogoObjectKey, &s.LogoContentType, &s.LogoSizeBytes,
+		&s.AboutCoverBucket, &s.AboutCoverObjectKey, &s.AboutCoverContentType, &s.AboutCoverSizeBytes,
+		&s.StoreImageBucket, &s.StoreImageObjectKey, &s.StoreImageContentType, &s.StoreImageSizeBytes,
 		&s.CreatedAt, &s.UpdatedAt,
 	)
 	if err != nil {
