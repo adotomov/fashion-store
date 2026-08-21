@@ -1,6 +1,7 @@
 package application
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/adotomov/fashion-store/apps/api/internal/modules/admin/domain"
+	"github.com/adotomov/fashion-store/apps/api/internal/shared/imageopt"
 )
 
 type StoreSettingsService struct {
@@ -96,8 +98,14 @@ func (s *StoreSettingsService) UploadLogo(ctx context.Context, filename, content
 		return nil, err
 	}
 
+	data, err := io.ReadAll(content)
+	if err != nil {
+		return nil, err
+	}
+	data, contentType, filename = imageopt.Optimize(data, contentType, filename)
+
 	objectKey := fmt.Sprintf("store-settings/logo/%s-%s", uuid.NewString(), filename)
-	sizeBytes, err := s.storage.Upload(ctx, s.bucket, objectKey, contentType, content)
+	sizeBytes, err := s.storage.Upload(ctx, s.bucket, objectKey, contentType, bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
@@ -144,8 +152,14 @@ func (s *StoreSettingsService) UploadAboutCover(ctx context.Context, filename, c
 	if err := s.storage.EnsureBucket(ctx, s.bucket); err != nil {
 		return nil, err
 	}
+	data, err := io.ReadAll(content)
+	if err != nil {
+		return nil, err
+	}
+	data, contentType, filename = imageopt.Optimize(data, contentType, filename)
+
 	objectKey := fmt.Sprintf("store-settings/about-cover/%s-%s", uuid.NewString(), filename)
-	sizeBytes, err := s.storage.Upload(ctx, s.bucket, objectKey, contentType, content)
+	sizeBytes, err := s.storage.Upload(ctx, s.bucket, objectKey, contentType, bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
@@ -194,8 +208,14 @@ func (s *StoreSettingsService) UploadStoreImage(ctx context.Context, filename, c
 	if err := s.storage.EnsureBucket(ctx, s.bucket); err != nil {
 		return nil, err
 	}
+	data, err := io.ReadAll(content)
+	if err != nil {
+		return nil, err
+	}
+	data, contentType, filename = imageopt.Optimize(data, contentType, filename)
+
 	objectKey := fmt.Sprintf("store-settings/store-image/%s-%s", uuid.NewString(), filename)
-	sizeBytes, err := s.storage.Upload(ctx, s.bucket, objectKey, contentType, content)
+	sizeBytes, err := s.storage.Upload(ctx, s.bucket, objectKey, contentType, bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
@@ -248,8 +268,14 @@ func (s *StoreSettingsService) UploadHeroBackground(ctx context.Context, filenam
 	if err := s.storage.EnsureBucket(ctx, s.bucket); err != nil {
 		return domain.HeroSettings{}, err
 	}
+	data, err := io.ReadAll(content)
+	if err != nil {
+		return domain.HeroSettings{}, err
+	}
+	data, contentType, filename = imageopt.Optimize(data, contentType, filename)
+
 	objectKey := fmt.Sprintf("hero-settings/background/%s-%s", uuid.NewString(), filename)
-	sizeBytes, err := s.storage.Upload(ctx, s.bucket, objectKey, contentType, content)
+	sizeBytes, err := s.storage.Upload(ctx, s.bucket, objectKey, contentType, bytes.NewReader(data))
 	if err != nil {
 		return domain.HeroSettings{}, err
 	}
@@ -306,8 +332,14 @@ func (s *StoreSettingsService) UploadEditorialBannerImage(ctx context.Context, f
 	if err := s.storage.EnsureBucket(ctx, s.bucket); err != nil {
 		return domain.EditorialBanner{}, err
 	}
+	data, err := io.ReadAll(content)
+	if err != nil {
+		return domain.EditorialBanner{}, err
+	}
+	data, contentType, filename = imageopt.Optimize(data, contentType, filename)
+
 	objectKey := fmt.Sprintf("editorial-banner/image/%s-%s", uuid.NewString(), filename)
-	sizeBytes, err := s.storage.Upload(ctx, s.bucket, objectKey, contentType, content)
+	sizeBytes, err := s.storage.Upload(ctx, s.bucket, objectKey, contentType, bytes.NewReader(data))
 	if err != nil {
 		return domain.EditorialBanner{}, err
 	}

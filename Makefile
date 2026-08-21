@@ -6,7 +6,7 @@ API_DIR := apps/api
 .PHONY: dev run-api run-worker build test lint vet \
 	migrate-up migrate-down migrate-status migrate-create \
 	devbox-up devbox-patch-migrate devbox-forward-fe devbox-forward-fe-stop \
-	seed-dev-catalog
+	seed-dev-catalog backfill-webp backfill-webp-dry-run
 
 dev:
 	docker compose up -d
@@ -17,6 +17,14 @@ run-api:
 
 run-worker:
 	cd $(API_DIR) && go run ./cmd/worker
+
+# One-off: re-encode all existing stored images to WebP (uses the same DB +
+# STORAGE_* env as the API). Run the dry-run first to preview.
+backfill-webp-dry-run:
+	cd $(API_DIR) && go run ./cmd/backfill-webp -dry-run
+
+backfill-webp:
+	cd $(API_DIR) && go run ./cmd/backfill-webp
 
 build:
 	cd $(API_DIR) && go build ./...

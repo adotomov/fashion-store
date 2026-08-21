@@ -4,11 +4,15 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 go build -o /out/api ./cmd/api
+# One-off maintenance tool (WebP image backfill), run as a Cloud Run Job that
+# reuses this same image, service account, and Cloud SQL connection.
+RUN CGO_ENABLED=0 go build -o /out/backfill-webp ./cmd/backfill-webp
 RUN CGO_ENABLED=0 GOBIN=/out go install github.com/pressly/goose/v3/cmd/goose@v3.24.1
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
 COPY --from=build /out/api /usr/local/bin/api
+COPY --from=build /out/backfill-webp /usr/local/bin/backfill-webp
 COPY --from=build /out/goose /usr/local/bin/goose
 COPY db/migrations /app/db/migrations
 EXPOSE 8080

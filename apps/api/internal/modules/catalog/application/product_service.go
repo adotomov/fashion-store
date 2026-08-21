@@ -1,6 +1,7 @@
 package application
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/adotomov/fashion-store/apps/api/internal/modules/catalog/domain"
+	"github.com/adotomov/fashion-store/apps/api/internal/shared/imageopt"
 	"github.com/adotomov/fashion-store/apps/api/internal/shared/money"
 )
 
@@ -212,9 +214,15 @@ func (s *ProductService) UploadMedia(ctx context.Context, productID uuid.UUID, f
 		return nil, err
 	}
 
+	data, err := io.ReadAll(content)
+	if err != nil {
+		return nil, err
+	}
+	data, contentType, filename = imageopt.Optimize(data, contentType, filename)
+
 	objectKey := fmt.Sprintf("%s/%s-%s", productID, uuid.NewString(), filename)
 
-	sizeBytes, err := s.storage.Upload(ctx, s.bucket, objectKey, contentType, content)
+	sizeBytes, err := s.storage.Upload(ctx, s.bucket, objectKey, contentType, bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
