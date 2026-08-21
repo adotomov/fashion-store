@@ -234,6 +234,7 @@ export type StorefrontStoreSettings = {
   facebook_url?: string;
   instagram_url?: string;
   opening_hours?: string;
+  map_location?: string;
   logo_url?: string;
   about_cover_url?: string;
   store_image_url?: string;

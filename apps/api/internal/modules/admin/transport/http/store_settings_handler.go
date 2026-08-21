@@ -76,6 +76,7 @@ type storeSettingsResponse struct {
 	FacebookURL        *string `json:"facebook_url,omitempty"`
 	InstagramURL       *string `json:"instagram_url,omitempty"`
 	OpeningHours       *string `json:"opening_hours,omitempty"`
+	MapLocation        *string `json:"map_location,omitempty"`
 	LogoURL            *string `json:"logo_url,omitempty"`
 	AboutCoverURL      *string `json:"about_cover_url,omitempty"`
 	StoreImageURL      *string `json:"store_image_url,omitempty"`
@@ -97,6 +98,7 @@ func toStoreSettingsResponse(s domain.StoreSettings, basePath string) storeSetti
 		FacebookURL:        s.FacebookURL,
 		InstagramURL:       s.InstagramURL,
 		OpeningHours:       s.OpeningHours,
+		MapLocation:        s.MapLocation,
 		UpdatedAt:          s.UpdatedAt.Format(timeFormat),
 	}
 	if s.HasLogo() {
@@ -134,6 +136,7 @@ type updateStoreSettingsRequest struct {
 	FacebookURL        *string `json:"facebook_url,omitempty"`
 	InstagramURL       *string `json:"instagram_url,omitempty"`
 	OpeningHours       *string `json:"opening_hours,omitempty"`
+	MapLocation        *string `json:"map_location,omitempty"`
 }
 
 func (h *StoreSettingsHandler) update(w http.ResponseWriter, r *http.Request) {
@@ -154,6 +157,7 @@ func (h *StoreSettingsHandler) update(w http.ResponseWriter, r *http.Request) {
 		FacebookURL:        req.FacebookURL,
 		InstagramURL:       req.InstagramURL,
 		OpeningHours:       req.OpeningHours,
+		MapLocation:        req.MapLocation,
 	})
 	if err != nil {
 		writeAdminModuleError(w, err)

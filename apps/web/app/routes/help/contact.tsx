@@ -28,7 +28,7 @@ function formatAddress(a: StorefrontAddress): string {
 }
 
 export default function Contact() {
-  const { t } = useLanguage();
+  const { t, locale } = useLanguage();
   const [settings, setSettings] = useState<StorefrontStoreSettings | null>(null);
   const [addresses, setAddresses] = useState<StorefrontAddress[]>([]);
 
@@ -40,6 +40,10 @@ export default function Contact() {
   const primaryAddress = addresses.find((a) => a.is_default) ?? addresses[0] ?? null;
   const addressLine = primaryAddress ? formatAddress(primaryAddress) : null;
   const storeImageUrl = settings?.store_image_url ? resolveImageUrl(settings.store_image_url) : null;
+
+  // An explicit map_location (usually "lat,lng") pins the map exactly; otherwise
+  // fall back to geocoding the store address.
+  const mapQuery = settings?.map_location?.trim() || addressLine;
 
   const hasAnyDetail = Boolean(
     settings?.contact_email || settings?.contact_phone || addressLine || settings?.opening_hours,
@@ -120,7 +124,7 @@ export default function Contact() {
           )}
 
           {/* Map */}
-          {addressLine && (
+          {mapQuery && (
             <section className="mt-14">
               <Heading as="h2" size="sm">
                 {t("contact.find_us_heading", "Find us")}
@@ -128,7 +132,12 @@ export default function Contact() {
               <div className="mt-4 overflow-hidden rounded-sm border border-stone-200">
                 <iframe
                   title={t("contact.find_us_heading", "Find us")}
-                  src={`https://www.google.com/maps?q=${encodeURIComponent(addressLine)}&output=embed`}
+                  // z=16 forces a street-level zoom centered on the query and
+                  // iwloc drops a marker there — without them the keyless embed
+                  // defaults to a wide, region-level view that looks like it
+                  // "missed" the spot. hl localizes the map. mapQuery is an
+                  // explicit lat,lng pin when set, else the store address.
+                  src={`https://maps.google.com/maps?q=${encodeURIComponent(mapQuery)}&z=16&hl=${encodeURIComponent(locale)}&iwloc=&output=embed`}
                   loading="lazy"
                   referrerPolicy="no-referrer-when-downgrade"
                   className="h-80 w-full border-0"

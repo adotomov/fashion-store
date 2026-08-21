@@ -14,6 +14,7 @@ export type StoreSettings = {
   facebook_url?: string;
   instagram_url?: string;
   opening_hours?: string;
+  map_location?: string;
   // Relative, admin-gated proxy paths — never plain external URLs.
   logo_url?: string;
   about_cover_url?: string;
@@ -37,6 +38,7 @@ export function updateStoreSettings(
     facebook_url: string;
     instagram_url: string;
     opening_hours: string;
+    map_location: string;
   }>,
 ): Promise<StoreSettings> {
   return apiFetch<StoreSettings>("/api/v1/admin/store-settings", { method: "PATCH", body: input });

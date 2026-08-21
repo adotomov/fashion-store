@@ -24,6 +24,7 @@ type StoreSettings struct {
 	FacebookURL        *string
 	InstagramURL       *string
 	OpeningHours       *string
+	MapLocation        *string
 	LogoBucket         *string
 	LogoObjectKey      *string
 	LogoContentType    *string

@@ -550,6 +550,7 @@ function ContactsTab() {
           contact_email: settings.contact_email ?? "",
           contact_phone: settings.contact_phone ?? "",
           opening_hours: settings.opening_hours ?? "",
+          map_location: settings.map_location ?? "",
         }),
       );
       setSavedAt(Date.now());
@@ -603,6 +604,19 @@ function ContactsTab() {
                   placeholder={"Mon–Fri: 10:00–19:00\nSat: 10:00–16:00\nSun: Closed"}
                   value={settings.opening_hours ?? ""}
                   onChange={(e) => setSettings((s) => (s ? { ...s, opening_hours: e.target.value } : s))}
+                />
+              </FormField>
+            </div>
+            <div className="mt-4">
+              <FormField
+                label="Map location"
+                htmlFor="mapLocation"
+                hint='Pins the Contact page map exactly. Enter coordinates as "lat,lng" (e.g. 42.6977,23.3219) — copy them by right-clicking your spot in Google Maps. Leave blank to geocode the address above.'
+              >
+                <Input
+                  id="mapLocation"
+                  placeholder="42.6977,23.3219"
+                  {...field("map_location")}
                 />
               </FormField>
             </div>

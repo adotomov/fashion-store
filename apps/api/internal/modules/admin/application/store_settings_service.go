@@ -80,6 +80,9 @@ func (s *StoreSettingsService) UpdateSettings(ctx context.Context, input UpdateS
 	if input.OpeningHours != nil {
 		settings.OpeningHours = input.OpeningHours
 	}
+	if input.MapLocation != nil {
+		settings.MapLocation = input.MapLocation
+	}
 
 	return s.repo.Update(ctx, *settings)
 }
