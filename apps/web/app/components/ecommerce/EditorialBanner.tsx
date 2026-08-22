@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 
+import { useLanguage } from "../../features/i18n/LanguageContext";
 import { getPublicEditorialBanner, type EditorialBannerSettings } from "../../lib/api/admin-appearance";
 import { resolveImageUrl } from "../../lib/api/storefront";
 import { cn } from "../../lib/utils/cn";
@@ -11,13 +12,14 @@ import { Eyebrow, Heading, Text } from "../ui/Text";
 // the rhythm of product-grid sections with a single large lifestyle image and
 // a clear call to action. Admin-configurable; renders nothing until enabled.
 export function EditorialBanner() {
+  const { locale } = useLanguage();
   const [banner, setBanner] = useState<EditorialBannerSettings | null>(null);
 
   useEffect(() => {
-    getPublicEditorialBanner()
+    getPublicEditorialBanner(locale)
       .then(setBanner)
       .catch(() => setBanner(null));
-  }, []);
+  }, [locale]);
 
   if (!banner || !banner.enabled) return null;
 

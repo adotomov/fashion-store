@@ -15,6 +15,7 @@ import { ShopByCategory } from "../components/ecommerce/ShopByCategory";
 import { ShopByCollection } from "../components/ecommerce/ShopByCollection";
 import { Spotlights } from "../components/ecommerce/Spotlights";
 import { TrustBar } from "../components/ecommerce/TrustBar";
+import { useLanguage } from "../features/i18n/LanguageContext";
 import { type HomeSectionConfig, getPublicHomeSections } from "../lib/api/admin-home-sections";
 import { buildMeta } from "../lib/seo/meta";
 import { organizationJsonLd, websiteJsonLd } from "../lib/seo/jsonld";
@@ -31,11 +32,12 @@ export function meta({}: Route.MetaArgs) {
 }
 
 export default function Home() {
+  const { locale } = useLanguage();
   const [sections, setSections] = useState<HomeSectionConfig[]>([]);
 
   useEffect(() => {
-    getPublicHomeSections().then(setSections).catch(() => {});
-  }, []);
+    getPublicHomeSections(locale).then(setSections).catch(() => {});
+  }, [locale]);
 
   function getSection(id: string): HomeSectionConfig | undefined {
     return sections.find((s) => s.id === id);

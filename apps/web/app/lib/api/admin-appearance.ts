@@ -1,5 +1,12 @@
 import { apiFetch } from "./client";
 
+// Editorial home-page content (hero, editorial banner, home sections) is
+// translatable: English lives in the base row, other locales are layered on
+// via ?locale=. The default locale needs no query param.
+function localeQuery(locale?: string): string {
+  return locale && locale !== "en" ? `?locale=${encodeURIComponent(locale)}` : "";
+}
+
 export type HeroSettings = {
   eyebrow: string;
   heading: string;
@@ -14,12 +21,12 @@ export type HeroSettings = {
 
 export type SaveHeroSettingsInput = Omit<HeroSettings, "updated_at" | "background_image_url">;
 
-export function getHeroSettings(): Promise<HeroSettings> {
-  return apiFetch<HeroSettings>("/api/v1/admin/hero");
+export function getHeroSettings(locale?: string): Promise<HeroSettings> {
+  return apiFetch<HeroSettings>(`/api/v1/admin/hero${localeQuery(locale)}`);
 }
 
-export function saveHeroSettings(data: SaveHeroSettingsInput): Promise<HeroSettings> {
-  return apiFetch<HeroSettings>("/api/v1/admin/hero", {
+export function saveHeroSettings(data: SaveHeroSettingsInput, locale?: string): Promise<HeroSettings> {
+  return apiFetch<HeroSettings>(`/api/v1/admin/hero${localeQuery(locale)}`, {
     method: "PUT",
     body: data,
   });
@@ -40,8 +47,8 @@ export function deleteHeroBackground(): Promise<HeroSettings> {
   });
 }
 
-export function getPublicHeroSettings(): Promise<HeroSettings> {
-  return apiFetch<HeroSettings>("/api/v1/storefront/hero", { auth: false });
+export function getPublicHeroSettings(locale?: string): Promise<HeroSettings> {
+  return apiFetch<HeroSettings>(`/api/v1/storefront/hero${localeQuery(locale)}`, { auth: false });
 }
 
 // Editorial ("Shop the Look") banner — a singleton, admin-configurable
@@ -63,14 +70,15 @@ export type SaveEditorialBannerInput = Omit<
   "updated_at" | "image_url"
 >;
 
-export function getEditorialBanner(): Promise<EditorialBannerSettings> {
-  return apiFetch<EditorialBannerSettings>("/api/v1/admin/editorial-banner");
+export function getEditorialBanner(locale?: string): Promise<EditorialBannerSettings> {
+  return apiFetch<EditorialBannerSettings>(`/api/v1/admin/editorial-banner${localeQuery(locale)}`);
 }
 
 export function saveEditorialBanner(
   data: SaveEditorialBannerInput,
+  locale?: string,
 ): Promise<EditorialBannerSettings> {
-  return apiFetch<EditorialBannerSettings>("/api/v1/admin/editorial-banner", {
+  return apiFetch<EditorialBannerSettings>(`/api/v1/admin/editorial-banner${localeQuery(locale)}`, {
     method: "PUT",
     body: data,
   });
@@ -91,8 +99,8 @@ export function deleteEditorialBannerImage(): Promise<EditorialBannerSettings> {
   });
 }
 
-export function getPublicEditorialBanner(): Promise<EditorialBannerSettings> {
-  return apiFetch<EditorialBannerSettings>("/api/v1/storefront/editorial-banner", {
+export function getPublicEditorialBanner(locale?: string): Promise<EditorialBannerSettings> {
+  return apiFetch<EditorialBannerSettings>(`/api/v1/storefront/editorial-banner${localeQuery(locale)}`, {
     auth: false,
   });
 }

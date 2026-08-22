@@ -33,10 +33,48 @@ import {
   setSectionProducts,
 } from "../../lib/api/admin-home-sections";
 import { type Category, listCategories } from "../../lib/api/categories";
+import { type Language, listLanguages } from "../../lib/api/languages";
 import { type Product, listProducts } from "../../lib/api/products";
 import { type StorefrontProduct, listStorefrontProducts, resolveImageUrl } from "../../lib/api/storefront";
 
 export const handle = { title: "Home Page" };
+
+// The base language: its copy lives in the settings rows themselves, so its tab
+// shows the full editor (images, links, visibility). Every other language's tab
+// edits only the translatable text, layered on top.
+const BASE_LOCALE = "en";
+
+// LanguageTabs is the shared per-locale switcher used by the hero, editorial
+// banner, and section editors. It renders nothing when only one language exists.
+function LanguageTabs({
+  languages,
+  active,
+  onChange,
+}: {
+  languages: Language[];
+  active: string;
+  onChange: (code: string) => void;
+}) {
+  if (languages.length <= 1) return null;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {languages.map((lang) => (
+        <button
+          key={lang.code}
+          type="button"
+          onClick={() => onChange(lang.code)}
+          className={`rounded-sm px-3 py-1 text-xs font-medium transition-colors ${
+            active === lang.code
+              ? "bg-stone-900 text-white"
+              : "bg-stone-100 text-stone-600 hover:bg-stone-200"
+          }`}
+        >
+          {lang.name}
+        </button>
+      ))}
+    </div>
+  );
+}
 
 const TABS = [
   { id: "hero", label: "Hero" },
@@ -92,7 +130,11 @@ const emptyForm: FormState = {
 
 function HeroTab() {
   const { isReadOnly } = useAdminPermissions();
+  const [languages, setLanguages] = useState<Language[]>([]);
+  const [activeLocale, setActiveLocale] = useState(BASE_LOCALE);
   const [form, setForm] = useState<FormState>(emptyForm);
+  // English base text, kept as placeholders when translating into another language.
+  const [baseText, setBaseText] = useState<FormState>(emptyForm);
   const [backgroundImageUrl, setBackgroundImageUrl] = useState<string | undefined>();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -101,15 +143,28 @@ function HeroTab() {
   const [error, setError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const isBase = activeLocale === BASE_LOCALE;
+
   useEffect(() => {
-    getHeroSettings()
+    listLanguages()
+      .then(setLanguages)
+      .catch(() => {});
+  }, []);
+
+  // Load the (base or per-locale) content whenever the active language changes.
+  useEffect(() => {
+    setLoading(true);
+    setSuccess(false);
+    setError(null);
+    getHeroSettings(activeLocale)
       .then((s) => {
         setForm(settingsToForm(s));
         setBackgroundImageUrl(s.background_image_url);
+        if (activeLocale === BASE_LOCALE) setBaseText(settingsToForm(s));
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, []);
+  }, [activeLocale]);
 
   function set(field: keyof FormState, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -123,18 +178,21 @@ function HeroTab() {
     setSuccess(false);
     setError(null);
     try {
+      // URLs are language-invariant, so for translations we echo the base URLs
+      // to satisfy the payload shape — the server ignores them for non-base locales.
       const input: SaveHeroSettingsInput = {
         eyebrow: form.eyebrow,
         heading: form.heading,
         subtext: form.subtext,
         cta_primary_label: form.cta_primary_label,
-        cta_primary_url: form.cta_primary_url,
+        cta_primary_url: (isBase ? form.cta_primary_url : baseText.cta_primary_url),
         cta_secondary_label: form.cta_secondary_label || undefined,
-        cta_secondary_url: form.cta_secondary_url || undefined,
+        cta_secondary_url: (isBase ? form.cta_secondary_url : baseText.cta_secondary_url) || undefined,
       };
-      const saved = await saveHeroSettings(input);
+      const saved = await saveHeroSettings(input, activeLocale);
       setForm(settingsToForm(saved));
       setBackgroundImageUrl(saved.background_image_url);
+      if (isBase) setBaseText(settingsToForm(saved));
       setSuccess(true);
     } catch {
       setError("Failed to save hero settings.");
@@ -182,7 +240,16 @@ function HeroTab() {
 
   return (
     <form onSubmit={(e) => void handleSubmit(e)} className="flex flex-col gap-6">
-      {/* Background image */}
+      <LanguageTabs languages={languages} active={activeLocale} onChange={setActiveLocale} />
+      {!isBase && (
+        <Text size="xs" tone="muted">
+          Translating the hero text. The background image and button links are
+          shared across languages — edit them on the default language tab.
+        </Text>
+      )}
+
+      {/* Background image (base language only — images are language-invariant) */}
+      {isBase && (
       <Card className="flex flex-col gap-5 p-6">
         <Text size="sm" className="font-semibold text-stone-900">
           Background Image
@@ -247,6 +314,7 @@ function HeroTab() {
           onChange={(e) => void handleBackgroundUpload(e)}
         />
       </Card>
+      )}
 
       {/* Text content */}
       <Card className="flex flex-col gap-5 p-6">
@@ -258,7 +326,7 @@ function HeroTab() {
           <Input
             value={form.eyebrow}
             onChange={(e) => set("eyebrow", e.target.value)}
-            placeholder="e.g. New Season"
+            placeholder={isBase ? "e.g. New Season" : baseText.eyebrow}
           />
         </FormField>
 
@@ -266,7 +334,7 @@ function HeroTab() {
           <Input
             value={form.heading}
             onChange={(e) => set("heading", e.target.value)}
-            placeholder="e.g. Quietly considered style, for every day."
+            placeholder={isBase ? "e.g. Quietly considered style, for every day." : baseText.heading}
           />
         </FormField>
 
@@ -275,7 +343,7 @@ function HeroTab() {
             value={form.subtext}
             onChange={(e) => set("subtext", e.target.value)}
             rows={3}
-            placeholder="Supporting text shown below the heading."
+            placeholder={isBase ? "Supporting text shown below the heading." : baseText.subtext}
             className="w-full rounded-sm border border-stone-300 bg-white px-3.5 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 transition-colors focus:border-stone-900 focus:outline-none disabled:cursor-not-allowed disabled:bg-stone-50 disabled:text-stone-400 resize-none"
           />
         </FormField>
@@ -284,45 +352,51 @@ function HeroTab() {
           <Text size="sm" className="font-medium text-stone-700">
             Primary CTA Button
           </Text>
-          <div className="grid grid-cols-2 gap-3">
+          <div className={isBase ? "grid grid-cols-2 gap-3" : ""}>
             <FormField label="Button Label">
               <Input
                 value={form.cta_primary_label}
                 onChange={(e) => set("cta_primary_label", e.target.value)}
-                placeholder="e.g. Shop All Items"
+                placeholder={isBase ? "e.g. Shop All Items" : baseText.cta_primary_label}
               />
             </FormField>
-            <FormField label="Button URL">
-              <Input
-                value={form.cta_primary_url}
-                onChange={(e) => set("cta_primary_url", e.target.value)}
-                placeholder="e.g. /shop"
-              />
-            </FormField>
+            {isBase && (
+              <FormField label="Button URL">
+                <Input
+                  value={form.cta_primary_url}
+                  onChange={(e) => set("cta_primary_url", e.target.value)}
+                  placeholder="e.g. /shop"
+                />
+              </FormField>
+            )}
           </div>
         </div>
 
-        <div className="flex flex-col gap-2">
-          <Text size="sm" className="font-medium text-stone-700">
-            Secondary CTA Button
-          </Text>
-          <div className="grid grid-cols-2 gap-3">
-            <FormField label="Button Label" hint="Leave blank to hide">
-              <Input
-                value={form.cta_secondary_label}
-                onChange={(e) => set("cta_secondary_label", e.target.value)}
-                placeholder="e.g. View the Sale"
-              />
-            </FormField>
-            <FormField label="Button URL" hint="Leave blank to hide">
-              <Input
-                value={form.cta_secondary_url}
-                onChange={(e) => set("cta_secondary_url", e.target.value)}
-                placeholder="e.g. /shop?sale=true"
-              />
-            </FormField>
+        {(isBase || baseText.cta_secondary_label) && (
+          <div className="flex flex-col gap-2">
+            <Text size="sm" className="font-medium text-stone-700">
+              Secondary CTA Button
+            </Text>
+            <div className={isBase ? "grid grid-cols-2 gap-3" : ""}>
+              <FormField label="Button Label" hint={isBase ? "Leave blank to hide" : undefined}>
+                <Input
+                  value={form.cta_secondary_label}
+                  onChange={(e) => set("cta_secondary_label", e.target.value)}
+                  placeholder={isBase ? "e.g. View the Sale" : baseText.cta_secondary_label}
+                />
+              </FormField>
+              {isBase && (
+                <FormField label="Button URL" hint="Leave blank to hide">
+                  <Input
+                    value={form.cta_secondary_url}
+                    onChange={(e) => set("cta_secondary_url", e.target.value)}
+                    placeholder="e.g. /shop?sale=true"
+                  />
+                </FormField>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </Card>
 
       {error && (
@@ -357,12 +431,30 @@ const SECTION_LABELS: Record<string, string> = {
 const CURATED_SECTIONS = new Set(["spotlights", "recommended"]);
 
 function SectionsTab() {
+  const [languages, setLanguages] = useState<Language[]>([]);
+  const [activeLocale, setActiveLocale] = useState(BASE_LOCALE);
   const [sections, setSections] = useState<HomeSectionConfig[] | null>(null);
+  // English base sections, kept for placeholders when translating.
+  const [baseSections, setBaseSections] = useState<HomeSectionConfig[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  const isBase = activeLocale === BASE_LOCALE;
+
+  useEffect(() => {
+    listLanguages()
+      .then(setLanguages)
+      .catch(() => {});
+    listAdminHomeSections(BASE_LOCALE)
+      .then(setBaseSections)
+      .catch(() => {});
+  }, []);
 
   async function refresh() {
     try {
-      setSections(await listAdminHomeSections());
+      setSections(await listAdminHomeSections(activeLocale));
+      if (activeLocale === BASE_LOCALE) {
+        setBaseSections(await listAdminHomeSections(BASE_LOCALE));
+      }
     } catch {
       setLoadError("Could not load home section settings.");
     }
@@ -370,7 +462,8 @@ function SectionsTab() {
 
   useEffect(() => {
     refresh();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeLocale]);
 
   if (loadError) {
     return (
@@ -388,11 +481,26 @@ function SectionsTab() {
     );
   }
 
+  const baseHeadingOf = (id: string) => baseSections.find((s) => s.id === id);
+
   return (
     <div className="flex flex-col gap-8">
-      <EditorialBannerCard />
+      <LanguageTabs languages={languages} active={activeLocale} onChange={setActiveLocale} />
+      {!isBase && (
+        <Text size="xs" tone="muted">
+          Translating the section titles. Product selections and whether a section
+          is shown are managed on the default language tab.
+        </Text>
+      )}
+      <EditorialBannerCard locale={activeLocale} />
       {sections.map((section) => (
-        <SectionCard key={section.id} section={section} onSaved={refresh} />
+        <SectionCard
+          key={section.id}
+          section={section}
+          locale={activeLocale}
+          basePlaceholders={baseHeadingOf(section.id)}
+          onSaved={refresh}
+        />
       ))}
     </div>
   );
@@ -423,24 +531,38 @@ function bannerToForm(b: EditorialBannerSettings): BannerFormState {
   };
 }
 
-function EditorialBannerCard() {
+function EditorialBannerCard({ locale }: { locale: string }) {
   const { isReadOnly } = useAdminPermissions();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState<BannerFormState | null>(null);
+  // English base text, kept as placeholders when translating into another language.
+  const [baseText, setBaseText] = useState<BannerFormState | null>(null);
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
   const [isSaving, setIsSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
 
+  const isBase = locale === BASE_LOCALE;
+
+  // Always keep the English base loaded for placeholders, independent of the
+  // active language.
   useEffect(() => {
-    getEditorialBanner()
+    getEditorialBanner(BASE_LOCALE)
+      .then((b) => setBaseText(bannerToForm(b)))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setSavedAt(null);
+    setSaveError(null);
+    getEditorialBanner(locale)
       .then((b) => {
         setForm(bannerToForm(b));
         setImageUrl(b.image_url);
       })
       .catch(() => {});
-  }, []);
+  }, [locale]);
 
   function set<K extends keyof BannerFormState>(field: K, value: BannerFormState[K]) {
     setForm((prev) => (prev ? { ...prev, [field]: value } : prev));
@@ -454,10 +576,19 @@ function EditorialBannerCard() {
     setIsSaving(true);
     setSaveError(null);
     try {
-      const input: SaveEditorialBannerInput = { ...form };
-      const saved = await saveEditorialBanner(input);
+      // enabled + URL are language-invariant; for translations echo the base
+      // values (the server ignores them for non-base locales).
+      const input: SaveEditorialBannerInput = isBase
+        ? { ...form }
+        : {
+            ...form,
+            enabled: baseText?.enabled ?? form.enabled,
+            cta_url: baseText?.cta_url ?? form.cta_url,
+          };
+      const saved = await saveEditorialBanner(input, locale);
       setForm(bannerToForm(saved));
       setImageUrl(saved.image_url);
+      if (isBase) setBaseText(bannerToForm(saved));
       setSavedAt(Date.now());
     } catch {
       setSaveError("Could not save. Try again.");
@@ -522,6 +653,14 @@ function EditorialBannerCard() {
             A large "Shop the Look" banner shown mid-home-page, after Shop by Collection.
           </Text>
 
+          {!isBase && (
+            <Text size="xs" tone="muted">
+              Translating the banner text. The image, link, and visibility are
+              shared across languages — edit them on the default language tab.
+            </Text>
+          )}
+
+          {isBase && (
           <label className="flex items-center gap-3 text-sm text-stone-700">
             <input
               type="checkbox"
@@ -531,8 +670,10 @@ function EditorialBannerCard() {
             />
             Show this section on the home page
           </label>
+          )}
 
           {/* Banner image */}
+          {isBase && (
           <div className="flex flex-col gap-3">
             <Text size="sm" className="font-medium text-stone-700">
               Banner Image
@@ -591,6 +732,7 @@ function EditorialBannerCard() {
               onChange={(e) => void handleUpload(e)}
             />
           </div>
+          )}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <FormField label="Eyebrow text" htmlFor="editorial-eyebrow">
@@ -598,7 +740,7 @@ function EditorialBannerCard() {
                 id="editorial-eyebrow"
                 value={form.eyebrow}
                 onChange={(e) => set("eyebrow", e.target.value)}
-                placeholder="e.g. The Edit"
+                placeholder={isBase ? "e.g. The Edit" : baseText?.eyebrow}
               />
             </FormField>
             <FormField label="Heading" htmlFor="editorial-heading">
@@ -606,7 +748,7 @@ function EditorialBannerCard() {
                 id="editorial-heading"
                 value={form.heading}
                 onChange={(e) => set("heading", e.target.value)}
-                placeholder="e.g. Shop the look"
+                placeholder={isBase ? "e.g. Shop the look" : baseText?.heading}
               />
             </FormField>
           </div>
@@ -617,28 +759,30 @@ function EditorialBannerCard() {
               value={form.subtext}
               onChange={(e) => set("subtext", e.target.value)}
               rows={3}
-              placeholder="Supporting text shown below the heading."
+              placeholder={isBase ? "Supporting text shown below the heading." : baseText?.subtext}
               className="w-full rounded-sm border border-stone-300 bg-white px-3.5 py-2.5 text-sm text-stone-900 placeholder:text-stone-400 transition-colors focus:border-stone-900 focus:outline-none disabled:cursor-not-allowed disabled:bg-stone-50 disabled:text-stone-400 resize-none"
             />
           </FormField>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <div className={isBase ? "grid grid-cols-1 gap-4 sm:grid-cols-2" : ""}>
             <FormField label="Button Label" htmlFor="editorial-cta-label">
               <Input
                 id="editorial-cta-label"
                 value={form.cta_label}
                 onChange={(e) => set("cta_label", e.target.value)}
-                placeholder="e.g. Explore the edit"
+                placeholder={isBase ? "e.g. Explore the edit" : baseText?.cta_label}
               />
             </FormField>
-            <FormField label="Button URL" htmlFor="editorial-cta-url">
-              <Input
-                id="editorial-cta-url"
-                value={form.cta_url}
-                onChange={(e) => set("cta_url", e.target.value)}
-                placeholder="e.g. /shop"
-              />
-            </FormField>
+            {isBase && (
+              <FormField label="Button URL" htmlFor="editorial-cta-url">
+                <Input
+                  id="editorial-cta-url"
+                  value={form.cta_url}
+                  onChange={(e) => set("cta_url", e.target.value)}
+                  placeholder="e.g. /shop"
+                />
+              </FormField>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
@@ -666,12 +810,17 @@ function EditorialBannerCard() {
 
 function SectionCard({
   section,
+  locale,
+  basePlaceholders,
   onSaved,
 }: {
   section: HomeSectionConfig;
+  locale: string;
+  basePlaceholders?: HomeSectionConfig;
   onSaved: () => void;
 }) {
   const { isReadOnly } = useAdminPermissions();
+  const isBase = locale === BASE_LOCALE;
   const [enabled, setEnabled] = useState(section.enabled);
   const [eyebrow, setEyebrow] = useState(section.eyebrow);
   const [heading, setHeading] = useState(section.heading);
@@ -690,7 +839,7 @@ function SectionCard({
     setIsSaving(true);
     setSaveError(null);
     try {
-      await saveHomeSection(section.id, { enabled, eyebrow, heading });
+      await saveHomeSection(section.id, { enabled, eyebrow, heading }, locale);
       setSavedAt(Date.now());
       onSaved();
     } catch {
@@ -715,31 +864,33 @@ function SectionCard({
 
       <Card className="p-6">
         <form className="flex flex-col gap-4" onSubmit={(e) => void handleSave(e)}>
-          <label className="flex items-center gap-3 text-sm text-stone-700">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => setEnabled(e.target.checked)}
-              className="h-4 w-4 rounded border-stone-300 text-stone-900 focus:ring-stone-900"
-            />
-            Show this section on the home page
-          </label>
+          {isBase && (
+            <label className="flex items-center gap-3 text-sm text-stone-700">
+              <input
+                type="checkbox"
+                checked={enabled}
+                onChange={(e) => setEnabled(e.target.checked)}
+                className="h-4 w-4 rounded border-stone-300 text-stone-900 focus:ring-stone-900"
+              />
+              Show this section on the home page
+            </label>
+          )}
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <FormField label="Eyebrow text" htmlFor={`eyebrow-${section.id}`}>
+            <FormField label="Eyebrow text" htmlFor={`eyebrow-${section.id}-${locale}`}>
               <Input
-                id={`eyebrow-${section.id}`}
+                id={`eyebrow-${section.id}-${locale}`}
                 value={eyebrow}
                 onChange={(e) => setEyebrow(e.target.value)}
-                placeholder="e.g. Curated"
+                placeholder={isBase ? "e.g. Curated" : basePlaceholders?.eyebrow}
               />
             </FormField>
-            <FormField label="Heading" htmlFor={`heading-${section.id}`}>
+            <FormField label="Heading" htmlFor={`heading-${section.id}-${locale}`}>
               <Input
-                id={`heading-${section.id}`}
+                id={`heading-${section.id}-${locale}`}
                 value={heading}
                 onChange={(e) => setHeading(e.target.value)}
-                placeholder="e.g. Staff Picks"
+                placeholder={isBase ? "e.g. Staff Picks" : basePlaceholders?.heading}
               />
             </FormField>
           </div>
@@ -761,13 +912,14 @@ function SectionCard({
           </div>
         </form>
 
-        {CURATED_SECTIONS.has(section.id) && (
+        {/* Product/category curation is language-invariant — only on the base tab. */}
+        {isBase && CURATED_SECTIONS.has(section.id) && (
           <div className="mt-6 border-t border-stone-100 pt-6">
             <ProductPicker sectionId={section.id} />
           </div>
         )}
 
-        {section.id === "best_in_category" && (
+        {isBase && section.id === "best_in_category" && (
           <div className="mt-6 border-t border-stone-100 pt-6">
             <CategoryGroupPicker sectionId={section.id} />
           </div>

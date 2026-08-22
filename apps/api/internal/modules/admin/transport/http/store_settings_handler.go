@@ -17,6 +17,18 @@ import (
 
 const timeFormat = "2006-01-02T15:04:05Z07:00"
 
+// defaultLocale is the base language whose text lives directly in the settings
+// rows; other locales are layered on via the translations table.
+const defaultLocale = "en"
+
+// localeParam reads the ?locale= query value, defaulting to the base language.
+func localeParam(r *http.Request) string {
+	if locale := r.URL.Query().Get("locale"); locale != "" {
+		return locale
+	}
+	return defaultLocale
+}
+
 type StoreSettingsHandler struct {
 	service *application.StoreSettingsService
 }
@@ -361,11 +373,22 @@ func (h *StoreSettingsHandler) getHeroSettings(w http.ResponseWriter, r *http.Re
 		writeAdminModuleError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, toHeroSettingsResponse(settings))
+	resp := toHeroSettingsResponse(settings)
+	// For a non-default locale the admin edits raw per-locale text (empty when
+	// untranslated); image/URL fields stay from the base row for reference.
+	if locale := localeParam(r); locale != defaultLocale {
+		tr, err := h.service.HeroTranslations(r.Context(), locale)
+		if err != nil {
+			writeAdminModuleError(w, err)
+			return
+		}
+		applyHeroTranslationOverrides(&resp, tr)
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h *StoreSettingsHandler) getHeroSettingsPublic(w http.ResponseWriter, r *http.Request) {
-	settings, err := h.service.GetHeroSettings(r.Context())
+	settings, err := h.service.LocalizedHeroSettings(r.Context(), localeParam(r))
 	if err != nil {
 		writeAdminModuleError(w, err)
 		return
@@ -377,6 +400,38 @@ func (h *StoreSettingsHandler) saveHeroSettings(w http.ResponseWriter, r *http.R
 	var req saveHeroSettingsRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "request body is invalid")
+		return
+	}
+
+	// Non-default locale saves only the translatable text as per-locale
+	// overrides; the base row (images, URLs, English copy) is left untouched.
+	if locale := localeParam(r); locale != defaultLocale {
+		fields := map[string]string{
+			"eyebrow":           req.Eyebrow,
+			"heading":           req.Heading,
+			"subtext":           req.Subtext,
+			"cta_primary_label": req.CTAPrimaryLabel,
+		}
+		if req.CTASecondaryLabel != nil {
+			fields["cta_secondary_label"] = *req.CTASecondaryLabel
+		}
+		if err := h.service.SaveHeroTranslations(r.Context(), locale, fields); err != nil {
+			writeAdminModuleError(w, err)
+			return
+		}
+		tr, err := h.service.HeroTranslations(r.Context(), locale)
+		if err != nil {
+			writeAdminModuleError(w, err)
+			return
+		}
+		base, err := h.service.GetHeroSettings(r.Context())
+		if err != nil {
+			writeAdminModuleError(w, err)
+			return
+		}
+		resp := toHeroSettingsResponse(base)
+		applyHeroTranslationOverrides(&resp, tr)
+		httpx.WriteJSON(w, http.StatusOK, resp)
 		return
 	}
 
@@ -400,6 +455,20 @@ func (h *StoreSettingsHandler) saveHeroSettings(w http.ResponseWriter, r *http.R
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, toHeroSettingsResponse(settings))
+}
+
+// applyHeroTranslationOverrides replaces the response's translatable text with
+// the raw per-locale values (empty string when a field is untranslated), so the
+// admin editor shows exactly what has been translated for that locale.
+func applyHeroTranslationOverrides(resp *heroSettingsResponse, tr map[string]string) {
+	resp.Eyebrow = tr["eyebrow"]
+	resp.Heading = tr["heading"]
+	resp.Subtext = tr["subtext"]
+	resp.CTAPrimaryLabel = tr["cta_primary_label"]
+	if resp.CTASecondaryLabel != nil {
+		v := tr["cta_secondary_label"]
+		resp.CTASecondaryLabel = &v
+	}
 }
 
 const maxHeroBackgroundUploadBytes = 20 << 20 // 20 MiB
@@ -494,11 +563,20 @@ func (h *StoreSettingsHandler) getEditorialBanner(w http.ResponseWriter, r *http
 		writeAdminModuleError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, toEditorialBannerResponse(banner))
+	resp := toEditorialBannerResponse(banner)
+	if locale := localeParam(r); locale != defaultLocale {
+		tr, err := h.service.EditorialBannerTranslations(r.Context(), locale)
+		if err != nil {
+			writeAdminModuleError(w, err)
+			return
+		}
+		applyEditorialTranslationOverrides(&resp, tr)
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h *StoreSettingsHandler) getEditorialBannerPublic(w http.ResponseWriter, r *http.Request) {
-	banner, err := h.service.GetEditorialBanner(r.Context())
+	banner, err := h.service.LocalizedEditorialBanner(r.Context(), localeParam(r))
 	if err != nil {
 		writeAdminModuleError(w, err)
 		return
@@ -510,6 +588,34 @@ func (h *StoreSettingsHandler) saveEditorialBanner(w http.ResponseWriter, r *htt
 	var req saveEditorialBannerRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "request body is invalid")
+		return
+	}
+
+	// Non-default locale saves only the translatable text as per-locale overrides.
+	if locale := localeParam(r); locale != defaultLocale {
+		fields := map[string]string{
+			"eyebrow":   req.Eyebrow,
+			"heading":   req.Heading,
+			"subtext":   req.Subtext,
+			"cta_label": req.CTALabel,
+		}
+		if err := h.service.SaveEditorialBannerTranslations(r.Context(), locale, fields); err != nil {
+			writeAdminModuleError(w, err)
+			return
+		}
+		base, err := h.service.GetEditorialBanner(r.Context())
+		if err != nil {
+			writeAdminModuleError(w, err)
+			return
+		}
+		tr, err := h.service.EditorialBannerTranslations(r.Context(), locale)
+		if err != nil {
+			writeAdminModuleError(w, err)
+			return
+		}
+		resp := toEditorialBannerResponse(base)
+		applyEditorialTranslationOverrides(&resp, tr)
+		httpx.WriteJSON(w, http.StatusOK, resp)
 		return
 	}
 
@@ -532,6 +638,13 @@ func (h *StoreSettingsHandler) saveEditorialBanner(w http.ResponseWriter, r *htt
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, toEditorialBannerResponse(banner))
+}
+
+func applyEditorialTranslationOverrides(resp *editorialBannerResponse, tr map[string]string) {
+	resp.Eyebrow = tr["eyebrow"]
+	resp.Heading = tr["heading"]
+	resp.Subtext = tr["subtext"]
+	resp.CTALabel = tr["cta_label"]
 }
 
 func (h *StoreSettingsHandler) uploadEditorialBannerImage(w http.ResponseWriter, r *http.Request) {
@@ -613,15 +726,28 @@ func (h *StoreSettingsHandler) listHomeSections(w http.ResponseWriter, r *http.R
 		writeAdminModuleError(w, err)
 		return
 	}
+	locale := localeParam(r)
 	resp := make([]homeSectionResponse, len(sections))
 	for i, s := range sections {
-		resp[i] = toHomeSectionResponse(s)
+		item := toHomeSectionResponse(s)
+		// For a non-default locale show the raw per-locale text (empty when
+		// untranslated); enabled stays from the base row.
+		if locale != defaultLocale {
+			tr, err := h.service.HomeSectionTranslations(r.Context(), s.ID, locale)
+			if err != nil {
+				writeAdminModuleError(w, err)
+				return
+			}
+			item.Eyebrow = tr["eyebrow"]
+			item.Heading = tr["heading"]
+		}
+		resp[i] = item
 	}
 	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (h *StoreSettingsHandler) listHomeSectionsPublic(w http.ResponseWriter, r *http.Request) {
-	sections, err := h.service.ListHomeSections(r.Context())
+	sections, err := h.service.LocalizedHomeSections(r.Context(), localeParam(r))
 	if err != nil {
 		writeAdminModuleError(w, err)
 		return
@@ -645,6 +771,30 @@ func (h *StoreSettingsHandler) saveHomeSection(w http.ResponseWriter, r *http.Re
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_body", "request body is invalid")
 		return
 	}
+
+	// Non-default locale saves only the translatable text as per-locale overrides.
+	if locale := localeParam(r); locale != defaultLocale {
+		if err := h.service.SaveHomeSectionTranslations(r.Context(), sectionID, locale, map[string]string{
+			"eyebrow": req.Eyebrow,
+			"heading": req.Heading,
+		}); err != nil {
+			writeAdminModuleError(w, err)
+			return
+		}
+		tr, err := h.service.HomeSectionTranslations(r.Context(), sectionID, locale)
+		if err != nil {
+			writeAdminModuleError(w, err)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, homeSectionResponse{
+			ID:      sectionID,
+			Enabled: req.Enabled,
+			Eyebrow: tr["eyebrow"],
+			Heading: tr["heading"],
+		})
+		return
+	}
+
 	saved, err := h.service.SaveHomeSection(r.Context(), domain.HomeSection{
 		ID:      sectionID,
 		Enabled: req.Enabled,

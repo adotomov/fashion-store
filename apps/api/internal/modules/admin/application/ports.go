@@ -65,6 +65,18 @@ type EditorialBannerRepository interface {
 	SaveEditorialBanner(ctx context.Context, b domain.EditorialBanner) (domain.EditorialBanner, error)
 }
 
+// TranslationGateway is the narrow slice of the i18n module's translation
+// service the store-settings service uses to store per-locale overrides for the
+// editorial home-page content (hero, editorial banner, home sections). Its
+// signatures match *i18n/application.TranslationService, which is wired as the
+// adapter in modules.go. The base English text lives in the settings rows
+// themselves; every other locale's text lives in translation rows keyed by a
+// stable synthetic UUID per singleton/section (see store_settings_i18n.go).
+type TranslationGateway interface {
+	Get(ctx context.Context, entityType string, entityID uuid.UUID, locale string) (map[string]string, error)
+	Set(ctx context.Context, entityType string, entityID uuid.UUID, locale, field, value string) error
+}
+
 // HomeSectionsRepository persists the home_sections and home_section_products
 // rows. The four section rows are seeded by migration and are only updated,
 // never inserted or deleted from application code.

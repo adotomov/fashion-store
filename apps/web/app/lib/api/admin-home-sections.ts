@@ -1,5 +1,11 @@
 import { apiFetch } from "./client";
 
+// Section eyebrow/heading are translatable: English lives in the base row,
+// other locales are layered on via ?locale= (the default locale needs none).
+function localeQuery(locale?: string): string {
+  return locale && locale !== "en" ? `?locale=${encodeURIComponent(locale)}` : "";
+}
+
 export type HomeSectionConfig = {
   id: string;
   enabled: boolean;
@@ -10,18 +16,22 @@ export type HomeSectionConfig = {
 
 // Admin endpoints (auth required)
 
-export function listAdminHomeSections(): Promise<HomeSectionConfig[]> {
-  return apiFetch<HomeSectionConfig[]>("/api/v1/admin/home-sections");
+export function listAdminHomeSections(locale?: string): Promise<HomeSectionConfig[]> {
+  return apiFetch<HomeSectionConfig[]>(`/api/v1/admin/home-sections${localeQuery(locale)}`);
 }
 
 export function saveHomeSection(
   id: string,
   data: { enabled: boolean; eyebrow: string; heading: string },
+  locale?: string,
 ): Promise<HomeSectionConfig> {
-  return apiFetch<HomeSectionConfig>(`/api/v1/admin/home-sections/${encodeURIComponent(id)}`, {
-    method: "PUT",
-    body: data,
-  });
+  return apiFetch<HomeSectionConfig>(
+    `/api/v1/admin/home-sections/${encodeURIComponent(id)}${localeQuery(locale)}`,
+    {
+      method: "PUT",
+      body: data,
+    },
+  );
 }
 
 export function getAdminSectionProductIDs(sectionId: string): Promise<string[]> {
@@ -60,8 +70,10 @@ export function setSectionCategoryGroups(
 
 // Public storefront endpoints (no auth)
 
-export function getPublicHomeSections(): Promise<HomeSectionConfig[]> {
-  return apiFetch<HomeSectionConfig[]>("/api/v1/storefront/home-sections", { auth: false });
+export function getPublicHomeSections(locale?: string): Promise<HomeSectionConfig[]> {
+  return apiFetch<HomeSectionConfig[]>(`/api/v1/storefront/home-sections${localeQuery(locale)}`, {
+    auth: false,
+  });
 }
 
 export function getPublicSectionProductIDs(sectionId: string): Promise<string[]> {

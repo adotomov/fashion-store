@@ -31,10 +31,10 @@ export function Hero() {
   }, [locale]);
 
   useEffect(() => {
-    getPublicHeroSettings()
+    getPublicHeroSettings(locale)
       .then(setSettings)
       .catch(() => {}); // fall back to defaults silently
-  }, []);
+  }, [locale]);
 
   return (
     <section className="relative isolate overflow-hidden bg-stone-950">

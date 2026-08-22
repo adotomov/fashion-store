@@ -17,8 +17,17 @@ type StoreSettingsService struct {
 	heroRepo         HeroSettingsRepository
 	bannerRepo       EditorialBannerRepository
 	homeSectionsRepo HomeSectionsRepository
+	translations     TranslationGateway
 	storage          MediaStorage
 	bucket           string
+}
+
+// WithTranslations wires the i18n translation gateway used to store per-locale
+// overrides for the hero, editorial banner, and home sections. When nil (not
+// wired), all locale-aware methods simply return the base English content.
+func (s *StoreSettingsService) WithTranslations(t TranslationGateway) *StoreSettingsService {
+	s.translations = t
+	return s
 }
 
 func NewStoreSettingsService(repo StoreSettingsRepository, storage MediaStorage, bucket string) *StoreSettingsService {

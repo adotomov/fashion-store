@@ -1043,7 +1043,8 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 	storeSettingsService := adminapplication.NewStoreSettingsService(storeSettingsRepo, storageClient, a.Config.Storage.Bucket).
 		WithHeroRepo(storeSettingsRepo).
 		WithEditorialBannerRepo(storeSettingsRepo).
-		WithHomeSectionsRepo(storeSettingsRepo)
+		WithHomeSectionsRepo(storeSettingsRepo).
+		WithTranslations(translationService)
 	storeSettingsHandler := adminhttp.NewStoreSettingsHandler(storeSettingsService)
 
 	// Notifications (transactional email). The sender is chosen the same way as
