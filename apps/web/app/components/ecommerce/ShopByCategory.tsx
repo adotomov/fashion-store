@@ -17,9 +17,15 @@ export function ShopByCategory() {
       .catch(() => setNavTypes([]));
   }, [locale]);
 
-  const types = (navTypes ?? []).filter((type) => type.categories.length > 0);
+  // Within each type we show real, product-assignable categories — never the
+  // placeholder groupers (e.g. "Men"/"Women"), which exist only to organize the
+  // hierarchy. A placeholder is replaced by its child categories; a genuine
+  // category is kept as-is.
+  const typeGroups = (navTypes ?? [])
+    .map((type) => ({ type, categories: displayCategories(type) }))
+    .filter((group) => group.categories.length > 0);
 
-  if (navTypes !== null && types.length === 0) return null;
+  if (navTypes !== null && typeGroups.length === 0) return null;
 
   return (
     <section className="mx-auto max-w-7xl px-4 py-16 sm:px-6 lg:px-8">
@@ -36,11 +42,11 @@ export function ShopByCategory() {
         </div>
       ) : (
         <div className="mt-8 flex flex-col gap-12">
-          {types.map((type) => (
+          {typeGroups.map(({ type, categories }) => (
             <CardSlider
               key={type.id}
               title={type.name}
-              items={type.categories}
+              items={categories}
               getKey={(category) => category.id}
               renderItem={(category) => <CategoryCard category={category} />}
             />
@@ -48,6 +54,14 @@ export function ShopByCategory() {
         </div>
       )}
     </section>
+  );
+}
+
+// The categories to surface for a type: each placeholder grouper is flattened
+// to its children, while a genuine (assignable) category is shown directly.
+function displayCategories(type: NavType): NavCategory[] {
+  return type.categories.flatMap((category) =>
+    category.is_placeholder ? (category.children ?? []) : [category],
   );
 }
 
