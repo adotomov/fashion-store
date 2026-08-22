@@ -60,8 +60,13 @@ async function refreshToken(currentToken: string): Promise<string> {
 export async function apiFetch<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const { method = "GET", body, auth = true, _isRetry = false } = options;
 
+  // A FormData body is a multipart upload: leave its Content-Type unset so the
+  // browser adds the multipart boundary, and send it as-is rather than
+  // JSON.stringify-ing it (which would turn it into the string "{}").
+  const isFormData = typeof FormData !== "undefined" && body instanceof FormData;
+
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
+    ...(isFormData ? {} : { "Content-Type": "application/json" }),
     ...options.headers,
   };
 
@@ -73,7 +78,7 @@ export async function apiFetch<T>(path: string, options: RequestOptions = {}): P
   const response = await fetch(`${API_BASE_URL}${path}`, {
     method,
     headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
+    body: body !== undefined ? (isFormData ? (body as FormData) : JSON.stringify(body)) : undefined,
   });
 
   if (response.status === 401 && auth && token && !_isRetry && path !== REFRESH_PATH) {
