@@ -1,0 +1,46 @@
+name: devbox pull request build
+
+# A pull request builds its apps and labels them pr-<n>. Nothing deploys from a pull request. A newer push to the
+# same pull request cancels its older build, since the older one no longer matches the branch.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  id-token: write # Workload Identity Federation
+  packages: read # pull the devbox/ci image from GitHub Container Registry
+
+env:
+  DEV_WORKLOAD_IDENTITY_PROVIDER: projects/673528779465/locations/global/workloadIdentityPools/github-actions/providers/github
+  DEV_DEPLOYER_SA: fs-deployer-dev@project-538051b7-1abf-4eab-94c.iam.gserviceaccount.com
+  DEV_REGISTRY_HOST: europe-west1-docker.pkg.dev
+
+concurrency:
+  group: devbox-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: dev # the deployer trusts the dev environment's identity
+    container:
+      image: ghcr.io/adotomov/devbox-ci:latest
+      options: --user 0:0 -v /var/run/docker.sock:/var/run/docker.sock
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.DEV_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DEV_DEPLOYER_SA }}
+      - name: Log in to the dev registry
+        run: |
+          gcloud auth login --cred-file "$GOOGLE_APPLICATION_CREDENTIALS" --quiet
+          gcloud auth configure-docker "$DEV_REGISTRY_HOST" --quiet
+      - name: Build the pull request
+        run: devbox ci build --pr "${{ github.event.pull_request.number }}"

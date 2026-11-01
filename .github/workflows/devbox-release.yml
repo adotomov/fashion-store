@@ -22,6 +22,10 @@ env:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Deploys to one environment queue behind each other; a second one waits rather than cancelling.
+    concurrency:
+      group: devbox-dev-registry
+      cancel-in-progress: false
     # The dev environment gives the job its identity: the deployer trusts the environment attribute, not the branch.
     environment: dev
     # Docker is needed for the builds. The image runs as root so it can use the runner's Docker socket.
@@ -51,6 +55,10 @@ jobs:
   deploy-dev:
     needs: release
     runs-on: ubuntu-latest
+    # Deploys to one environment queue behind each other; a second one waits rather than cancelling.
+    concurrency:
+      group: devbox-deploy-dev
+      cancel-in-progress: false
     environment: dev
     container:
       image: ghcr.io/adotomov/devbox-ci:latest
@@ -78,6 +86,10 @@ jobs:
   deploy-prod:
     needs: deploy-dev
     runs-on: ubuntu-latest
+    # Deploys to one environment queue behind each other; a second one waits rather than cancelling.
+    concurrency:
+      group: devbox-deploy-prod
+      cancel-in-progress: false
     environment: prod # required reviewers are set on the GitHub Environment
     container:
       image: ghcr.io/adotomov/devbox-ci:latest
