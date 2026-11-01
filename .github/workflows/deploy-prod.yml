@@ -5,12 +5,7 @@ name: Deploy prod
 # configure them in repo Settings -> Environments -> prod (this file only
 # references the environment; it can't define the reviewers).
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/api/**"
-      - "apps/web/**"
-      - ".github/workflows/deploy-prod.yml"
+  # Manual only: deploys now run from the devbox release workflow on version tags.
   workflow_dispatch: {}
 
 permissions:

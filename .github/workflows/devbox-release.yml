@@ -1,7 +1,7 @@
 name: devbox release
 
-# Runs on a version tag. devbox builds each app from the tagged commit, pushes the images to the dev
-# repository and labels them with the version. Nothing is deployed here; deploys are separate.
+# A version tag builds, then deploys: release -> dev -> prod. Every job runs devbox ci inside the devbox/ci image.
+# Prod waits for approval from the prod GitHub Environment's required reviewers, and devbox checks the plan hash.
 on:
   push:
     tags: ["v*"]
@@ -12,15 +12,17 @@ permissions:
   packages: read # pull the devbox/ci image from GitHub Container Registry
 
 env:
-  WORKLOAD_IDENTITY_PROVIDER: projects/673528779465/locations/global/workloadIdentityPools/github-actions/providers/github
-  DEPLOYER_SA: fs-deployer-dev@project-538051b7-1abf-4eab-94c.iam.gserviceaccount.com
+  DEV_WORKLOAD_IDENTITY_PROVIDER: projects/673528779465/locations/global/workloadIdentityPools/github-actions/providers/github
+  DEV_DEPLOYER_SA: fs-deployer-dev@project-538051b7-1abf-4eab-94c.iam.gserviceaccount.com
   DEV_REGISTRY_HOST: europe-west1-docker.pkg.dev
+  PROD_WORKLOAD_IDENTITY_PROVIDER: projects/399593875435/locations/global/workloadIdentityPools/github-actions/providers/github
+  PROD_DEPLOYER_SA: fs-deployer-prod@verani-webstore-prod.iam.gserviceaccount.com
+  PROD_REGISTRY_HOST: europe-west1-docker.pkg.dev
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    # Docker is needed for the builds, so the job talks to the runner's daemon. The image runs as root for
-    # that socket; the pipeline's container is discarded after the job.
+    # Docker is needed for the builds. The image runs as root so it can use the runner's Docker socket.
     container:
       image: ghcr.io/adotomov/devbox-ci:latest
       options: --user 0:0 -v /var/run/docker.sock:/var/run/docker.sock
@@ -35,11 +37,70 @@ jobs:
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ env.DEPLOYER_SA }}
+          workload_identity_provider: ${{ env.DEV_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DEV_DEPLOYER_SA }}
       - name: Log in to the dev registry
         run: |
           gcloud auth login --cred-file "$GOOGLE_APPLICATION_CREDENTIALS" --quiet
           gcloud auth configure-docker "$DEV_REGISTRY_HOST" --quiet
       - name: Release
         run: devbox ci release --version "${GITHUB_REF_NAME#v}"
+
+  deploy-dev:
+    needs: release
+    runs-on: ubuntu-latest
+    environment: dev
+    container:
+      image: ghcr.io/adotomov/devbox-ci:latest
+      options: --user 0:0
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.DEV_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.DEV_DEPLOYER_SA }}
+      - name: Log in to the dev registry
+        run: |
+          gcloud auth login --cred-file "$GOOGLE_APPLICATION_CREDENTIALS" --quiet
+          gcloud auth configure-docker "$DEV_REGISTRY_HOST" --quiet
+      - name: Deploy to dev
+        run: devbox ci deploy --version "${GITHUB_REF_NAME#v}" --env dev
+
+  deploy-prod:
+    needs: deploy-dev
+    runs-on: ubuntu-latest
+    environment: prod # required reviewers are set on the GitHub Environment
+    container:
+      image: ghcr.io/adotomov/devbox-ci:latest
+      options: --user 0:0
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Trust the checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.PROD_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.PROD_DEPLOYER_SA }}
+      - name: Log in to the prod registry
+        run: |
+          gcloud auth login --cred-file "$GOOGLE_APPLICATION_CREDENTIALS" --quiet
+          gcloud auth configure-docker "$PROD_REGISTRY_HOST" --quiet
+      - name: Review the plan
+        id: plan
+        run: |
+          devbox ci deploy --version "${GITHUB_REF_NAME#v}" --env prod --plan --json > plan.json
+          echo "hash=$(jq -r '.data.planHash' plan.json)" >> "$GITHUB_OUTPUT"
+      - name: Deploy to prod
+        run: devbox ci deploy --version "${GITHUB_REF_NAME#v}" --env prod --plan-hash "${{ steps.plan.outputs.hash }}" --confirm prod

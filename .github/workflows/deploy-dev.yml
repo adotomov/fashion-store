@@ -1,12 +1,7 @@
 name: Deploy dev
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "apps/api/**"
-      - "apps/web/**"
-      - ".github/workflows/deploy-dev.yml"
+  # Manual only: deploys now run from the devbox release workflow on version tags.
   workflow_dispatch: {}
 
 permissions:
