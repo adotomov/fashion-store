@@ -16,7 +16,7 @@ WORKDIR /app
 # rather than passed at container runtime. Defaults match the local devbox
 # deployment (devbox-cli's build step doesn't support custom --build-arg);
 # other environments override them via --build-arg at build time.
-ARG VITE_API_BASE_URL=http://api.api.localhost
+ARG VITE_API_BASE_URL=http://api.fashion-store.localhost
 ARG VITE_GOOGLE_CLIENT_ID=673528779465-pajifaekv8l1odrbd8mpbglo351d7r15.apps.googleusercontent.com
 # Revolut checkout widget mode: "sandbox" (default, matches local devbox + dev)
 # or "prod". This is the ONLY Revolut value that ships to the browser — no
