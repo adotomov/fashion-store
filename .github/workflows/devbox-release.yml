@@ -22,6 +22,8 @@ env:
 jobs:
   release:
     runs-on: ubuntu-latest
+    # The dev environment gives the job its identity: the deployer trusts the environment attribute, not the branch.
+    environment: dev
     # Docker is needed for the builds. The image runs as root so it can use the runner's Docker socket.
     container:
       image: ghcr.io/adotomov/devbox-ci:latest
