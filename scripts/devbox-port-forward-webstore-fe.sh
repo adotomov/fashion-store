@@ -3,7 +3,7 @@
 #
 # This exists only because Google's OAuth client console will not accept
 # devbox's default *.localhost ingress hostnames (e.g.
-# http://webstore-fe.api.localhost) as an Authorized JavaScript origin — it
+# http://webstore-fe.fashion-store.localhost) as an Authorized JavaScript origin — it
 # only accepts the literal host "localhost" (optionally with a port). The
 # api service is unaffected and stays on its normal devbox ingress URL,
 # since it's never opened directly in a browser.
@@ -17,7 +17,7 @@
 
 set -euo pipefail
 
-NAMESPACE="${DEVBOX_NAMESPACE:-api}"
+NAMESPACE="${DEVBOX_NAMESPACE:-fashion-store}"
 SERVICE="${DEVBOX_SERVICE:-webstore-fe}"
 CONTAINER_PORT="${DEVBOX_CONTAINER_PORT:-3000}"
 PORT="${1:-3000}"

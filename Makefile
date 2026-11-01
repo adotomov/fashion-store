@@ -51,7 +51,7 @@ migrate-create:
 	cd $(API_DIR) && goose -dir db/migrations create $(name) sql
 
 devbox-up:
-	cd $(API_DIR) && devbox project up
+	devbox project up --p fashion-store
 	$(MAKE) devbox-patch-migrate
 
 devbox-patch-migrate:
