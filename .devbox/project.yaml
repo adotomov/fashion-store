@@ -44,6 +44,7 @@ entities:
     args:
       - goose -dir /app/db/migrations postgres "$DATABASE_URL" up
     createdAt: 2026-11-01T08:08:45.167Z
+    execute: before
   - name: api-backfill-webp
     kind: job
     path: apps/api
