@@ -1,0 +1,75 @@
+apiVersion: devbox/v1
+cwd: /Users/atomov/src/fashion-store
+name: fashion-store
+type: monorepo
+namespace: fashion-store
+createdAt: 2026-10-25T17:15:57.950Z
+packageManager: pnpm
+workspace:
+  appsDir: apps
+  packagesDir: libs
+endpoints:
+  domainSuffix: localhost
+  protocol: http
+postgres:
+  enabled: true
+  database: fashion_store
+entities:
+  - name: api
+    kind: app
+    path: apps/api
+    port: 8080
+    runtime: go
+    expose: true
+    state: local
+    createdAt: 2026-10-25T17:15:57.957Z
+  - name: webstore-fe
+    kind: app
+    path: apps/web
+    port: 3000
+    runtime: node
+    expose: true
+    state: local
+    createdAt: 2026-10-25T17:15:57.957Z
+  - name: api-migrate
+    kind: job
+    path: apps/api
+    runtime: none
+    expose: false
+    state: live
+    runs: api
+    command:
+      - /bin/sh
+      - -c
+    args:
+      - goose -dir /app/db/migrations postgres "$DATABASE_URL" up
+    createdAt: 2026-11-01T08:08:45.167Z
+  - name: api-backfill-webp
+    kind: job
+    path: apps/api
+    runtime: none
+    expose: false
+    state: live
+    runs: api
+    command:
+      - /usr/local/bin/backfill-webp
+    createdAt: 2026-11-01T08:08:46.554Z
+environments:
+  - name: dev
+    provider: gcp-cloud-run
+    project: project-538051b7-1abf-4eab-94c
+    region: europe-west1
+    repository: europe-west1-docker.pkg.dev/project-538051b7-1abf-4eab-94c/fashion-store-dev/{entity}
+    services: {}
+    jobs: {}
+    protected: false
+  - name: prod
+    provider: gcp-cloud-run
+    project: verani-webstore-prod
+    region: europe-west1
+    repository: europe-west1-docker.pkg.dev/verani-webstore-prod/fashion-store-prod/{entity}
+    services: {}
+    jobs: {}
+    protected: false
+release:
+  mode: manual
