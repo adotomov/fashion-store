@@ -82,6 +82,13 @@ jobs:
           gcloud auth configure-docker "$DEV_REGISTRY_HOST" --quiet
       - name: Deploy to dev
         run: devbox ci deploy --version "${GITHUB_REF_NAME#v}" --env dev
+      # The prod gate needs dev's live state, and only this dev identity can read dev. Prod's job passes this file on.
+      - name: Save dev's live state for the prod gate
+        run: devbox ci observe --env dev --json > dev-live.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dev-live
+          path: dev-live.json
 
   deploy-prod:
     needs: deploy-dev
@@ -103,6 +110,9 @@ jobs:
           fetch-depth: 0
       - name: Trust the checkout
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - uses: actions/download-artifact@v4
+        with:
+          name: dev-live
       - uses: google-github-actions/auth@v2
         with:
           workload_identity_provider: ${{ env.PROD_WORKLOAD_IDENTITY_PROVIDER }}
@@ -114,7 +124,7 @@ jobs:
       - name: Review the plan
         id: plan
         run: |
-          devbox ci deploy --version "${GITHUB_REF_NAME#v}" --env prod --plan --json > plan.json
+          devbox ci deploy --version "${GITHUB_REF_NAME#v}" --env prod --plan --previous-live dev-live.json --json > plan.json
           echo "hash=$(jq -r '.data.planHash' plan.json)" >> "$GITHUB_OUTPUT"
       - name: Deploy to prod
-        run: devbox ci deploy --version "${GITHUB_REF_NAME#v}" --env prod --plan-hash "${{ steps.plan.outputs.hash }}" --confirm prod
+        run: devbox ci deploy --version "${GITHUB_REF_NAME#v}" --env prod --plan-hash "${{ steps.plan.outputs.hash }}" --previous-live dev-live.json --confirm prod
