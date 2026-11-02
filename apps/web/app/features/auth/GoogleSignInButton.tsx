@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+import { runtimeConfig } from "../../lib/config/runtime";
 import { useAuth } from "./AuthContext";
 
 declare global {
@@ -18,7 +19,7 @@ declare global {
   }
 }
 
-const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "";
+const GOOGLE_CLIENT_ID = runtimeConfig().googleClientId;
 const GSI_SCRIPT_SRC = "https://accounts.google.com/gsi/client";
 
 export function GoogleSignInButton() {
@@ -66,7 +67,7 @@ export function GoogleSignInButton() {
   if (!GOOGLE_CLIENT_ID) {
     return (
       <p className="rounded-sm border border-danger-100 bg-danger-50 px-3.5 py-2.5 text-sm text-danger-600">
-        Set VITE_GOOGLE_CLIENT_ID to enable Google sign-in.
+        Set GOOGLE_CLIENT_ID to enable Google sign-in.
       </p>
     );
   }

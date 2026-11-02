@@ -1,7 +1,9 @@
+import { runtimeConfig } from "../config/runtime";
+
 // Canonical origin of the storefront. Used to build absolute URLs for
-// canonical links, Open Graph, sitemap, and JSON-LD. Overridable at build time
-// (VITE_SITE_URL) for preview environments; defaults to production.
-export const SITE_URL = (import.meta.env.VITE_SITE_URL ?? "https://verani.bg").replace(/\/$/, "");
+// canonical links, Open Graph, sitemap, and JSON-LD. Set per environment with
+// SITE_URL on the server (see lib/config/runtime.ts); defaults to production.
+export const SITE_URL = runtimeConfig().siteUrl;
 
 // Brand name shown in <title> suffixes, og:site_name, and Organization JSON-LD.
 export const SITE_NAME = "Verani";

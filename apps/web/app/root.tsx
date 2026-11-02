@@ -5,6 +5,7 @@ import {
   Outlet,
   Scripts,
   ScrollRestoration,
+  useRouteLoaderData,
 } from "react-router";
 
 import type { Route } from "./+types/root";
@@ -18,6 +19,12 @@ import { ConsentProvider } from "./features/consent/ConsentContext";
 import { LanguageProvider } from "./features/i18n/LanguageContext";
 import { StoreSettingsProvider } from "./features/store-settings/StoreSettingsContext";
 import { WishlistProvider } from "./features/wishlist/WishlistContext";
+import { resolvedRuntimeConfig } from "./lib/config/runtime";
+
+/** Runs on the server for every page: the settings the server resolved, which the page hands to the browser. */
+export function loader() {
+  return { config: resolvedRuntimeConfig() };
+}
 
 export const links: Route.LinksFunction = () => [
   { rel: "preconnect", href: "https://fonts.googleapis.com" },
@@ -33,11 +40,15 @@ export const links: Route.LinksFunction = () => [
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
+  const root = useRouteLoaderData<typeof loader>("root");
+  // Escaping "<" keeps the JSON from closing the script early.
+  const configScript = root ? `window.__VERANI_CONFIG__=${JSON.stringify(root.config).replace(/</g, "\\u003c")};` : undefined;
   return (
     <html lang="en">
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {configScript ? <script dangerouslySetInnerHTML={{ __html: configScript }} /> : null}
         <Meta />
         <Links />
         <GoogleAnalytics />

@@ -1,7 +1,8 @@
+import { runtimeConfig } from "../config/runtime";
 import { getToken } from "../auth/session";
 import { apiFetch } from "./client";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
+const API_BASE_URL = runtimeConfig().apiBaseUrl;
 
 export type InvoiceListItem = {
   id: string;

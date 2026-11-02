@@ -12,20 +12,18 @@ FROM node:24-alpine AS build-env
 COPY . /app/
 COPY --from=development-dependencies-env /app/node_modules /app/node_modules
 WORKDIR /app
-# Vite inlines VITE_* env vars at build time, so they must be baked in here
-# rather than passed at container runtime. Defaults match the local devbox
-# deployment (devbox-cli's build step doesn't support custom --build-arg);
-# other environments override them via --build-arg at build time.
+# These VITE_* values are only the local-development fallback. Each environment
+# sets its own values at runtime (API_BASE_URL, GOOGLE_CLIENT_ID, REVOLUT_ENV,
+# GA_MEASUREMENT_ID, SITE_URL) so one image can be promoted from dev to prod.
+# See app/lib/config/runtime.ts.
 ARG VITE_API_BASE_URL=http://api.fashion-store.localhost
 ARG VITE_GOOGLE_CLIENT_ID=673528779465-pajifaekv8l1odrbd8mpbglo351d7r15.apps.googleusercontent.com
 # Revolut checkout widget mode: "sandbox" (default, matches local devbox + dev)
 # or "prod". This is the ONLY Revolut value that ships to the browser — no
 # publishable key; the per-order token carries auth.
 ARG VITE_REVOLUT_ENV=sandbox
-# Google Analytics 4 Measurement ID (G-XXXXXXXXXX). Empty by default so local
-# and devbox builds ship with analytics OFF — the frontend injects no gtag
-# script and every analytics call is a no-op until a real ID is provided via
-# --build-arg (set per-environment in the deploy workflows).
+# Google Analytics 4 Measurement ID. Empty by default, so analytics stays OFF
+# unless the environment sets GA_MEASUREMENT_ID.
 ARG VITE_GA_MEASUREMENT_ID=
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID

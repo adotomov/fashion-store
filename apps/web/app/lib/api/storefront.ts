@@ -1,7 +1,8 @@
+import { runtimeConfig } from "../config/runtime";
 import type { Money } from "../money/money";
 import { apiFetch } from "./client";
 
-export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
+export const API_BASE_URL = runtimeConfig().apiBaseUrl;
 
 // Backend money shape (amount_minor) differs from the frontend's Money type
 // (amount) — converted at this API boundary, same as lib/api/products.ts.
