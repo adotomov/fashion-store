@@ -1,7 +1,8 @@
+import { runtimeConfig } from "../config/runtime";
 import { apiFetch } from "./client";
 import { getToken } from "../auth/session";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
+const API_BASE_URL = runtimeConfig().apiBaseUrl;
 
 export type DocumentType = "terms" | "privacy" | "faq" | "shipping" | "about" | "size_guide";
 

@@ -1,3 +1,4 @@
+import { runtimeConfig } from "../config/runtime";
 import { apiFetch } from "./client";
 import { getToken } from "../auth/session";
 import type { Money } from "../money/money";
@@ -101,7 +102,7 @@ function fromRawVariant(raw: RawVariant): ProductVariant {
   return { ...raw, price_override: raw.price_override ? fromMoneyDTO(raw.price_override) : undefined };
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
+const API_BASE_URL = runtimeConfig().apiBaseUrl;
 
 export async function listProducts(): Promise<Product[]> {
   const raw = await apiFetch<RawProduct[]>("/api/v1/admin/products");

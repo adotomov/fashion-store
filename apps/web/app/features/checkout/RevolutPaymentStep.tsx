@@ -6,14 +6,15 @@ import { Icon } from "../../components/ui/Icon";
 import { Input } from "../../components/ui/Input";
 import { Text } from "../../components/ui/Text";
 import { getOrderPaymentStatus, reportCheckoutEvent } from "../../lib/api/checkout";
+import { runtimeConfig } from "../../lib/config/runtime";
 import { useLanguage } from "../i18n/LanguageContext";
 import { PaymentBrandLogos } from "./PaymentBrandLogos";
 
 type PaymentRequestInstance = ReturnType<RevolutCheckoutInstance["paymentRequest"]>;
 
-// The checkout widget mode is derived from a single build-time env var; no
-// publishable key ships in the bundle — the per-order token carries the auth.
-const REVOLUT_ENV = (import.meta.env.VITE_REVOLUT_ENV as "sandbox" | "prod" | undefined) ?? "sandbox";
+// The checkout widget mode comes from REVOLUT_ENV on the server ("sandbox" or
+// "prod"); no publishable key ships in the bundle — the per-order token carries the auth.
+const REVOLUT_ENV = runtimeConfig().revolutEnv;
 
 // Revolut validates the cardholder name from the submit call and declines a
 // non-Latin value with error.invalid-name. Bulgarian shoppers routinely enter

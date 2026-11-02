@@ -1,6 +1,7 @@
+import { runtimeConfig } from "../config/runtime";
 import { clearToken, getToken, setToken } from "../auth/session";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
+const API_BASE_URL = runtimeConfig().apiBaseUrl;
 const REFRESH_PATH = "/api/v1/auth/refresh";
 
 export class ApiError extends Error {
