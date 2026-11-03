@@ -10,8 +10,7 @@ import { track } from "./gtag";
 //
 // Money is stored as integer minor units in EUR (see lib/money/money.ts). GA
 // wants a major-unit number and a currency code, so we divide by 100 and pass
-// the underlying currency. BGN is a display-only conversion and is never
-// reported to GA.
+// the underlying currency, which is always EUR.
 
 // GA4 item as documented at
 // https://developers.google.com/analytics/devguides/collection/ga4/reference/events

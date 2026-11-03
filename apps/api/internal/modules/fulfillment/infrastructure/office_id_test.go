@@ -41,7 +41,7 @@ func TestCreateShipmentBodyShape(t *testing.T) {
 		Payment:   speedyPayment{CourierServicePayer: "SENDER"},
 	}
 	body.Service.AdditionalServices = &speedyAdditionalServices{COD: &speedyCOD{
-		Amount: 49.90, CurrencyCode: "BGN", ProcessingType: "CASH",
+		Amount: 49.90, CurrencyCode: "EUR", ProcessingType: "CASH",
 	}}
 
 	raw, err := json.Marshal(body)
@@ -92,8 +92,8 @@ func TestCreateShipmentBodyShape(t *testing.T) {
 	if _, bad := cod["currency"]; bad {
 		t.Errorf("COD must use currencyCode, not currency: %s", raw)
 	}
-	if cc, ok := cod["currencyCode"].(string); !ok || cc != "BGN" {
-		t.Errorf("cod.currencyCode should be BGN, got %v (%s)", cod["currencyCode"], raw)
+	if cc, ok := cod["currencyCode"].(string); !ok || cc != "EUR" {
+		t.Errorf("cod.currencyCode should be EUR, got %v (%s)", cod["currencyCode"], raw)
 	}
 }
 

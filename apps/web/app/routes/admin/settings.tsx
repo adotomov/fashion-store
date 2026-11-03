@@ -470,7 +470,6 @@ function IdentityTab() {
               <Select id="currency" {...field("currency")}>
                 <option value="EUR">EUR — Euro</option>
                 <option value="USD">USD — US Dollar</option>
-                <option value="BGN">BGN — Bulgarian Lev</option>
                 <option value="GBP">GBP — British Pound</option>
               </Select>
             </FormField>

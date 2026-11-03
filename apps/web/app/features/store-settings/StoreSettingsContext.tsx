@@ -8,8 +8,7 @@ type StoreBranding = {
   storeName: string;
   logoUrl: string | null;
   // The store's configured BCP-47 locale (e.g. "bg-BG"), set under Settings →
-  // Identity. Drives store-wide, locale-dependent formatting such as the
-  // Bulgarian dual-currency (EUR + BGN) price display.
+  // Identity. Drives store-wide, locale-dependent formatting.
   storeLocale: string;
   // Social profile URLs shown in the footer — empty string means "not set",
   // in which case the footer hides that icon.

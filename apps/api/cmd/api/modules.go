@@ -254,7 +254,7 @@ func (a *checkoutNotifierAdapter) PaymentFailed(ctx context.Context, n checkouta
 }
 
 // formatMoney renders minor units for display. The currency code is spelled out
-// rather than symbolised because the store quotes both BGN and EUR and a bare
+// rather than symbolised because a bare
 // symbol would be ambiguous.
 func formatMoney(m money.Money) string {
 	if m.Currency == "" {
