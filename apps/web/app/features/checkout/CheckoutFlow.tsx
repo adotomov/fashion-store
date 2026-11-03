@@ -37,7 +37,7 @@ import { AddressForm, type StructuredAddress, emptyStructuredAddress, isStructur
 import { Combobox, type ComboboxOption } from "../../components/ui/Combobox";
 import { type Office, searchOffices, searchSites } from "../../lib/api/logistics";
 import { type Address, listAddresses } from "../../lib/api/users";
-import { formatMoneyDual } from "../../lib/money/money";
+import { formatMoney } from "../../lib/money/money";
 import { isValidPhone } from "../../lib/phone";
 import { useAuth } from "../auth/AuthContext";
 import { useCart } from "../cart/CartContext";
@@ -665,7 +665,7 @@ export function CheckoutFlow() {
                   selected={deliveryMethod === method.code}
                   onClick={() => setDeliveryMethod(method.code)}
                   title={method.name}
-                  description={method.fee.amount === 0 ? t("checkout.free", "Free") : formatMoneyDual(method.fee, storeLocale)}
+                  description={method.fee.amount === 0 ? t("checkout.free", "Free") : formatMoney(method.fee)}
                 />
               ))}
             </div>
@@ -750,7 +750,7 @@ export function CheckoutFlow() {
                     orderNumber={paymentInitiation.order_number}
                     cardHolderName={contact.full_name}
                     email={contact.email}
-                    payLabel={`${t("checkout.pay", "Pay")} ${formatMoneyDual(paymentInitiation.amount, storeLocale)}`}
+                    payLabel={`${t("checkout.pay", "Pay")} ${formatMoney(paymentInitiation.amount)}`}
                     onPaid={handleCardPaid}
                     onFailed={handleCardFailed}
                   />
@@ -850,18 +850,18 @@ export function CheckoutFlow() {
                 <div className="mt-4 flex flex-col gap-2 text-sm text-stone-700">
                   <SummaryRow label={t("checkout.delivery_label", "Delivery")} value={selectedDeliveryMethod?.name ?? ""} />
                   <SummaryRow label={t("checkout.payment_label", "Payment")} value={paymentMethod ? paymentMethodLabels[paymentMethod] : ""} />
-                  <SummaryRow label={t("checkout.subtotal", "Subtotal")} value={formatMoneyDual(subtotal, storeLocale)} />
+                  <SummaryRow label={t("checkout.subtotal", "Subtotal")} value={formatMoney(subtotal)} />
                   {appliedDiscount && (
                     <SummaryRow
                       label={`${t("checkout.discount_label", "Discount")} (${appliedDiscount.code})`}
-                      value={`−${formatMoneyDual({ amount: discountAmount, currency: subtotal.currency }, storeLocale)}`}
+                      value={`−${formatMoney({ amount: discountAmount, currency: subtotal.currency })}`}
                     />
                   )}
                   <SummaryRow
                     label={t("checkout.delivery_fee", "Delivery fee")}
-                    value={selectedDeliveryMethod?.fee.amount ? formatMoneyDual(selectedDeliveryMethod.fee, storeLocale) : t("checkout.free", "Free")}
+                    value={selectedDeliveryMethod?.fee.amount ? formatMoney(selectedDeliveryMethod.fee) : t("checkout.free", "Free")}
                   />
-                  <SummaryRow label={t("checkout.total", "Total")} value={formatMoneyDual(grandTotal, storeLocale)} emphasize />
+                  <SummaryRow label={t("checkout.total", "Total")} value={formatMoney(grandTotal)} emphasize />
                 </div>
                 {placeError && (
                   <Text size="sm" tone="danger" className="mt-4">
@@ -901,7 +901,7 @@ export function CheckoutFlow() {
                 {line.variant_label ? ` — ${line.variant_label}` : ""}
                 <span className="ml-2 text-stone-400">× {line.quantity}</span>
               </span>
-              <span className="text-stone-600">{formatMoneyDual(line.line_total, storeLocale)}</span>
+              <span className="text-stone-600">{formatMoney(line.line_total)}</span>
             </li>
           ))}
         </ul>
@@ -910,7 +910,7 @@ export function CheckoutFlow() {
             {t("checkout.subtotal", "Subtotal")}
           </Text>
           <Text size="sm" className="font-medium">
-            {formatMoneyDual(summarySubtotal, storeLocale)}
+            {formatMoney(summarySubtotal)}
           </Text>
         </div>
         <div className="mt-2 flex items-center justify-between">
@@ -918,7 +918,7 @@ export function CheckoutFlow() {
             {t("checkout.delivery_label", "Delivery")}
           </Text>
           <Text size="sm" tone="muted">
-            {summaryDeliveryFee ? (summaryDeliveryFee.amount ? formatMoneyDual(summaryDeliveryFee, storeLocale) : t("checkout.free", "Free")) : "–"}
+            {summaryDeliveryFee ? (summaryDeliveryFee.amount ? formatMoney(summaryDeliveryFee) : t("checkout.free", "Free")) : "–"}
           </Text>
         </div>
 
@@ -933,7 +933,7 @@ export function CheckoutFlow() {
                   {t("checkout.discount_label", "Discount")}{summaryDiscount.code ? ` (${summaryDiscount.code})` : ""}
                 </Text>
                 <Text size="sm" tone="muted">
-                  −{formatMoneyDual(summaryDiscount.amount, storeLocale)}
+                  −{formatMoney(summaryDiscount.amount)}
                 </Text>
               </div>
             )
@@ -952,7 +952,7 @@ export function CheckoutFlow() {
                 </button>
               </div>
               <Text size="sm" tone="muted">
-                −{formatMoneyDual({ amount: discountAmount, currency: subtotal.currency }, storeLocale)}
+                −{formatMoney({ amount: discountAmount, currency: subtotal.currency })}
               </Text>
             </div>
           ) : (
@@ -983,7 +983,7 @@ export function CheckoutFlow() {
 
         <div className="mt-2 flex items-center justify-between border-t border-stone-200 pt-4">
           <Text className="font-medium">{t("checkout.total", "Total")}</Text>
-          <Text className="font-medium">{formatMoneyDual(summaryTotal, storeLocale)}</Text>
+          <Text className="font-medium">{formatMoney(summaryTotal)}</Text>
         </div>
         </Card>
       </div>
@@ -1074,12 +1074,12 @@ function OrderSummary({ order, totalLabel }: { order: PlacedOrder; totalLabel: s
             {item.variant_label ? ` — ${item.variant_label}` : ""}
             <span className="ml-2 text-stone-400">× {item.quantity}</span>
           </span>
-          <span className="text-stone-600">{formatMoneyDual(item.unit_price, storeLocale)}</span>
+          <span className="text-stone-600">{formatMoney(item.unit_price)}</span>
         </div>
       ))}
       <div className="mt-2 flex items-center justify-between border-t border-stone-200 pt-2 font-medium text-stone-900">
         <span>{totalLabel}</span>
-        <span>{formatMoneyDual(order.total, storeLocale)}</span>
+        <span>{formatMoney(order.total)}</span>
       </div>
     </div>
   );

@@ -14,7 +14,7 @@ import { trackRemoveFromCart, trackViewCart } from "../lib/analytics/ecommerce";
 import type { CartItem } from "../lib/api/cart";
 import { resolveImageUrl } from "../lib/api/storefront";
 import { buildMeta } from "../lib/seo/meta";
-import { formatMoneyDual } from "../lib/money/money";
+import { formatMoney } from "../lib/money/money";
 
 export const handle = { title: "Cart" };
 
@@ -76,7 +76,7 @@ export default function CartPage() {
                     {t("cart.subtotal", "Subtotal")}
                   </Text>
                   <Text size="sm" className="font-medium">
-                    {formatMoneyDual(cart!.subtotal, storeLocale)}
+                    {formatMoney(cart!.subtotal)}
                   </Text>
                 </div>
                 {hasUnavailableItems ? (

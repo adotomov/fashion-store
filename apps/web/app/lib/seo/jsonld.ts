@@ -3,7 +3,7 @@ import { type StorefrontProductDetail, resolveImageUrl } from "../api/storefront
 import { SITE_NAME, SITE_URL, absoluteUrl } from "./config";
 
 // Money is stored in EUR minor units (see lib/money). Schema.org prices are
-// decimal strings in major units; currency is always EUR (BGN is display-only).
+// decimal strings in major units; currency is always EUR.
 function priceString(money: Money): string {
   return (money.amount / 100).toFixed(2);
 }

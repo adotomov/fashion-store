@@ -49,8 +49,7 @@ Measure the health of the store and the full purchase funnel:
   manually on route change (GA enhanced measurement's history-based page
   tracking is unreliable for this setup).
 - Money is **EUR** in minor units ([apps/web/app/lib/money/money.ts](../apps/web/app/lib/money/money.ts)).
-  GA `value` = `amount_minor / 100`, `currency: "EUR"`. (BGN is a display-only
-  conversion; do not report it to GA.)
+  GA `value` = `amount_minor / 100`, `currency: "EUR"`. The site shows EUR only.
 - Registration is Google-based: a brand-new user finishes with
   `completePhoneSetup` in
   [apps/web/app/features/auth/AuthContext.tsx](../apps/web/app/features/auth/AuthContext.tsx) —
