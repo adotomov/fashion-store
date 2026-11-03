@@ -64,6 +64,53 @@ environments:
     services: {}
     jobs: {}
     protected: false
+    env:
+      api:
+        FULFILLMENT_POLL_INTERVAL: 15m
+        EMAIL_MODE: sendgrid
+        EMAIL_FROM: info@verani.bg
+        OTEL_TRACES_ENABLED: "true"
+        STOREFRONT_URL: https://dev.verani.bg
+        STORAGE_ENDPOINT: https://storage.googleapis.com
+        LOG_LEVEL: info
+        PUBLIC_API_URL: https://api.dev.verani.bg
+        HTTP_ADDR: :8080
+        STORAGE_BUCKET: fashion-store-media-dev
+        EMAIL_FROM_NAME: Verani
+        GCP_PROJECT_ID: project-538051b7-1abf-4eab-94c
+        REVOLUT_MODE: sandbox
+        APP_NAME: fashion-store-api
+        OTEL_METRICS_ENABLED: "true"
+        LOG_FORMAT: json
+        OTEL_TRACE_SAMPLE_RATIO: "0.1"
+        STORAGE_INSECURE_SKIP_TLS: "false"
+        STORAGE_PROJECT_ID: project-538051b7-1abf-4eab-94c
+        APP_ENV: dev
+        REVOLUT_API_VERSION: 2024-09-01
+        CORS_ALLOWED_ORIGINS: https://dev.verani.bg,https://webstore-fe-lknowv3pca-ew.a.run.app
+        SPEEDY_MODE: fake
+      webstore-fe:
+        API_BASE_URL: https://api.dev.verani.bg
+        GOOGLE_CLIENT_ID: 673528779465-pajifaekv8l1odrbd8mpbglo351d7r15.apps.googleusercontent.com
+        REVOLUT_ENV: sandbox
+        SITE_URL: https://verani.bg
+      api-backfill-webp:
+        STORAGE_ENDPOINT: https://storage.googleapis.com
+        STORAGE_PROJECT_ID: project-538051b7-1abf-4eab-94c
+        STORAGE_BUCKET: fashion-store-media-dev
+        STORAGE_INSECURE_SKIP_TLS: "false"
+    secrets:
+      api:
+        GOOGLE_CLIENT_ID: fs-dev-google-client-id
+        SENDGRID_API_KEY: fs-dev-sendgrid-api-key
+        REVOLUT_API_KEY: fs-dev-revolut-api-key
+        REVOLUT_WEBHOOK_SECRET: fs-dev-revolut-webhook-secret
+        AUTH_SIGNING_SECRET: fs-dev-auth-signing-secret
+        DATABASE_URL: fs-dev-database-url
+      api-migrate:
+        DATABASE_URL: fs-dev-database-url
+      api-backfill-webp:
+        DATABASE_URL: fs-dev-database-url
   - name: prod
     provider: gcp-cloud-run
     project: verani-webstore-prod
@@ -72,5 +119,53 @@ environments:
     services: {}
     jobs: {}
     protected: false
+    env:
+      api:
+        FULFILLMENT_POLL_INTERVAL: 15m
+        STOREFRONT_URL: https://verani.bg
+        REVOLUT_MODE: prod
+        APP_ENV: prod
+        EMAIL_MODE: sendgrid
+        EMAIL_FROM: info@verani.bg
+        GCP_PROJECT_ID: verani-webstore-prod
+        STORAGE_ENDPOINT: https://storage.googleapis.com
+        LOG_LEVEL: info
+        HTTP_ADDR: :8080
+        EMAIL_FROM_NAME: Verani
+        APP_NAME: fashion-store-api
+        OTEL_TRACES_ENABLED: "false"
+        SPEEDY_MODE: real
+        LOG_FORMAT: json
+        OTEL_TRACE_SAMPLE_RATIO: "0.1"
+        STORAGE_INSECURE_SKIP_TLS: "false"
+        OTEL_METRICS_ENABLED: "false"
+        CORS_ALLOWED_ORIGINS: https://verani.bg,https://www.verani.bg
+        PUBLIC_API_URL: https://api.verani.bg
+        REVOLUT_API_VERSION: 2024-09-01
+        STORAGE_PROJECT_ID: verani-webstore-prod
+        STORAGE_BUCKET: fashion-store-media-prod
+      api-backfill-webp:
+        STORAGE_ENDPOINT: https://storage.googleapis.com
+        STORAGE_PROJECT_ID: verani-webstore-prod
+        STORAGE_BUCKET: fashion-store-media-prod
+        STORAGE_INSECURE_SKIP_TLS: "false"
+      webstore-fe:
+        API_BASE_URL: https://api.verani.bg
+        GOOGLE_CLIENT_ID: 399593875435-vkfiip6lrhh9r5d8a5jv7s3rnpc88djn.apps.googleusercontent.com
+        REVOLUT_ENV: prod
+        GA_MEASUREMENT_ID: G-T02R7XERDV
+        SITE_URL: https://verani.bg
+    secrets:
+      api:
+        SENDGRID_API_KEY: fs-prod-sendgrid-api-key
+        AUTH_SIGNING_SECRET: fs-prod-auth-signing-secret
+        GOOGLE_CLIENT_ID: fs-prod-google-client-id
+        REVOLUT_WEBHOOK_SECRET: fs-prod-revolut-webhook-secret
+        DATABASE_URL: fs-prod-database-url
+        REVOLUT_API_KEY: fs-prod-revolut-api-key
+      api-migrate:
+        DATABASE_URL: fs-prod-database-url
+      api-backfill-webp:
+        DATABASE_URL: fs-prod-database-url
 release:
   mode: manual
