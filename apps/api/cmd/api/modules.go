@@ -890,6 +890,19 @@ type checkoutDiscountGatewayAdapter struct {
 	promotions *promotionsapplication.Service
 }
 
+// checkoutShippingGatewayAdapter reads the free-shipping threshold from the store settings.
+type checkoutShippingGatewayAdapter struct {
+	settings *admininfra.PostgresStoreSettingsRepository
+}
+
+func (a *checkoutShippingGatewayAdapter) FreeShippingThresholdMinor(ctx context.Context) (int64, error) {
+	settings, err := a.settings.Get(ctx)
+	if err != nil {
+		return 0, err
+	}
+	return settings.FreeShippingThresholdMinor, nil
+}
+
 func (a *checkoutDiscountGatewayAdapter) ValidateCode(ctx context.Context, code string) (checkoutapplication.DiscountInfo, error) {
 	dc, err := a.promotions.ValidateCode(ctx, code)
 	if err != nil {
@@ -1150,7 +1163,7 @@ func buildRegistrars(a *app.App) ([]app.RouteRegistrar, *fulfillmentapplication.
 	checkoutFulfillmentGateway := &checkoutFulfillmentGatewayAdapter{fulfillment: fulfillmentService}
 	checkoutDiscountGateway := &checkoutDiscountGatewayAdapter{promotions: promotionsService}
 	checkoutWebhookStore := checkoutinfra.NewPostgresWebhookEventStore(a.DB)
-	checkoutService := checkoutapplication.NewService(checkoutCartGateway, checkoutInventoryGateway, checkoutUserGateway, checkoutOrderGateway, checkoutPaymentGateway, checkoutFulfillmentGateway, checkoutDiscountGateway, deferredInvoices, checkoutWebhookStore, a.Logger).
+	checkoutService := checkoutapplication.NewService(checkoutCartGateway, checkoutInventoryGateway, checkoutUserGateway, checkoutOrderGateway, checkoutPaymentGateway, checkoutFulfillmentGateway, checkoutDiscountGateway, &checkoutShippingGatewayAdapter{settings: storeSettingsRepo}, deferredInvoices, checkoutWebhookStore, a.Logger).
 		WithNotifier(&checkoutNotifierAdapter{notifications: notificationsService, users: usersService})
 	checkoutHandler := checkouthttp.NewHandler(checkoutService, a.Config.Payments.RevolutWebhookSecret, a.Logger)
 	checkoutModule := checkouthttp.NewModule(checkoutHandler, authhttp.OptionalAuth(authService), requireAdmin)
@@ -1206,7 +1219,7 @@ var defaultUIStrings = map[string]string{
 	"footer.company":          "Company",
 	"footer.contact_us":       "Contact Us",
 	"footer.faq":              "FAQ",
-	"footer.free_shipping":    "Free shipping over $100",
+	"footer.free_shipping":    "Free shipping over {amount}",
 	"footer.help":             "Help",
 	"footer.privacy_policy":   "Privacy Policy",
 	"footer.shipping_returns": "Shipping & Returns",

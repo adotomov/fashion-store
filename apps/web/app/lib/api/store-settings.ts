@@ -16,6 +16,8 @@ export type StoreSettings = {
   instagram_url?: string;
   opening_hours?: string;
   map_location?: string;
+  // The free-shipping threshold in EUR minor units: an order at or above it ships free.
+  free_shipping_threshold_minor?: number;
   // Relative, admin-gated proxy paths — never plain external URLs.
   logo_url?: string;
   about_cover_url?: string;
@@ -40,6 +42,7 @@ export function updateStoreSettings(
     instagram_url: string;
     opening_hours: string;
     map_location: string;
+    free_shipping_threshold_minor: number;
   }>,
 ): Promise<StoreSettings> {
   return apiFetch<StoreSettings>("/api/v1/admin/store-settings", { method: "PATCH", body: input });

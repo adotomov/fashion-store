@@ -1,4 +1,6 @@
 import { useLanguage } from "../../features/i18n/LanguageContext";
+import { useStoreBranding } from "../../features/store-settings/StoreSettingsContext";
+import { withThreshold } from "../../lib/shipping/free-shipping";
 import { Icon, type IconName } from "../ui/Icon";
 
 type TrustItem = {
@@ -19,7 +21,7 @@ const ITEMS: TrustItem[] = [
     titleKey: "trust.shipping_title",
     titleFallback: "Free shipping",
     subtitleKey: "trust.shipping_subtitle",
-    subtitleFallback: "On orders over $100",
+    subtitleFallback: "On orders over {amount}",
   },
   {
     icon: "returns",
@@ -46,6 +48,7 @@ const ITEMS: TrustItem[] = [
 
 export function TrustBar() {
   const { t } = useLanguage();
+  const { freeShippingThresholdMinor, storeLocale } = useStoreBranding();
 
   return (
     <section className="border-b border-stone-200 bg-stone-50">
@@ -60,7 +63,7 @@ export function TrustBar() {
                 {t(item.titleKey, item.titleFallback)}
               </span>
               <span className="text-xs text-stone-500">
-                {t(item.subtitleKey, item.subtitleFallback)}
+                {withThreshold(t(item.subtitleKey, item.subtitleFallback), freeShippingThresholdMinor, storeLocale)}
               </span>
             </span>
           </div>

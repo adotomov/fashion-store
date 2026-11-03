@@ -550,6 +550,7 @@ function ContactsTab() {
           contact_phone: settings.contact_phone ?? "",
           opening_hours: settings.opening_hours ?? "",
           map_location: settings.map_location ?? "",
+          free_shipping_threshold_minor: settings.free_shipping_threshold_minor ?? 0,
         }),
       );
       setSavedAt(Date.now());
@@ -616,6 +617,24 @@ function ContactsTab() {
                   id="mapLocation"
                   placeholder="42.6977,23.3219"
                   {...field("map_location")}
+                />
+              </FormField>
+            </div>
+            <div className="mt-4">
+              <FormField
+                label="Free shipping from (EUR)"
+                htmlFor="freeShippingThreshold"
+                hint="Orders whose subtotal, after discounts, reaches this amount ship free. Enter 0 to ship free on every order."
+              >
+                <Input
+                  id="freeShippingThreshold"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={(settings.free_shipping_threshold_minor ?? 0) / 100}
+                  onChange={(e) =>
+                    setSettings((s) => (s ? { ...s, free_shipping_threshold_minor: Math.round(Number(e.target.value) * 100) } : s))
+                  }
                 />
               </FormField>
             </div>

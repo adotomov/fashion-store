@@ -38,6 +38,15 @@ func RequiresOffice(deliveryMethodCode string) bool {
 	}
 }
 
+// DeliveryFee is what a method charges an order. An order whose subtotal (after discounts, before delivery)
+// reaches the store's free-shipping threshold pays nothing; any other order pays the method's own fee.
+func DeliveryFee(method DeliveryMethod, subtotal, threshold int64) money.Money {
+	if method.Fee.AmountMinor == 0 || subtotal < threshold {
+		return method.Fee
+	}
+	return money.Money{AmountMinor: 0, Currency: method.Fee.Currency}
+}
+
 func FindDeliveryMethod(code string) (DeliveryMethod, bool) {
 	for _, m := range DeliveryMethods() {
 		if m.Code == code {

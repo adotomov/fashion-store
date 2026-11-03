@@ -15,6 +15,7 @@ import type { CartItem } from "../lib/api/cart";
 import { resolveImageUrl } from "../lib/api/storefront";
 import { buildMeta } from "../lib/seo/meta";
 import { formatMoney } from "../lib/money/money";
+import { qualifiesForFreeShipping, withThreshold } from "../lib/shipping/free-shipping";
 
 export const handle = { title: "Cart" };
 
@@ -24,7 +25,7 @@ export function meta() {
 
 export default function CartPage() {
   const { t } = useLanguage();
-  const { storeLocale } = useStoreBranding();
+  const { storeLocale, freeShippingThresholdMinor } = useStoreBranding();
   const { cart, isLoading } = useCart();
   const items = cart?.items ?? [];
   // Any line whose requested quantity exceeds what's in stock (including fully
@@ -79,6 +80,13 @@ export default function CartPage() {
                     {formatMoney(cart!.subtotal)}
                   </Text>
                 </div>
+                {freeShippingThresholdMinor !== null && (
+                  <Text size="sm" className="text-stone-500">
+                    {qualifiesForFreeShipping(cart!.subtotal.amount, freeShippingThresholdMinor)
+                      ? t("cart.free_shipping_reached", "Your order ships free")
+                      : withThreshold(t("cart.free_shipping_hint", "Free shipping on orders over {amount}"), freeShippingThresholdMinor, storeLocale)}
+                  </Text>
+                )}
                 {hasUnavailableItems ? (
                   <>
                     <button

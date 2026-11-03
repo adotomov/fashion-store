@@ -94,6 +94,12 @@ func (s *StoreSettingsService) UpdateSettings(ctx context.Context, input UpdateS
 	if input.MapLocation != nil {
 		settings.MapLocation = input.MapLocation
 	}
+	if input.FreeShippingThresholdMinor != nil {
+		if *input.FreeShippingThresholdMinor < 0 {
+			return nil, domain.ErrInvalidFreeShippingThreshold
+		}
+		settings.FreeShippingThresholdMinor = *input.FreeShippingThresholdMinor
+	}
 
 	return s.repo.Update(ctx, *settings)
 }

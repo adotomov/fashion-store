@@ -22,7 +22,7 @@ const storeSettingsColumns = `id, store_name, legal_entity_name, locale, currenc
 	contact_email, contact_phone, company_description, facebook_url, instagram_url, opening_hours, map_location,
 	logo_bucket, logo_object_key, logo_content_type, logo_size_bytes,
 	about_cover_bucket, about_cover_object_key, about_cover_content_type, about_cover_size_bytes,
-	store_image_bucket, store_image_object_key, store_image_content_type, store_image_size_bytes,
+	store_image_bucket, store_image_object_key, store_image_content_type, store_image_size_bytes, free_shipping_threshold_minor,
 	created_at, updated_at`
 
 // Get returns the single store_settings row, seeded by migration — there is
@@ -40,7 +40,7 @@ func (r *PostgresStoreSettingsRepository) Update(ctx context.Context, settings d
 			facebook_url = $9, instagram_url = $10, opening_hours = $11, map_location = $12,
 			logo_bucket = $13, logo_object_key = $14, logo_content_type = $15, logo_size_bytes = $16,
 			about_cover_bucket = $17, about_cover_object_key = $18, about_cover_content_type = $19, about_cover_size_bytes = $20,
-			store_image_bucket = $21, store_image_object_key = $22, store_image_content_type = $23, store_image_size_bytes = $24,
+			store_image_bucket = $21, store_image_object_key = $22, store_image_content_type = $23, store_image_size_bytes = $24, free_shipping_threshold_minor = $25,
 			updated_at = NOW()
 		WHERE id = $1
 		RETURNING `+storeSettingsColumns,
@@ -49,7 +49,7 @@ func (r *PostgresStoreSettingsRepository) Update(ctx context.Context, settings d
 		settings.FacebookURL, settings.InstagramURL, settings.OpeningHours, settings.MapLocation,
 		settings.LogoBucket, settings.LogoObjectKey, settings.LogoContentType, settings.LogoSizeBytes,
 		settings.AboutCoverBucket, settings.AboutCoverObjectKey, settings.AboutCoverContentType, settings.AboutCoverSizeBytes,
-		settings.StoreImageBucket, settings.StoreImageObjectKey, settings.StoreImageContentType, settings.StoreImageSizeBytes)
+		settings.StoreImageBucket, settings.StoreImageObjectKey, settings.StoreImageContentType, settings.StoreImageSizeBytes, settings.FreeShippingThresholdMinor)
 
 	return scanStoreSettings(row)
 }
@@ -61,7 +61,7 @@ func scanStoreSettings(row pgx.Row) (*domain.StoreSettings, error) {
 		&s.ContactEmail, &s.ContactPhone, &s.CompanyDescription, &s.FacebookURL, &s.InstagramURL, &s.OpeningHours, &s.MapLocation,
 		&s.LogoBucket, &s.LogoObjectKey, &s.LogoContentType, &s.LogoSizeBytes,
 		&s.AboutCoverBucket, &s.AboutCoverObjectKey, &s.AboutCoverContentType, &s.AboutCoverSizeBytes,
-		&s.StoreImageBucket, &s.StoreImageObjectKey, &s.StoreImageContentType, &s.StoreImageSizeBytes,
+		&s.StoreImageBucket, &s.StoreImageObjectKey, &s.StoreImageContentType, &s.StoreImageSizeBytes, &s.FreeShippingThresholdMinor,
 		&s.CreatedAt, &s.UpdatedAt,
 	)
 	if err != nil {

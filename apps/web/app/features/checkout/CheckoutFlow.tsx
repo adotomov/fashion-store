@@ -38,6 +38,7 @@ import { Combobox, type ComboboxOption } from "../../components/ui/Combobox";
 import { type Office, searchOffices, searchSites } from "../../lib/api/logistics";
 import { type Address, listAddresses } from "../../lib/api/users";
 import { formatMoney } from "../../lib/money/money";
+import { feeFor } from "../../lib/shipping/free-shipping";
 import { isValidPhone } from "../../lib/phone";
 import { useAuth } from "../auth/AuthContext";
 import { useCart } from "../cart/CartContext";
@@ -80,7 +81,7 @@ function addressFromSaved(a: Address): CheckoutAddress {
 
 export function CheckoutFlow() {
   const { t, locale } = useLanguage();
-  const { storeLocale } = useStoreBranding();
+  const { freeShippingThresholdMinor } = useStoreBranding();
   const { isAuthenticated, profile } = useAuth();
   const { cart, refresh: refreshCart } = useCart();
   const location = useLocation();
@@ -304,8 +305,12 @@ export function CheckoutFlow() {
   const discountAmount = appliedDiscount
     ? Math.round(subtotal.amount * (appliedDiscount.value_percent / 100))
     : 0;
+  const subtotalAfterDiscount = subtotal.amount - discountAmount;
+  const deliveryFee = selectedDeliveryMethod
+    ? feeFor(selectedDeliveryMethod.fee, subtotalAfterDiscount, freeShippingThresholdMinor)
+    : null;
   const grandTotal = {
-    amount: subtotal.amount - discountAmount + (selectedDeliveryMethod?.fee.amount ?? 0),
+    amount: subtotalAfterDiscount + (deliveryFee?.amount ?? 0),
     currency: subtotal.currency,
   };
 
@@ -331,7 +336,7 @@ export function CheckoutFlow() {
   const summarySubtotal = payingByCard
     ? { amount: summaryLines.reduce((sum, l) => sum + l.line_total.amount, 0), currency: grandTotal.currency }
     : subtotal;
-  const summaryDeliveryFee = payingByCard ? pendingSnapshot!.delivery_fee : selectedDeliveryMethod?.fee ?? null;
+  const summaryDeliveryFee = payingByCard ? pendingSnapshot!.delivery_fee : deliveryFee;
   const summaryDiscount = payingByCard
     ? pendingSnapshot!.discount_amount
       ? { code: pendingSnapshot!.discount_code ?? "", amount: pendingSnapshot!.discount_amount }
@@ -665,7 +670,7 @@ export function CheckoutFlow() {
                   selected={deliveryMethod === method.code}
                   onClick={() => setDeliveryMethod(method.code)}
                   title={method.name}
-                  description={method.fee.amount === 0 ? t("checkout.free", "Free") : formatMoney(method.fee)}
+                  description={feeFor(method.fee, subtotalAfterDiscount, freeShippingThresholdMinor).amount === 0 ? t("checkout.free", "Free") : formatMoney(method.fee)}
                 />
               ))}
             </div>
@@ -859,7 +864,7 @@ export function CheckoutFlow() {
                   )}
                   <SummaryRow
                     label={t("checkout.delivery_fee", "Delivery fee")}
-                    value={selectedDeliveryMethod?.fee.amount ? formatMoney(selectedDeliveryMethod.fee) : t("checkout.free", "Free")}
+                    value={deliveryFee?.amount ? formatMoney(deliveryFee) : t("checkout.free", "Free")}
                   />
                   <SummaryRow label={t("checkout.total", "Total")} value={formatMoney(grandTotal)} emphasize />
                 </div>
@@ -1064,7 +1069,6 @@ function SummaryRow({ label, value, emphasize }: { label: string; value: string;
 }
 
 function OrderSummary({ order, totalLabel }: { order: PlacedOrder; totalLabel: string }) {
-  const { storeLocale } = useStoreBranding();
   return (
     <div className="mt-6 flex flex-col gap-2 text-sm">
       {order.items.map((item, i) => (
