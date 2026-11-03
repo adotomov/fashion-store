@@ -236,6 +236,8 @@ export type StorefrontStoreSettings = {
   instagram_url?: string;
   opening_hours?: string;
   map_location?: string;
+  // The free-shipping threshold in EUR minor units: an order at or above it ships free.
+  free_shipping_threshold_minor?: number;
   logo_url?: string;
   about_cover_url?: string;
   store_image_url?: string;

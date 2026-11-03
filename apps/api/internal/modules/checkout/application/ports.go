@@ -452,6 +452,12 @@ type DiscountGateway interface {
 	UseCode(ctx context.Context, codeID uuid.UUID) error
 }
 
+// ShippingGateway reads the store's shipping rules from the store settings, without importing the admin
+// module's domain. The threshold is in EUR minor units.
+type ShippingGateway interface {
+	FreeShippingThresholdMinor(ctx context.Context) (int64, error)
+}
+
 // InvoiceGateway triggers invoice generation without importing the invoicing
 // module's domain directly — same hexagonal pattern as FulfillmentGateway.
 type InvoiceGateway interface {

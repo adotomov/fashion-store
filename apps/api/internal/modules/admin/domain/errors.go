@@ -3,12 +3,13 @@ package domain
 import "errors"
 
 var (
-	ErrLogoNotFound              = errors.New("store logo not found")
-	ErrDocumentNotFound          = errors.New("document not found")
-	ErrInvalidDocumentType       = errors.New("invalid document type")
-	ErrAddressNotFound           = errors.New("store address not found")
-	ErrHeroBackgroundNotFound    = errors.New("hero background image not found")
+	ErrLogoNotFound                 = errors.New("store logo not found")
+	ErrInvalidFreeShippingThreshold = errors.New("the free-shipping threshold cannot be negative")
+	ErrDocumentNotFound             = errors.New("document not found")
+	ErrInvalidDocumentType          = errors.New("invalid document type")
+	ErrAddressNotFound              = errors.New("store address not found")
+	ErrHeroBackgroundNotFound       = errors.New("hero background image not found")
 	ErrEditorialBannerImageNotFound = errors.New("editorial banner image not found")
-	ErrAboutCoverNotFound        = errors.New("about cover image not found")
-	ErrStoreImageNotFound        = errors.New("store image not found")
+	ErrAboutCoverNotFound           = errors.New("about cover image not found")
+	ErrStoreImageNotFound           = errors.New("store image not found")
 )

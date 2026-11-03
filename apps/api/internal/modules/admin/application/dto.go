@@ -14,6 +14,8 @@ type UpdateStoreSettingsInput struct {
 	InstagramURL       *string
 	OpeningHours       *string
 	MapLocation        *string
+	// FreeShippingThresholdMinor is in EUR minor units; zero makes shipping free on every order.
+	FreeShippingThresholdMinor *int64
 }
 
 // UpsertStoreAddressInput carries the fields for creating or updating a

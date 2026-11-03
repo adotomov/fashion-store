@@ -23,14 +23,15 @@ type Service struct {
 	payments    PaymentGateway
 	fulfillment FulfillmentGateway
 	discounts   DiscountGateway
+	shipping    ShippingGateway
 	invoices    InvoiceGateway
 	events      WebhookEventStore
 	notifier    OrderNotifier
 	logger      *slog.Logger
 }
 
-func NewService(cart CartGateway, inventory InventoryGateway, users UserGateway, orders OrderGateway, payments PaymentGateway, fulfillment FulfillmentGateway, discounts DiscountGateway, invoices InvoiceGateway, events WebhookEventStore, logger *slog.Logger) *Service {
-	return &Service{cart: cart, inventory: inventory, users: users, orders: orders, payments: payments, fulfillment: fulfillment, discounts: discounts, invoices: invoices, events: events, logger: logger}
+func NewService(cart CartGateway, inventory InventoryGateway, users UserGateway, orders OrderGateway, payments PaymentGateway, fulfillment FulfillmentGateway, discounts DiscountGateway, shipping ShippingGateway, invoices InvoiceGateway, events WebhookEventStore, logger *slog.Logger) *Service {
+	return &Service{cart: cart, inventory: inventory, users: users, orders: orders, payments: payments, fulfillment: fulfillment, discounts: discounts, shipping: shipping, invoices: invoices, events: events, logger: logger}
 }
 
 // WithNotifier attaches the customer-email notifier. Optional and chainable so
@@ -287,6 +288,13 @@ func (s *Service) PlaceOrder(ctx context.Context, owner CartOwner, principalUser
 			subtotalAfterDiscount = 0
 		}
 	}
+	// The free-shipping threshold is checked against the subtotal after discounts. Every later use of the fee, the
+	// total included, sees the fee the order actually pays.
+	threshold, err := s.shipping.FreeShippingThresholdMinor(ctx)
+	if err != nil {
+		return PlaceOrderResult{}, err
+	}
+	deliveryMethod.Fee = domain.DeliveryFee(deliveryMethod, subtotalAfterDiscount, threshold)
 	total := money.Money{AmountMinor: subtotalAfterDiscount + deliveryMethod.Fee.AmountMinor, Currency: currency}
 	orderNumber := generateOrderNumber()
 

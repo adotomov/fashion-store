@@ -17,6 +17,8 @@ type StoreBranding = {
   // Re-fetches the public store-settings endpoint — called after the admin
   // Store Settings page saves a change, so the rest of the already-loaded
   // app (header, footer, admin sidebar) picks it up without a full reload.
+  // The free-shipping threshold in EUR minor units; null until the store settings have loaded.
+  freeShippingThresholdMinor: number | null;
   refresh: () => void;
 };
 
@@ -26,6 +28,7 @@ const StoreSettingsContext = createContext<StoreBranding>({
   storeLocale: "",
   facebookUrl: "",
   instagramUrl: "",
+  freeShippingThresholdMinor: null,
   refresh: () => {},
 });
 
@@ -35,6 +38,7 @@ export function StoreSettingsProvider({ children }: { children: ReactNode }) {
   const [storeLocale, setStoreLocale] = useState("");
   const [facebookUrl, setFacebookUrl] = useState("");
   const [instagramUrl, setInstagramUrl] = useState("");
+  const [freeShippingThresholdMinor, setFreeShippingThresholdMinor] = useState<number | null>(null);
 
   function refresh() {
     getStoreSettings()
@@ -44,6 +48,7 @@ export function StoreSettingsProvider({ children }: { children: ReactNode }) {
         setStoreLocale(settings.locale ?? "");
         setFacebookUrl(settings.facebook_url ?? "");
         setInstagramUrl(settings.instagram_url ?? "");
+        setFreeShippingThresholdMinor(settings.free_shipping_threshold_minor ?? null);
       })
       .catch(() => {});
   }
@@ -66,7 +71,7 @@ export function StoreSettingsProvider({ children }: { children: ReactNode }) {
   }, [logoUrl]);
 
   return (
-    <StoreSettingsContext.Provider value={{ storeName, logoUrl, storeLocale, facebookUrl, instagramUrl, refresh }}>
+    <StoreSettingsContext.Provider value={{ storeName, logoUrl, storeLocale, facebookUrl, instagramUrl, freeShippingThresholdMinor, refresh }}>
       {children}
     </StoreSettingsContext.Provider>
   );

@@ -25,10 +25,12 @@ type StoreSettings struct {
 	InstagramURL       *string
 	OpeningHours       *string
 	MapLocation        *string
-	LogoBucket         *string
-	LogoObjectKey      *string
-	LogoContentType    *string
-	LogoSizeBytes      *int64
+	// The EUR amount, in minor units, from which an order ships free (see checkout's DeliveryFee).
+	FreeShippingThresholdMinor int64
+	LogoBucket                 *string
+	LogoObjectKey              *string
+	LogoContentType            *string
+	LogoSizeBytes              *int64
 	// About Us cover photo (public About page) and Contact Us store photo
 	// (public Contact page) — nullable file references, same shape as the logo.
 	AboutCoverBucket      *string

@@ -78,21 +78,22 @@ func (h *StoreSettingsHandler) RegisterRoutes(r chi.Router, requireAdmin func(ht
 }
 
 type storeSettingsResponse struct {
-	StoreName          string  `json:"store_name"`
-	LegalEntityName    *string `json:"legal_entity_name,omitempty"`
-	Locale             string  `json:"locale"`
-	Currency           string  `json:"currency"`
-	ContactEmail       *string `json:"contact_email,omitempty"`
-	ContactPhone       *string `json:"contact_phone,omitempty"`
-	CompanyDescription *string `json:"company_description,omitempty"`
-	FacebookURL        *string `json:"facebook_url,omitempty"`
-	InstagramURL       *string `json:"instagram_url,omitempty"`
-	OpeningHours       *string `json:"opening_hours,omitempty"`
-	MapLocation        *string `json:"map_location,omitempty"`
-	LogoURL            *string `json:"logo_url,omitempty"`
-	AboutCoverURL      *string `json:"about_cover_url,omitempty"`
-	StoreImageURL      *string `json:"store_image_url,omitempty"`
-	UpdatedAt          string  `json:"updated_at"`
+	StoreName                  string  `json:"store_name"`
+	LegalEntityName            *string `json:"legal_entity_name,omitempty"`
+	Locale                     string  `json:"locale"`
+	Currency                   string  `json:"currency"`
+	ContactEmail               *string `json:"contact_email,omitempty"`
+	ContactPhone               *string `json:"contact_phone,omitempty"`
+	CompanyDescription         *string `json:"company_description,omitempty"`
+	FacebookURL                *string `json:"facebook_url,omitempty"`
+	InstagramURL               *string `json:"instagram_url,omitempty"`
+	OpeningHours               *string `json:"opening_hours,omitempty"`
+	MapLocation                *string `json:"map_location,omitempty"`
+	FreeShippingThresholdMinor int64   `json:"free_shipping_threshold_minor"`
+	LogoURL                    *string `json:"logo_url,omitempty"`
+	AboutCoverURL              *string `json:"about_cover_url,omitempty"`
+	StoreImageURL              *string `json:"store_image_url,omitempty"`
+	UpdatedAt                  string  `json:"updated_at"`
 }
 
 // toStoreSettingsResponse is shared by both the admin handler and the public
@@ -100,18 +101,19 @@ type storeSettingsResponse struct {
 // proxy endpoint serves the logo) differs between the two.
 func toStoreSettingsResponse(s domain.StoreSettings, basePath string) storeSettingsResponse {
 	resp := storeSettingsResponse{
-		StoreName:          s.StoreName,
-		LegalEntityName:    s.LegalEntityName,
-		Locale:             s.Locale,
-		Currency:           s.Currency,
-		ContactEmail:       s.ContactEmail,
-		ContactPhone:       s.ContactPhone,
-		CompanyDescription: s.CompanyDescription,
-		FacebookURL:        s.FacebookURL,
-		InstagramURL:       s.InstagramURL,
-		OpeningHours:       s.OpeningHours,
-		MapLocation:        s.MapLocation,
-		UpdatedAt:          s.UpdatedAt.Format(timeFormat),
+		StoreName:                  s.StoreName,
+		LegalEntityName:            s.LegalEntityName,
+		Locale:                     s.Locale,
+		Currency:                   s.Currency,
+		ContactEmail:               s.ContactEmail,
+		ContactPhone:               s.ContactPhone,
+		CompanyDescription:         s.CompanyDescription,
+		FacebookURL:                s.FacebookURL,
+		InstagramURL:               s.InstagramURL,
+		OpeningHours:               s.OpeningHours,
+		MapLocation:                s.MapLocation,
+		FreeShippingThresholdMinor: s.FreeShippingThresholdMinor,
+		UpdatedAt:                  s.UpdatedAt.Format(timeFormat),
 	}
 	if s.HasLogo() {
 		url := basePath + "/logo/file"
@@ -138,17 +140,18 @@ func (h *StoreSettingsHandler) get(w http.ResponseWriter, r *http.Request) {
 }
 
 type updateStoreSettingsRequest struct {
-	StoreName          *string `json:"store_name,omitempty"`
-	LegalEntityName    *string `json:"legal_entity_name,omitempty"`
-	Locale             *string `json:"locale,omitempty"`
-	Currency           *string `json:"currency,omitempty"`
-	ContactEmail       *string `json:"contact_email,omitempty"`
-	ContactPhone       *string `json:"contact_phone,omitempty"`
-	CompanyDescription *string `json:"company_description,omitempty"`
-	FacebookURL        *string `json:"facebook_url,omitempty"`
-	InstagramURL       *string `json:"instagram_url,omitempty"`
-	OpeningHours       *string `json:"opening_hours,omitempty"`
-	MapLocation        *string `json:"map_location,omitempty"`
+	StoreName                  *string `json:"store_name,omitempty"`
+	LegalEntityName            *string `json:"legal_entity_name,omitempty"`
+	Locale                     *string `json:"locale,omitempty"`
+	Currency                   *string `json:"currency,omitempty"`
+	ContactEmail               *string `json:"contact_email,omitempty"`
+	ContactPhone               *string `json:"contact_phone,omitempty"`
+	CompanyDescription         *string `json:"company_description,omitempty"`
+	FacebookURL                *string `json:"facebook_url,omitempty"`
+	InstagramURL               *string `json:"instagram_url,omitempty"`
+	OpeningHours               *string `json:"opening_hours,omitempty"`
+	MapLocation                *string `json:"map_location,omitempty"`
+	FreeShippingThresholdMinor *int64  `json:"free_shipping_threshold_minor,omitempty"`
 }
 
 func (h *StoreSettingsHandler) update(w http.ResponseWriter, r *http.Request) {
@@ -159,17 +162,18 @@ func (h *StoreSettingsHandler) update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	settings, err := h.service.UpdateSettings(r.Context(), application.UpdateStoreSettingsInput{
-		StoreName:          req.StoreName,
-		LegalEntityName:    req.LegalEntityName,
-		Locale:             req.Locale,
-		Currency:           req.Currency,
-		ContactEmail:       req.ContactEmail,
-		ContactPhone:       req.ContactPhone,
-		CompanyDescription: req.CompanyDescription,
-		FacebookURL:        req.FacebookURL,
-		InstagramURL:       req.InstagramURL,
-		OpeningHours:       req.OpeningHours,
-		MapLocation:        req.MapLocation,
+		StoreName:                  req.StoreName,
+		LegalEntityName:            req.LegalEntityName,
+		Locale:                     req.Locale,
+		Currency:                   req.Currency,
+		ContactEmail:               req.ContactEmail,
+		ContactPhone:               req.ContactPhone,
+		CompanyDescription:         req.CompanyDescription,
+		FacebookURL:                req.FacebookURL,
+		InstagramURL:               req.InstagramURL,
+		OpeningHours:               req.OpeningHours,
+		MapLocation:                req.MapLocation,
+		FreeShippingThresholdMinor: req.FreeShippingThresholdMinor,
 	})
 	if err != nil {
 		writeAdminModuleError(w, err)
@@ -328,15 +332,15 @@ func (h *StoreSettingsHandler) deleteStoreImage(w http.ResponseWriter, r *http.R
 }
 
 type heroSettingsResponse struct {
-	Eyebrow              string  `json:"eyebrow"`
-	Heading              string  `json:"heading"`
-	Subtext              string  `json:"subtext"`
-	CTAPrimaryLabel      string  `json:"cta_primary_label"`
-	CTAPrimaryURL        string  `json:"cta_primary_url"`
-	CTASecondaryLabel    *string `json:"cta_secondary_label,omitempty"`
-	CTASecondaryURL      *string `json:"cta_secondary_url,omitempty"`
-	BackgroundImageURL   *string `json:"background_image_url,omitempty"`
-	UpdatedAt            string  `json:"updated_at"`
+	Eyebrow            string  `json:"eyebrow"`
+	Heading            string  `json:"heading"`
+	Subtext            string  `json:"subtext"`
+	CTAPrimaryLabel    string  `json:"cta_primary_label"`
+	CTAPrimaryURL      string  `json:"cta_primary_url"`
+	CTASecondaryLabel  *string `json:"cta_secondary_label,omitempty"`
+	CTASecondaryURL    *string `json:"cta_secondary_url,omitempty"`
+	BackgroundImageURL *string `json:"background_image_url,omitempty"`
+	UpdatedAt          string  `json:"updated_at"`
 }
 
 type saveHeroSettingsRequest struct {

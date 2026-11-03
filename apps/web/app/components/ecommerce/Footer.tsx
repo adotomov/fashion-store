@@ -4,6 +4,7 @@ import { Link } from "react-router";
 import { useLanguage } from "../../features/i18n/LanguageContext";
 import { useStoreBranding } from "../../features/store-settings/StoreSettingsContext";
 import { type NavType, getNav } from "../../lib/api/storefront";
+import { withThreshold } from "../../lib/shipping/free-shipping";
 import { Icon } from "../ui/Icon";
 import { Eyebrow, Text } from "../ui/Text";
 
@@ -13,7 +14,7 @@ type FooterColumn = {
 };
 
 export function Footer() {
-  const { storeName, logoUrl, facebookUrl, instagramUrl } = useStoreBranding();
+  const { storeName, logoUrl, facebookUrl, instagramUrl, freeShippingThresholdMinor, storeLocale } = useStoreBranding();
   const { locale, t } = useLanguage();
   const [navTypes, setNavTypes] = useState<NavType[]>([]);
 
@@ -117,7 +118,7 @@ export function Footer() {
           <div className="flex items-center gap-4 text-stone-500">
             <span className="flex items-center gap-1.5 text-xs">
               <Icon name="shipping" size={14} />
-              {t("footer.free_shipping", "Free shipping over $100")}
+              {withThreshold(t("footer.free_shipping", "Free shipping over {amount}"), freeShippingThresholdMinor, storeLocale)}
             </span>
           </div>
         </div>
