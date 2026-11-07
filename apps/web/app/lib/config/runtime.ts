@@ -11,6 +11,7 @@ export type RuntimeConfig = {
   googleClientId: string;
   revolutEnv: "sandbox" | "prod";
   gaMeasurementId: string;
+  metaPixelId: string;
   siteUrl: string;
 };
 
@@ -25,6 +26,7 @@ const buildDefaults: RuntimeConfig = {
   googleClientId: import.meta.env.VITE_GOOGLE_CLIENT_ID ?? "",
   revolutEnv: (import.meta.env.VITE_REVOLUT_ENV as "sandbox" | "prod" | undefined) ?? "sandbox",
   gaMeasurementId: (import.meta.env.VITE_GA_MEASUREMENT_ID ?? "").trim(),
+  metaPixelId: (import.meta.env.VITE_META_PIXEL_ID ?? "").trim(),
   siteUrl: (import.meta.env.VITE_SITE_URL ?? "https://verani.bg").replace(/\/$/, ""),
 };
 
@@ -37,6 +39,7 @@ function serverOverrides(): Partial<RuntimeConfig> {
     googleClientId: env.GOOGLE_CLIENT_ID,
     revolutEnv: env.REVOLUT_ENV as RuntimeConfig["revolutEnv"] | undefined,
     gaMeasurementId: env.GA_MEASUREMENT_ID,
+    metaPixelId: env.META_PIXEL_ID,
     siteUrl: env.SITE_URL,
   };
 }

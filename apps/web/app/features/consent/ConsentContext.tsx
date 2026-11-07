@@ -1,14 +1,17 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 
 import { setAnalyticsConsent } from "../../lib/analytics/gtag";
+import { setPixelConsent } from "../../lib/analytics/meta-pixel";
 
-// Cookie-consent state for Google Consent Mode v2. The gtag bootstrap defaults
-// every storage type to "denied"; this context is the single place that flips
-// analytics_storage to "granted" once the visitor accepts, and it remembers the
-// choice so returning visitors aren't asked again.
+// Cookie-consent state shared by every tracking tag. The gtag bootstrap defaults
+// Google Consent Mode v2 storage to "denied" and the Meta Pixel bootstrap starts
+// with consent "revoke"; this context is the single place that flips both to
+// granted once the visitor accepts, and it remembers the choice so returning
+// visitors aren't asked again.
 //
-// Only "analytics" is modelled here — the store runs no advertising tags, so
-// ad_* stays denied. Add an "ads" category here if that ever changes.
+// A single accept/reject decision governs both GA (analytics_storage) and the
+// Meta Pixel (an advertising tag). If finer-grained control is ever needed, split
+// this into separate "analytics" and "ads" categories here.
 
 const STORAGE_KEY = "store_cookie_consent";
 
@@ -53,6 +56,7 @@ export function ConsentProvider({ children }: { children: ReactNode }) {
     if (stored) {
       setDecision(stored);
       setAnalyticsConsent(stored === "accepted");
+      setPixelConsent(stored === "accepted");
     }
     setReady(true);
   }, []);
@@ -61,6 +65,7 @@ export function ConsentProvider({ children }: { children: ReactNode }) {
     if (typeof window !== "undefined") window.localStorage.setItem(STORAGE_KEY, next);
     setDecision(next);
     setAnalyticsConsent(next === "accepted");
+    setPixelConsent(next === "accepted");
   }
 
   return (

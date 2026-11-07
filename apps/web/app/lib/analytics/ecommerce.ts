@@ -3,6 +3,7 @@ import type { StorefrontProduct } from "../api/storefront";
 import type { Money } from "../money/money";
 
 import { track } from "./gtag";
+import { pixelAddToCart, pixelInitiateCheckout, pixelPurchase, pixelViewContent } from "./meta-pixel";
 
 // Typed GA4 ecommerce helpers. Each function maps our domain objects
 // (StorefrontProduct, Cart, CartItem) onto GA4's recommended ecommerce schema
@@ -100,6 +101,7 @@ export function trackViewItem(product: StorefrontProduct, variantLabel?: string)
     value: toMajor(price),
     items: [productToItem(product, { quantity: 1, variantLabel })],
   });
+  pixelViewContent({ id: product.id, name: product.name, value: toMajor(price), currency: price.currency });
 }
 
 // ---- Cart & wishlist -------------------------------------------------------
@@ -110,6 +112,13 @@ export function trackAddToCart(product: StorefrontProduct, quantity: number, var
     currency: price.currency,
     value: toMajor(price) * quantity,
     items: [productToItem(product, { quantity, variantLabel })],
+  });
+  pixelAddToCart({
+    id: product.id,
+    name: product.name,
+    quantity,
+    value: toMajor(price) * quantity,
+    currency: price.currency,
   });
 }
 
@@ -145,6 +154,12 @@ export function trackBeginCheckout(cart: Cart): void {
     currency: cart.subtotal.currency,
     value: toMajor(cart.subtotal),
     items: cart.items.map(cartItemToItem),
+  });
+  pixelInitiateCheckout({
+    contentIds: cart.items.map((i) => i.product_id),
+    numItems: cart.item_count,
+    value: toMajor(cart.subtotal),
+    currency: cart.subtotal.currency,
   });
 }
 
@@ -188,6 +203,15 @@ export function trackPurchase(params: PurchaseParams): void {
     tax: params.tax,
     shipping: params.shipping,
     items: params.items,
+  });
+  // Meta's content_ids need product IDs. Items rebuilt from a placed order carry
+  // names only (no item_id) and are skipped; the cart-snapshot path has them.
+  const withIds = params.items.filter((i) => i.item_id);
+  pixelPurchase({
+    contentIds: withIds.map((i) => i.item_id!),
+    contents: withIds.map((i) => ({ id: i.item_id!, quantity: i.quantity ?? 1 })),
+    value: params.value,
+    currency: params.currency,
   });
 }
 

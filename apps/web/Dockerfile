@@ -14,8 +14,8 @@ COPY --from=development-dependencies-env /app/node_modules /app/node_modules
 WORKDIR /app
 # These VITE_* values are only the local-development fallback. Each environment
 # sets its own values at runtime (API_BASE_URL, GOOGLE_CLIENT_ID, REVOLUT_ENV,
-# GA_MEASUREMENT_ID, SITE_URL) so one image can be promoted from dev to prod.
-# See app/lib/config/runtime.ts.
+# GA_MEASUREMENT_ID, META_PIXEL_ID, SITE_URL) so one image can be promoted from
+# dev to prod. See app/lib/config/runtime.ts.
 ARG VITE_API_BASE_URL=http://api.fashion-store.localhost
 ARG VITE_GOOGLE_CLIENT_ID=673528779465-pajifaekv8l1odrbd8mpbglo351d7r15.apps.googleusercontent.com
 # Revolut checkout widget mode: "sandbox" (default, matches local devbox + dev)
@@ -25,10 +25,14 @@ ARG VITE_REVOLUT_ENV=sandbox
 # Google Analytics 4 Measurement ID. Empty by default, so analytics stays OFF
 # unless the environment sets GA_MEASUREMENT_ID.
 ARG VITE_GA_MEASUREMENT_ID=
+# Meta (Facebook) Pixel ID. Empty by default, so the Pixel stays OFF unless the
+# environment sets META_PIXEL_ID.
+ARG VITE_META_PIXEL_ID=
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
 ENV VITE_GOOGLE_CLIENT_ID=$VITE_GOOGLE_CLIENT_ID
 ENV VITE_REVOLUT_ENV=$VITE_REVOLUT_ENV
 ENV VITE_GA_MEASUREMENT_ID=$VITE_GA_MEASUREMENT_ID
+ENV VITE_META_PIXEL_ID=$VITE_META_PIXEL_ID
 RUN npm run build
 
 FROM node:24-alpine
