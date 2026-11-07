@@ -11,6 +11,7 @@ import {
 import type { Route } from "./+types/root";
 import "./app.css";
 import { GoogleAnalytics } from "./features/analytics/GoogleAnalytics";
+import { MetaPixel } from "./features/analytics/MetaPixel";
 import { usePageViews } from "./features/analytics/usePageViews";
 import { AuthProvider } from "./features/auth/AuthContext";
 import { CartProvider } from "./features/cart/CartContext";
@@ -52,6 +53,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         <Meta />
         <Links />
         <GoogleAnalytics />
+        <MetaPixel />
       </head>
       <body>
         {children}

@@ -154,6 +154,7 @@ environments:
         GOOGLE_CLIENT_ID: 399593875435-vkfiip6lrhh9r5d8a5jv7s3rnpc88djn.apps.googleusercontent.com
         REVOLUT_ENV: prod
         GA_MEASUREMENT_ID: G-T02R7XERDV
+        META_PIXEL_ID: "1445134643714482"
         SITE_URL: https://verani.bg
     secrets:
       api:
